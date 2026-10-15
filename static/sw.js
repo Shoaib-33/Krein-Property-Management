@@ -1,6 +1,6 @@
 'use strict';
-const CACHE = 'haven-shell-v30';
-const SHELL = ['/', '/static/index.html', '/static/styles.css', '/static/portal.css', '/static/enhance.css', '/static/polish.css', '/static/invoices.css', '/static/signature.css', '/static/docedit.css', '/static/pdfview.css', '/static/theme.css', '/static/favicon.svg'];
+const CACHE = 'haven-shell-v32';
+const SHELL = ['/', '/static/index.html', '/static/styles.css', '/static/portal.css', '/static/enhance.css', '/static/polish.css', '/static/invoices.css', '/static/signature.css', '/static/docedit.css', '/static/pdfview.css', '/static/team.css', '/static/theme.css', '/static/favicon.svg'];
 
 self.addEventListener('install', event => {
   event.waitUntil(caches.open(CACHE).then(c => c.addAll(SHELL).catch(() => {})).then(() => self.skipWaiting()));

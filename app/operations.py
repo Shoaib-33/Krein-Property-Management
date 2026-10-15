@@ -125,6 +125,12 @@ def update_role(staff_id:int,data:dict,user=Depends(current_user)):
                 raise HTTPException(409,'Keep at least one administrator for the company.')
         if role=='remove':
             conn.execute('DELETE FROM memberships WHERE user_id=? AND company_id=?',(staff_id,company_id))
+            left=(conn.execute('SELECT 1 FROM memberships WHERE user_id=?',(staff_id,)).fetchone() or conn.execute('SELECT 1 FROM owner_accounts WHERE user_id=?',(staff_id,)).fetchone()
+                  or conn.execute('SELECT 1 FROM contractor_accounts WHERE user_id=?',(staff_id,)).fetchone() or conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1',(staff_id,)).fetchone()
+                  or conn.execute('SELECT 1 FROM users WHERE id=? AND global_admin=1',(staff_id,)).fetchone())
+            if not left:   # no company left: the login is closed (it can be opened again by a new invitation)
+                conn.execute('UPDATE users SET active=0 WHERE id=?',(staff_id,))
+                conn.execute('DELETE FROM sessions WHERE user_id=?',(staff_id,))
         else:
             conn.execute('UPDATE memberships SET role=? WHERE user_id=? AND company_id=?',(role,staff_id,company_id))
         audit(conn,user['id'],company_id,'role_changed','user',staff_id,{'from':member['role'],'to':role})

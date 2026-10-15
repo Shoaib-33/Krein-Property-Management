@@ -242,3 +242,11 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 
 - **Contracts:** step 2 of "Send contract for signature" shows the contract as a document, laid out like the PDF. Click a pencil to change any sentence, add or remove paragraphs, and fill the yellow boxes for details Haven does not know yet. Only then is it sent.
 - **Invoices:** every invoice can be edited in place (Invoices > Manage). Turn on Settings > "Review invoices before sending" and new invoices are created as drafts. The tenant gets nothing (portal, alert or email) until you open the draft, check or edit it, and press Send to tenant (or Send all to tenants).
+
+### Companies, admins and the all-companies overview
+
+- **Platform administrator** (the account made with `python manage.py create-admin`): can open every company and create companies. In **Settings > Add company** you enter the company and its **first administrator** (name and email). That person gets a setup link, valid for 7 days, and chooses their own password. You are not added to the company unless you tick the box, but you can still open it.
+- **Company admin**: **Settings > Add staff member** creates an invitation link for a team member with a role (administrator, manager, finance, property, inspector). Pending invitations are listed in Settings and can be cancelled.
+- **One login, several companies**: if the invited person already has a Haven login, they sign in, open the link and accept. The company is then added to their company picker. Nobody is added to a company without accepting.
+- **All companies** (menu): key figures of every company the user can open: houses, occupancy, rent roll, open and overdue invoices, tickets and approvals. Money figures are shown to admin, manager and finance roles only.
+- Removing someone's last company closes their login; a new invitation opens it again with a new password. A company always keeps at least one administrator.

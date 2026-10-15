@@ -406,6 +406,17 @@ UPDATE invoices SET released_at=created_at;
 '''
 
 
+V23 = '''
+CREATE TABLE staff_invites (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), email TEXT NOT NULL, name TEXT NOT NULL,
+ role TEXT NOT NULL CHECK(role IN ('admin','manager','finance','property','inspector')),
+ token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, used_at TEXT, revoked INTEGER NOT NULL DEFAULT 0,
+ created_by INTEGER NOT NULL REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE INDEX staff_invites_company ON staff_invites(company_id,revoked,used_at);
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -581,6 +592,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (22, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=23').fetchone():
+            statement = ''
+            for line in V23.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (23, now()))
         conn.commit()
     except Exception:
         conn.rollback()

@@ -515,7 +515,7 @@ async function renderPublic(token){
  if(!paid)$('#public-form').addEventListener('submit',async ev=>{ev.preventDefault();const form=ev.currentTarget;const b=$('button[type="submit"]',form);b.disabled=true;try{await api(`/api/public/${token}/proof`,{method:'POST',body:new FormData(form)});await renderPublic(token);toast('Receipt submitted. Your payment is awaiting verification.');}catch(err){$('.form-error',form).textContent=err.message;b.disabled=false;}});
 }
 async function boot(){
- if(['/tenant','/contractor','/owner'].includes(location.pathname)||location.pathname.startsWith('/activate/'))return;
+ if(['/tenant','/contractor','/owner'].includes(location.pathname)||location.pathname.startsWith('/activate/')||location.pathname.startsWith('/join/'))return;
  if(location.pathname.startsWith('/pay/')){await renderPublic(location.pathname.split('/').pop());return;}
  try{state.me=await api('/api/me');const stored=Number(sessionStorage.getItem('haven_company'));state.company=state.me.companies.some(c=>c.id===stored)?stored:[...state.me.companies].sort((a,b)=>a.id-b.id)[0]?.id;state.page=location.hash.slice(1)||'overview';await refresh();}catch(err){if(!state.me)renderLogin();else $('#app').innerHTML=empty('Unable to open workspace',err.message);}
 }

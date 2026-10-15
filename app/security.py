@@ -74,6 +74,8 @@ def current_user(request: Request):
 
 def authorize(conn, user, company_id, roles=None):
     row = conn.execute('SELECT role FROM memberships WHERE user_id=? AND company_id=?', (user['id'], company_id)).fetchone()
+    if not row and user.get('global_admin') and conn.execute('SELECT 1 FROM companies WHERE id=?', (company_id,)).fetchone():
+        return 'admin'   # the platform administrator can open any company; it is recorded in the audit log like any other action
     if not row:
         raise HTTPException(403, 'You do not have access to this company.')
     role = row['role']

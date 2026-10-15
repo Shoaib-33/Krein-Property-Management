@@ -47,6 +47,24 @@ async def lifespan(app):
 app = FastAPI(title='Haven property management', version='1.0.0', lifespan=lifespan)
 
 
+class SelectiveGZip:
+    """Compress the data and page responses (the big JSON screens shrink to about a tenth). PDFs, photos and files are left alone."""
+    def __init__(self, inner):
+        from starlette.middleware.gzip import GZipMiddleware
+        self.inner = inner
+        self.zipped = GZipMiddleware(inner, minimum_size=1024)
+
+    async def __call__(self, scope, receive, send):
+        path = scope.get('path', '')
+        if scope['type'] == 'http' and not path.endswith(('/pdf', '/file', '/logo')):
+            await self.zipped(scope, receive, send)
+        else:
+            await self.inner(scope, receive, send)
+
+
+app.add_middleware(SelectiveGZip)
+
+
 @app.middleware('http')
 async def security_headers(request, call_next):
     # Same-origin requests only, including public receipt uploads and login.
@@ -61,6 +79,8 @@ async def security_headers(request, call_next):
     response.headers['Referrer-Policy'] = 'no-referrer'
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     response.headers['Cache-Control'] = 'no-store'
+    if os.environ.get('HAVEN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     if response.headers.get('content-type', '').startswith(('application/pdf', 'image/png', 'image/jpeg')):
         # only Haven's own pages may show a PDF or a receipt photo inside the portal viewer
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
@@ -350,6 +370,10 @@ def logout(request: Request, user=Depends(current_user)):
 def me(user=Depends(current_user)):
     with connect() as conn:
         companies = [dict(r) for r in conn.execute('SELECT c.*,m.role,(SELECT updated_at FROM company_logos l WHERE l.company_id=c.id) logo_version FROM companies c JOIN memberships m ON m.company_id=c.id WHERE m.user_id=? ORDER BY c.name', (user['id'],))]
+        if user['global_admin']:
+            mine = {c['id'] for c in companies}
+            companies += [dict(r, role='admin', platform=True) for r in conn.execute('SELECT c.*,(SELECT updated_at FROM company_logos l WHERE l.company_id=c.id) logo_version FROM companies c ORDER BY c.name') if r['id'] not in mine]
+            companies.sort(key=lambda c: c['name'])
         tenant_access = bool(conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
         contractor_access = bool(conn.execute('SELECT 1 FROM contractor_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
         owner_access = bool(conn.execute('SELECT 1 FROM owner_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
@@ -453,9 +477,17 @@ def create_company(data: dict, user=Depends(current_user)):
         raise HTTPException(403, 'Only the system administrator can add companies.')
     with transaction() as conn:
         company_id = insert(conn, 'companies', {'name': text_field(data, 'name', maximum=120), 'kvk': str(data.get('kvk', ''))[:50], 'address': str(data.get('address', ''))[:500], 'payment_instructions': str(data.get('payment_instructions', ''))[:2000], 'created_at': now()})
-        conn.execute('INSERT INTO memberships VALUES(?,?,?)', (user['id'], company_id, 'admin'))
+        if data.get('add_me', True) is not False:
+            conn.execute('INSERT INTO memberships VALUES(?,?,?)', (user['id'], company_id, 'admin'))
         audit(conn, user['id'], company_id, 'created', 'company', company_id, {'name': data['name']})
-    return {'id': company_id}
+        result = {'id': company_id}
+        admin_email = str(data.get('admin_email') or '').strip().lower()
+        if admin_email:
+            from .team import new_invite
+            if '@' not in admin_email:
+                raise HTTPException(422, 'Enter a valid email address for the first administrator.')
+            result['invite'] = new_invite(conn, user, company_id, text_field(data, 'admin_name', maximum=120), admin_email, 'admin')
+    return result
 
 
 @app.post('/api/staff')
@@ -1747,6 +1779,7 @@ from .inbox import router as inbox_router
 from .assistant import router as assistant_router
 from .lease_offers import router as lease_router
 from .invoice_tools import router as invoice_tools_router
+from .team import router as team_router
 from .paging import router as paging_router
 from .owners import router as owners_router
 from .owner_docs import router as owner_docs_router
@@ -1763,6 +1796,7 @@ app.include_router(inbox_router)
 app.include_router(assistant_router)
 app.include_router(lease_router)
 app.include_router(invoice_tools_router)
+app.include_router(team_router)
 app.include_router(paging_router)
 app.include_router(owner_docs_router)
 app.include_router(automation_router)
@@ -1788,6 +1822,7 @@ def landing():
 @app.get('/')
 @app.get('/pay/{token}')
 @app.get('/activate/{token}')
+@app.get('/join/{token}')
 @app.get('/tenant')
 @app.get('/owner')
 @app.get('/contractor')

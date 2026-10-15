@@ -1,0 +1,6 @@
+/* Team invitations, companies and the all-companies overview */
+.tm-link label{display:block;font-weight:700;font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted,#687b74);margin-bottom:6px}
+.tm-linkrow{display:flex;gap:8px}.tm-linkrow input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line,#c9d9d1);border-radius:10px;font:13px ui-monospace,Consolas,monospace;background:#f7faf8}
+.tm-done p{margin:0 0 12px}.tm-h{margin:18px 0 2px;font-size:15px}
+.tm-check{display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-weight:600}.tm-check input{width:18px;height:18px;margin-top:2px;flex:none}.tm-check small{display:block;font-weight:400;color:var(--muted,#687b74)}
+.grp-table{min-width:880px}.grp-table td small{display:block;color:var(--muted,#687b74);font-size:11px}.grp-table td.late-text{color:#a33a30;font-weight:700}
