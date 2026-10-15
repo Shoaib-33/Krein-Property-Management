@@ -201,9 +201,9 @@ class WorkflowTests(unittest.TestCase):
             self.assertTrue(first['email_note'])
             self.assertEqual(self.post(f"/api/invoices/{first['id']}/email",{}).status_code,409)
         with patch.dict(os.environ,{'HAVEN_SMTP_HOST':'smtp.invalid','HAVEN_SMTP_FROM':'billing@haven.test','HAVEN_PUBLIC_URL':'https://haven.test'}):
-            with patch('app.email_delivery.deliver_pending_emails',lambda **k:{'sent':0,'failed':0,'queued':1}):
+            with patch('app.email_delivery.kick',lambda:None):
                 queued=self.post(f"/api/invoices/{first['id']}/email",{})
-            self.assertIn(queued.status_code,(200,422),queued.text)  # 422 when the demo tenant has no valid email
+            self.assertIn(queued.status_code,(200,409,422),queued.text)  # 409 when it already waits in the queue, 422 when the demo tenant has no valid email
             if queued.status_code==200:
                 again=self.client.get('/api/invoices?company_id=1&email=Queued').json()
                 self.assertEqual([i['id'] for i in again['items']],[first['id']])
@@ -337,12 +337,15 @@ class WorkflowTests(unittest.TestCase):
         with patch.dict(os.environ,smtp_env), patch('app.email_delivery.smtplib.SMTP') as smtp:
             server=smtp.return_value
             server.__enter__.return_value=server
-            response=self.post('/api/invoices/run',{'company_id':1,'period':'2027-02'})
+            from app.email_delivery import deliver_pending_emails
+            with db.transaction() as conn:   # the demo's earlier invoices also wait in the queue; this test looks at the new run only
+                conn.execute("UPDATE outbound_email_jobs SET status='cancelled'")
+            with patch('app.email_delivery.kick',lambda:None):   # the button only queues; the delivery loop sends
+                response=self.post('/api/invoices/run',{'company_id':1,'period':'2027-02'})
             self.assertEqual(response.status_code,200,response.text)
             self.assertEqual(response.json()['created'],5)
-            with db.connect() as conn:
-                delivery_jobs=[dict(row) for row in conn.execute('SELECT kind,status,last_error FROM outbound_email_jobs')]
-            self.assertEqual(response.json()['email_delivery']['sent'],5,(response.json(),delivery_jobs))
+            self.assertEqual(response.json()['email_delivery']['waiting'],5)
+            self.assertEqual(deliver_pending_emails()['sent'],5)
             self.assertEqual(server.send_message.call_count,5)
             for call in server.send_message.call_args_list:
                 message=call.args[0]
@@ -390,6 +393,8 @@ class WorkflowTests(unittest.TestCase):
             'HAVEN_SMTP_FROM':'haven@example.test','HAVEN_PUBLIC_URL':'https://haven.example.test',
         }
         with patch.dict(os.environ,smtp_env):
+            with db.transaction() as conn:
+                conn.execute("DELETE FROM outbound_email_jobs WHERE kind='invoice_issued'")   # the demo invoices' own emails are not what this test is about
             process_overdue_invoices(1)
             with db.connect() as conn:
                 jobs=conn.execute('SELECT kind,status FROM outbound_email_jobs WHERE invoice_id=? ORDER BY kind',(invoice['id'],)).fetchall()

@@ -168,7 +168,7 @@
     ev.preventDefault(); btn.disabled = true;
     try {
       const r = await api(`/api/invoices/${btn.dataset.pgEmail}/email`, {method: 'POST', body: {}});
-      toast(r.result && r.result.sent ? 'Email sent to the tenant.' : r.result && r.result.failed ? 'The email could not be sent. Check the SMTP settings.' : 'Email queued. It will be sent shortly.');
+      toast('Email queued. It is sent within a few minutes.');
     } catch (err) { toast(err.message); }
     await refresh();
   });

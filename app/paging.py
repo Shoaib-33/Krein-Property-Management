@@ -117,6 +117,8 @@ def list_invoices(company_id: int, q: str = '', status: str = 'All', period: str
             i['email_note'] = 'Draft: not sent to the tenant yet'
         elif i['email_status'] is None:
             i['email_note'] = ('Email is not set up' if not configured else 'Tenant has no valid email' if '@' not in (i['tenant_email'] or '') else 'Not sent yet')
+        elif i['email_status'] == 'queued' and not configured:
+            i['email_note'] = 'Waiting: email is not set up on this server yet'
         i.pop('tenant_email', None)
     return {'items': items, 'ledger': ledger, 'payment_proofs': proofs, 'email_configured': configured, 'total': total, 'page': page, 'page_size': page_size, 'pages': max(1, -(-total // page_size))}
 

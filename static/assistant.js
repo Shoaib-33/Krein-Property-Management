@@ -4,7 +4,7 @@
    The widget lives outside #app, so page renders never remove it. */
 (() => {
   const path = location.pathname;
-  const portal = path === '/tenant' ? 'tenant' : path === '/owner' ? 'owner' : path === '/contractor' ? 'contractor' : '';
+  const portal = path === '/tenant' ? 'tenant' : path === '/owner' ? 'owner' : path === '/contractor' ? 'contractor' : path === '/landlord' ? 'landlord' : '';
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h6M9 14h4"/></svg>';
   const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -27,7 +27,7 @@
     ui.launcher.classList.remove('open');
     const direct = document.querySelector(`.sidebar .nav-item[data-page="${page}"]`);
     if (direct) { direct.click(); return; }
-    if (!portal && typeof state !== 'undefined' && typeof render === 'function') {
+    if ((!portal || portal === 'landlord') && typeof state !== 'undefined' && typeof render === 'function') {
       const m = document.getElementById('modal'); if (m?.open) m.close();
       state.page = page; state.filter = 'All'; render(); scrollTo(0, 0); return;
     }
@@ -104,6 +104,7 @@
         info = r.ok ? await r.json() : {greeting: 'Hi! How can I help you find your way around?', suggestions: []};
       } catch { info = {greeting: 'Hi! How can I help you find your way around?', suggestions: []}; }
       ui.badge.textContent = info.ai ? 'AI assistant' : 'Quick guide';
+      if (info.privacy_note) ui.note.textContent = info.privacy_note;
       if (!log.length) addBubble('bot', info.greeting);
       chips();
     }
@@ -131,7 +132,7 @@
     panel.append(head, list, chipsBox, form, note);
     wrap.append(panel, launcher);
     document.body.append(wrap);
-    ui = {wrap, launcher, panel, list, chips: chipsBox, input, send: sendBtn, badge};
+    ui = {wrap, launcher, panel, list, chips: chipsBox, input, send: sendBtn, badge, note};
     launcher.addEventListener('click', () => panel.classList.contains('open') ? close() : open());
     closeBtn.addEventListener('click', close);
     form.addEventListener('submit', ev => { ev.preventDefault(); send(); });

@@ -23,13 +23,20 @@ def staff_extras(conn,user,company_id,role):
         result['inspector_assignments']=[dict(r) for r in conn.execute('SELECT a.*,p.name property_name FROM inspector_assignments a JOIN properties p ON p.id=a.property_id WHERE a.user_id=? AND a.company_id=?',(user['id'],company_id))]
         result['notifications']=[dict(r) for r in conn.execute('SELECT * FROM notifications WHERE user_id=? AND company_id=? ORDER BY id DESC LIMIT 50',(user['id'],company_id))]
         return result
-    for table in ('contractors','work_orders','portal_messages','requests','repair_updates','shared_documents'):
-        result[table]=[dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? ORDER BY rowid DESC',(company_id,))]
+    from . import history
+    since=history.cutoff()
+    result['contractors']=[dict(r) for r in conn.execute('SELECT * FROM contractors WHERE company_id=? ORDER BY rowid DESC',(company_id,))]
+    result['requests']=[dict(r) for r in conn.execute(f"SELECT * FROM requests WHERE company_id=? AND {history.recent('requests')} ORDER BY id DESC",(company_id,since))]
+    # repair history follows the repairs that are sent (open ones, or created within the window)
+    kept_repairs=f"SELECT id FROM repairs WHERE company_id=? AND {history.recent('repairs')}"
+    result['work_orders']=[dict(r) for r in conn.execute(f'SELECT * FROM work_orders WHERE company_id=? AND (status NOT IN ("completed","closed","cancelled","declined") OR repair_id IN ({kept_repairs})) ORDER BY id DESC',(company_id,company_id,since))]
+    result['repair_updates']=[dict(r) for r in conn.execute(f'SELECT * FROM repair_updates WHERE company_id=? AND repair_id IN ({kept_repairs}) ORDER BY id DESC',(company_id,company_id,since))]
+    result['shared_documents']=[dict(r) for r in conn.execute('SELECT * FROM shared_documents WHERE company_id=? AND (revoked=0 OR shared_at>=?) ORDER BY id DESC',(company_id,since))]
     for table,key in [('portal_accounts','tenant_id'),('contractor_accounts','contractor_id')]:
         result[table]=[dict(r) for r in conn.execute(f'SELECT a.{key},a.user_id,a.enabled,u.name,u.email FROM {table} a JOIN users u ON u.id=a.user_id WHERE a.company_id=?',(company_id,))]
     if role in ('admin','manager','property'):
         result['contractor_agreement_submissions']=[dict(r) for r in conn.execute('SELECT s.*,c.name contractor_name,d.name document_name FROM contractor_agreement_submissions s JOIN contractors c ON c.id=s.contractor_id JOIN documents d ON d.id=s.document_id WHERE s.company_id=? ORDER BY s.id DESC',(company_id,))]
-    result['portal_messages']=[dict(r) for r in conn.execute('SELECT p.*,u.name sender_name FROM portal_messages p JOIN users u ON u.id=p.sender_id WHERE p.company_id=? ORDER BY p.id DESC',(company_id,))]
+    result['portal_messages']=[dict(r) for r in conn.execute(history.messages_sql(),(company_id,company_id,since))]
     if role in ('admin','manager','finance'):
         for table in ('credit_notes','payment_plans','plan_instalments','published_statements'):
             result[table]=[dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? ORDER BY id DESC',(company_id,))]
@@ -88,6 +95,8 @@ def edit_company(company_id:int,data:dict,user=Depends(current_user)):
 def edit_tenant(tenant_id:int,data:dict,user=Depends(current_user)):
     with transaction() as conn:
         t=record(conn,'tenants',tenant_id,user,OPS+('landlord',))
+        from .scope import require_own_tenant
+        require_own_tenant(conn,tenant_id)
         email=text_field(data,'email',maximum=254)
         if '@' not in email:
             raise HTTPException(422,'Enter a valid email address.')

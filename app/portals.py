@@ -37,6 +37,9 @@ def invite_account(data: dict, user=Depends(current_user)):
     table = {'tenant': 'tenants', 'contractor': 'contractors', 'owner': 'owners'}[kind]
     with transaction() as conn:
         target = record(conn, table, integer(data,'target_id'), user, ('manager','property') + (('landlord',) if kind == 'tenant' else ()))
+        if kind == 'tenant':
+            from .scope import require_own_tenant
+            require_own_tenant(conn, target['id'])
         email = target['email'].strip().lower()
         if conn.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone():
             raise HTTPException(409, 'An account with this email already exists. Use the existing account access controls; invitations cannot replace existing credentials.')
@@ -92,6 +95,9 @@ def account_access(data: dict,user=Depends(current_user)):
         raise HTTPException(422,'Choose whether access is enabled.')
     with transaction() as conn:
         target=record(conn,target_table,integer(data,'target_id'),user,('manager',) + (('landlord',) if kind == 'tenant' else ()))
+        if kind=='tenant':
+            from .scope import require_own_tenant
+            require_own_tenant(conn,target['id'])
         row=conn.execute(f'SELECT * FROM {table} WHERE {key}=?',(target['id'],)).fetchone()
         if not row:
             raise HTTPException(404,'This record has no portal account.')
@@ -182,7 +188,7 @@ async def tenant_payment(invoice_id:int,amount:str=Form(...),paid_on:str=Form(..
     with transaction() as conn:
         inv=tenant_record(conn,user,'invoices',invoice_id)
         result=submit_proof(conn,inv,{'amount':amount,'paid_on':paid_on,'method':method,'reference':reference,'note':note},upload,user['id'])
-        notify_staff(conn,inv['company_id'],'New payment receipt',f'{user["name"]} submitted proof for {inv["number"]}.','payments')
+        notify_staff(conn,inv['company_id'],'New payment receipt',f'{user["name"]} submitted proof for {inv["number"]}.','payments',contract_id=inv['contract_id'])
         return result
 
 
@@ -225,7 +231,7 @@ async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),descriptio
         insert(conn,'repair_updates',{'company_id':c['company_id'],'repair_id':rid,'user_id':user['id'],'message':'Tenant reported: '+description,'document_id':doc_id,'tenant_visible':1,'created_at':now()})
         task(conn,c['company_id'],contract_id,f'Triage tenant repair #{rid}: {title}',local_today().isoformat(),'Emergency' if urgency=='Emergency' else 'Repair')
         task(conn,c['company_id'],contract_id,f'Review day-35 repair #{rid}',(local_today()+timedelta(days=35)).isoformat(),'Repair')
-        notify_staff(conn,c['company_id'],'New tenant repair',title,'repairs')
+        notify_staff(conn,c['company_id'],'New tenant repair',title,'repairs',contract_id=c['id'])
         audit(conn,user['id'],c['company_id'],'reported','repair',rid,{'title':title,'urgency':urgency})
     return {'id':rid}
 
@@ -239,7 +245,7 @@ def tenant_repair_followup(repair_id:int,data:dict,user=Depends(current_user)):
         if data.get('reopen') is True and r['status'] in ('done','closed'):
             conn.execute('UPDATE repairs SET status="reopened",completed_at=NULL WHERE id=?',(repair_id,))
             task(conn,r['company_id'],r['contract_id'],f'Tenant reopened repair #{repair_id}',local_today().isoformat(),'Repair')
-        notify_staff(conn,r['company_id'],'Repair follow-up',message[:150],'repairs')
+        notify_staff(conn,r['company_id'],'Repair follow-up',message[:150],'repairs',contract_id=r['contract_id'])
         audit(conn,user['id'],r['company_id'],'follow_up','repair',repair_id,{'message':message})
     return {'ok':True}
 
@@ -264,7 +270,7 @@ async def tenant_message(contract_id:int=Form(...),subject:str=Form(...),body:st
         mid=insert(conn,'portal_messages',{'company_id':c['company_id'],'contract_id':contract_id,'sender_id':user['id'],'subject':subject,'body':body,'document_id':doc_id,'thread_id':thread_id,'created_at':now()})
         if thread_id:
             conn.execute("UPDATE thread_states SET status='open',updated_at=? WHERE thread_id=? AND status='resolved'",(now(),thread_id))
-        notify_staff(conn,c['company_id'],'Message from '+user['name'] if not thread_id else 'Tenant replied: '+user['name'],subject,'portal-inbox' if subject.startswith('Response: ') else 'tenant-messages')  # a reply to an answer on a request belongs to that ticket
+        notify_staff(conn,c['company_id'],'Message from '+user['name'] if not thread_id else 'Tenant replied: '+user['name'],subject,'portal-inbox' if subject.startswith('Response: ') else 'tenant-messages',contract_id=c['id'])  # a reply to an answer on a request belongs to that ticket
         audit(conn,user['id'],c['company_id'],'sent','portal_message',mid,{'subject':subject,'thread_id':thread_id})
     return {'id':mid}
 
@@ -277,7 +283,7 @@ def tenant_thread_state(thread_id:int,data:dict,user=Depends(current_user)):
         if root['thread_id'] not in (None,thread_id):
             raise HTTPException(422,'Choose the first message of a conversation.')
         conn.execute('INSERT INTO thread_states(thread_id,company_id,status,updated_by,updated_at) VALUES(?,?,?,?,?) ON CONFLICT(thread_id) DO UPDATE SET status=excluded.status,updated_by=excluded.updated_by,updated_at=excluded.updated_at',(thread_id,root['company_id'],status,user['id'],now()))
-        notify_staff(conn,root['company_id'],'Tenant marked a conversation '+('solved' if status=='resolved' else 'open again'),root['subject'],'portal-inbox' if root['subject'].startswith('Response: ') else 'tenant-messages')
+        notify_staff(conn,root['company_id'],'Tenant marked a conversation '+('solved' if status=='resolved' else 'open again'),root['subject'],'portal-inbox' if root['subject'].startswith('Response: ') else 'tenant-messages',contract_id=root['contract_id'])
         audit(conn,user['id'],root['company_id'],'tenant_thread_'+status,'portal_message',thread_id,{})
     return {'ok':True}
 
@@ -294,7 +300,7 @@ def tenant_request(data:dict,user=Depends(current_user)):
             raise HTTPException(422,'Choose your requested future move-out date.')
         rid=insert(conn,'requests',{'company_id':c['company_id'],'contract_id':c['id'],'kind':kind,'subject':subject,'body':body,'requested_date':requested,'created_by':user['id'],'created_at':now()})
         task(conn,c['company_id'],c['id'],f'Review {kind.lower()} #{rid}: {subject}',(local_today()+timedelta(days=1)).isoformat(),'Tenant request')
-        notify_staff(conn,c['company_id'],kind+' received',subject,'portal-inbox')
+        notify_staff(conn,c['company_id'],kind+' received',subject,'portal-inbox',contract_id=c['id'])
         audit(conn,user['id'],c['company_id'],'submitted','request',rid,{'kind':kind})
     return {'id':rid,'status':'open'}
 

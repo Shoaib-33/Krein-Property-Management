@@ -1,8 +1,12 @@
-"""In-app help assistant: answers "where do I find...?" questions with a Gemini model.
+"""In-app help assistant: answers "where do I find...?" questions with an AI model (Groq first, then Google Gemini).
 
-The browser never sees the API key; it talks to this endpoint. Only the question, the last few chat turns
-and the current page name leave the server. No tenant, invoice or user data is ever sent. Without a key
-(or when Gemini is unavailable) a built-in guide answers from keywords, so the chat always works.
+Privacy: what the person types (the question and the last few chat turns) and the current page name are sent to the
+AI provider; no records from the database are sent. Before sending, email addresses, phone numbers, IBANs and other
+long numbers are masked (redact). The chat shows a notice saying so. Name these providers as processors in the
+privacy statement, or limit the AI with HAVEN_ASSISTANT_AI_FOR (for example "staff,owner" keeps tenants on the
+built-in guide) or switch it off by leaving the API keys empty. HAVEN_ASSISTANT_DAILY_LIMIT caps the AI calls per day
+for the whole server (default 2000). Without a key, over the cap, or when the AI is unavailable, a built-in guide
+answers from keywords, so the chat always works. The browser never sees the API key.
 """
 import json
 import logging
@@ -225,8 +229,47 @@ def ask_gemini(who: str, page: str, history: list, message: str, lang: str = 'en
         return None
 
 
-def ai_configured():
+def ai_allowed(who):
+    """HAVEN_ASSISTANT_AI_FOR lists who may use the AI (staff, owner, contractor, tenant); the others get the built-in guide."""
+    return who in {x.strip() for x in os.environ.get('HAVEN_ASSISTANT_AI_FOR', 'staff,owner,contractor,tenant').split(',')}
+
+
+def ai_configured(who=None):
+    if who is not None and not ai_allowed(who):
+        return False
     return bool(os.environ.get('GROQ_API_KEY', '').strip() or os.environ.get('GEMINI_API_KEY', '').strip())
+
+
+_PII = [
+    (re.compile(r'[\w.+-]+@[\w-]+(\.[\w-]+)+'), '[email]'),
+    (re.compile(r'\b[A-Z]{2}\d{2}\s?(?:[A-Z0-9]{4}\s?){2,7}[A-Z0-9]{1,4}\b', re.I), '[iban]'),
+    (re.compile(r'(?:\+|00)?\d[\d\s().-]{7,}\d'), '[number]'),
+]
+
+
+def redact(text):
+    """Mask contact details and account numbers before a question leaves the server."""
+    for pattern, mask in _PII:
+        text = pattern.sub(mask, text)
+    return text
+
+
+_day = {'date': '', 'count': 0}
+
+
+def within_daily_limit():
+    """A server-wide cap on paid AI calls per day, so a misused account cannot run up the provider bill."""
+    try:
+        cap = int(os.environ.get('HAVEN_ASSISTANT_DAILY_LIMIT', '2000'))
+    except ValueError:
+        cap = 2000
+    today = time.strftime('%Y-%m-%d')
+    if _day['date'] != today:
+        _day.update(date=today, count=0)
+    if _day['count'] >= cap:
+        return False
+    _day['count'] += 1
+    return True
 
 
 def ask_groq(who: str, page: str, history: list, message: str, lang: str = 'en'):
@@ -274,7 +317,9 @@ def clean_history(raw):
 @router.get('/api/assistant/info')
 def info(request: Request, user=Depends(current_user)):
     who = audience(request)
-    return {'greeting': GREETING[who], 'suggestions': SUGGESTIONS[who], 'ai': ai_configured()}
+    ai = ai_configured(who)
+    return {'greeting': GREETING[who], 'suggestions': SUGGESTIONS[who], 'ai': ai,
+            'privacy_note': 'Answers come from an AI service (Groq or Google). Do not type personal details such as names, addresses or bank numbers.' if ai else ''}
 
 
 @router.post('/api/assistant/chat')
@@ -287,11 +332,14 @@ def chat(request: Request, data: dict, user=Depends(current_user)):
         return {'reply': 'You are asking quickly. Please wait a few seconds and try again.', 'actions': [], 'source': 'guide'}
     page = re.sub(r'[^a-z\-]', '', str(data.get('page', '')).lower())[:30]
     lang = 'nl' if data.get('lang') == 'nl' else 'en'
-    reply, source = ask_ai(who, page, clean_history(data.get('history')), message, lang)
+    reply, source = None, ''
+    if ai_allowed(who) and within_daily_limit():
+        history = [{**h, 'text': redact(h['text'])} for h in clean_history(data.get('history'))]
+        reply, source = ask_ai(who, page, history, redact(message), lang)
     if reply:
         text, actions = parse_actions(who, reply)
         if text:
             return {'reply': text, 'actions': actions, 'source': source}
     text, actions = local_answer(who, message)
     # tell the screen the AI was configured but did not answer, so it does not claim to be the AI
-    return {'reply': text, 'actions': actions, 'source': 'guide', 'ai_unavailable': ai_configured()}
+    return {'reply': text, 'actions': actions, 'source': 'guide', 'ai_unavailable': ai_configured(who)}

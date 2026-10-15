@@ -36,7 +36,7 @@
     document.getElementById('owner-login').onsubmit = async ev => {
       ev.preventDefault(); const b = ev.currentTarget.querySelector('button'); b.disabled = true;
       try { const d = await call('/api/login', {method: 'POST', body: Object.fromEntries(new FormData(ev.currentTarget))}); S.csrf = d.csrf; await start(); }
-      catch (err) { ev.currentTarget.querySelector('.form-error').textContent = err.message; b.disabled = false; }
+      catch (err) { b.form.querySelector('.form-error').textContent = err.message; b.disabled = false; }
     };
   }
 

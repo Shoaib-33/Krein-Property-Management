@@ -39,9 +39,9 @@
     if (me && me.email.toLowerCase() === i.email.toLowerCase()) {
       shell(`${head}<p>You already have a Haven login. Accept to add ${esc(i.company)} to your companies.</p><p class="form-error" role="alert"></p><button class="button primary" id="accept">Accept invitation</button>`);
       document.getElementById('accept').onclick = async ev => {
-        ev.currentTarget.disabled = true;
+        const btn = ev.currentTarget; btn.disabled = true;
         try { await call('/api/join/' + encodeURIComponent(token), {method: 'POST', csrf: me.csrf, body: {}}); location.href = '/'; }
-        catch (err) { document.querySelector('.form-error').textContent = err.message; ev.currentTarget.disabled = false; }
+        catch (err) { document.querySelector('.form-error').textContent = err.message; btn.disabled = false; }
       };
     } else {
       shell(`${head}<p>${me ? `You are signed in as ${esc(me.email)}, but this invitation is for ${esc(i.email)}.` : 'You already have a Haven login.'} Sign in as <strong>${esc(i.email)}</strong>, then open this link again to accept.</p><p><a class="button primary" href="/">Go to sign in</a></p>`);

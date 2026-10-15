@@ -34,17 +34,22 @@ OPERATIONS = ('property', 'manager')
 @asynccontextmanager
 async def lifespan(app):
     db.init_db()
-    billing_task = asyncio.create_task(monthly_billing_scheduler())
-    app.state.billing_task = billing_task
+    tasks = [asyncio.create_task(monthly_billing_scheduler()), asyncio.create_task(email_delivery_loop())]
+    app.state.billing_task = tasks[0]
     yield
-    billing_task.cancel()
-    try:
-        await billing_task
-    except asyncio.CancelledError:
-        pass
+    for t in tasks:
+        t.cancel()
+    for t in tasks:
+        try:
+            await t
+        except asyncio.CancelledError:
+            pass
 
 
-app = FastAPI(title='Haven property management', version='1.0.0', lifespan=lifespan)
+# the interactive API pages (/docs, /redoc, /openapi.json) are off unless HAVEN_API_DOCS=1 (handy while developing)
+_docs = os.environ.get('HAVEN_API_DOCS') == '1'
+app = FastAPI(title='Haven property management', version='1.0.0', lifespan=lifespan,
+              docs_url='/docs' if _docs else None, redoc_url='/redoc' if _docs else None, openapi_url='/openapi.json' if _docs else None)
 
 
 class SelectiveGZip:
@@ -63,6 +68,38 @@ class SelectiveGZip:
 
 
 app.add_middleware(SelectiveGZip)
+
+
+class BodyLimit:
+    """Refuse a request body above HAVEN_MAX_BODY_MB (default 12 MB) before it is read, so nobody can fill the disk or memory
+    with huge uploads (files themselves are limited to 10 MB further on)."""
+    def __init__(self, inner):
+        self.inner = inner
+        try:
+            self.limit = int(float(os.environ.get('HAVEN_MAX_BODY_MB', '12')) * 1024 * 1024)
+        except ValueError:
+            self.limit = 12 * 1024 * 1024
+
+    async def __call__(self, scope, receive, send):
+        if scope['type'] != 'http':
+            return await self.inner(scope, receive, send)
+        length = dict(scope.get('headers') or []).get(b'content-length')
+        if length is not None and (not length.isdigit() or int(length) > self.limit):
+            return await JSONResponse({'detail': 'This upload is too large.'}, status_code=413)(scope, receive, send)
+        seen = 0
+
+        async def limited():
+            nonlocal seen
+            message = await receive()
+            if message['type'] == 'http.request':
+                seen += len(message.get('body', b''))
+                if seen > self.limit:
+                    raise HTTPException(413, 'This upload is too large.')
+            return message
+        await self.inner(scope, limited, send)
+
+
+app.add_middleware(BodyLimit)
 
 
 @app.middleware('http')
@@ -206,7 +243,7 @@ def issue_month(conn, company_id, period, user_id, only_contracts=None):
         if portal_ready:
             notify_tenant(conn, c['id'], 'Monthly rent bill ready', f'Invoice {number} for {period} is available. Amount: {euros(b+s)}. Due: {start.isoformat()}.', 'payments')
         else:
-            notify_staff(conn, company_id, 'Rent bill issued; tenant portal not active', f'{c["tenant_name"]} has a new invoice ({number}) but no active tenant portal account to receive the alert.', 'settings')
+            notify_staff(conn, company_id, 'Rent bill issued; tenant portal not active', f'{c["tenant_name"]} has a new invoice ({number}) but no active tenant portal account to receive the alert.', 'tenants', contract_id=c['id'])
         count += 1
     if review and count:
         from .portal_access import notify_staff
@@ -218,6 +255,17 @@ def purge_expired_sessions():
     with transaction() as conn:
         conn.execute('DELETE FROM sessions WHERE expires_at<=?', (now(),))
         conn.execute('DELETE FROM login_attempts WHERE blocked_until<?', (time.time(),))
+
+
+def end_finished_contracts(today=None):
+    """A tenancy whose end date has passed becomes 'ended' by itself (the unit then shows as free and the record is closed)."""
+    today = (today or local_today()).isoformat()
+    with transaction() as conn:
+        rows = conn.execute("SELECT id,company_id FROM contracts WHERE status IN ('active','notice given') AND end_date IS NOT NULL AND end_date<?", (today,)).fetchall()
+        for r in rows:
+            conn.execute("UPDATE contracts SET status='ended' WHERE id=?", (r['id'],))
+            audit(conn, None, r['company_id'], 'ended', 'contract', r['id'], {'automatic': True})
+    return len(rows)
 
 
 def scheduled_invoice_period(today=None):
@@ -309,9 +357,8 @@ def process_overdue_invoices(company_id=None):
 
 async def monthly_billing_scheduler():
     while True:
-        from .email_delivery import deliver_pending_emails
         from .automation import run_all_companies
-        steps = [(run_scheduled_invoices, (scheduled_invoice_period(),)), (process_overdue_invoices, ()), (run_all_companies, ()), (deliver_pending_emails, ()), (purge_expired_sessions, ())]
+        steps = [(end_finished_contracts, ()), (run_scheduled_invoices, (scheduled_invoice_period(),)), (process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ())]
         for step, args in steps:
             try:
                 if step is run_scheduled_invoices and not args[0]:
@@ -324,6 +371,19 @@ async def monthly_billing_scheduler():
         await asyncio.sleep(6 * 60 * 60)
 
 
+async def email_delivery_loop():
+    """Email goes out on its own short loop (every 2 minutes), so retries really happen after 5, 15, 60 and 180 minutes."""
+    from .email_delivery import deliver_pending_emails
+    while True:
+        try:
+            await asyncio.to_thread(deliver_pending_emails, 500)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception('Email delivery loop failed; it tries again in 2 minutes.')
+        await asyncio.sleep(120)
+
+
 @app.get('/api/health')
 def health():
     return {'status': 'ok', 'app': 'Haven', 'payment_mode': 'manual verification'}
@@ -334,19 +394,23 @@ def login(data: dict, request: Request):
     email = text_field(data, 'email', maximum=254).lower()
     password = text_field(data, 'password', maximum=1024)
     attempt_key = hashlib.sha256((email + '|' + (request.client.host if request.client else 'local')).encode()).hexdigest()
+    # the slow password check runs outside the write lock, so many people can sign in at the same moment
+    with connect() as conn:
+        attempt = conn.execute('SELECT * FROM login_attempts WHERE key=?', (attempt_key,)).fetchone()
+        user = conn.execute('SELECT * FROM users WHERE email=? AND active=1', (email,)).fetchone()
+    if attempt and attempt['attempts'] >= 8 and attempt['blocked_until'] > time.time():
+        raise HTTPException(429, 'Too many attempts. Try again in 15 minutes.')
+    valid = verify_password(password, user['password_hash']) if user else verify_password(password, 'pbkdf2:600000:' + 'a'*32 + ':' + '0'*64)
+    rehashed = password_hash(password) if valid and needs_rehash(user['password_hash']) else None
     with transaction() as conn:
         attempt = conn.execute('SELECT * FROM login_attempts WHERE key=?', (attempt_key,)).fetchone()
-        if attempt and attempt['attempts'] >= 8 and attempt['blocked_until'] > time.time():
-            raise HTTPException(429, 'Too many attempts. Try again in 15 minutes.')
-        user = conn.execute('SELECT * FROM users WHERE email=? AND active=1', (email,)).fetchone()
-        valid = verify_password(password, user['password_hash']) if user else verify_password(password, 'pbkdf2:600000:' + 'a'*32 + ':' + '0'*64)
         if not valid:
             attempts = attempt['attempts'] + 1 if attempt and attempt['blocked_until'] > time.time() else 1
             conn.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)', (attempt_key, attempts, time.time()+900))
         else:
             conn.execute('DELETE FROM login_attempts WHERE key=?', (attempt_key,))
-            if needs_rehash(user['password_hash']):
-                conn.execute('UPDATE users SET password_hash=? WHERE id=?', (password_hash(password), user['id']))
+            if rehashed:
+                conn.execute('UPDATE users SET password_hash=? WHERE id=?', (rehashed, user['id']))
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
             conn.execute('INSERT INTO sessions VALUES(?,?,?,?)', (token_hash(token), user['id'], expiry(), csrf))
             audit(conn, user['id'], None, 'signed_in', 'user', user['id'], {})
@@ -411,17 +475,25 @@ def all_data(company_id: int, user=Depends(current_user)):
                     result[table] = []
             result['communications'] = []
             result['documents'] = [dict(r) for r in conn.execute(f'SELECT d.id,d.company_id,d.contract_id,d.name,d.kind,d.mime,d.size,d.sha256,d.created_at,(SELECT COUNT(*) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_count,(SELECT group_concat(s.contract_id) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_contracts FROM documents d WHERE d.company_id=? AND d.contract_id IN ({contract_marks}) AND d.kind NOT IN ("payment proof","supplier invoice","deposit evidence") ORDER BY d.id DESC', (company_id, *contract_ids))] if contract_ids else []
+        from . import history
+        since = history.cutoff()
+        result['history_from'] = since
         for table in (operational if role != 'inspector' else []) + (financial if role in ('admin', 'manager', 'finance') else ['rent_versions', 'valuations'] if role == 'property' else []):
-            result[table] = [dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? ORDER BY id DESC', (company_id,))]
+            if table in history.KEEP_OPEN:   # open items always, closed ones only within the history window
+                result[table] = [dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? AND {history.recent(table)} ORDER BY id DESC', (company_id, since))]
+            else:
+                result[table] = [dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? ORDER BY id DESC', (company_id,))]
         if role in ('admin', 'manager', 'finance'):
             result['service_charge_groups'] = [dict(r) for r in conn.execute('''SELECT g.*, GROUP_CONCAT(p.id || ':' || p.name || ':' || printf('%.4f',u.share_percent), '|') AS units
                 FROM service_charge_groups g JOIN service_charge_group_units u ON u.group_id=g.id JOIN properties p ON p.id=u.property_id
                 WHERE g.company_id=? GROUP BY g.id ORDER BY g.id DESC''', (company_id,))]
         if role != 'inspector':
-            result['documents'] = [dict(r) for r in conn.execute('SELECT d.id,d.company_id,d.contract_id,d.name,d.kind,d.mime,d.size,d.sha256,d.created_at,(SELECT COUNT(*) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_count,(SELECT group_concat(s.contract_id) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_contracts FROM documents d WHERE d.company_id=? AND (? IN ("admin","manager","finance") OR d.kind NOT IN ("payment proof","supplier invoice","deposit evidence")) ORDER BY d.id DESC', (company_id, role))]
+            result['documents'] = [dict(r) for r in conn.execute('SELECT d.id,d.company_id,d.contract_id,d.name,d.kind,d.mime,d.size,d.sha256,d.created_at,(SELECT COUNT(*) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_count,(SELECT group_concat(s.contract_id) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_contracts FROM documents d WHERE d.company_id=? AND (? IN ("admin","manager","finance") OR d.kind NOT IN ("payment proof","supplier invoice","deposit evidence")) AND ' + history.documents_filter() + ' ORDER BY d.id DESC', (company_id, role, since))]
         if role in ('admin','manager','finance'):
             result['arrears_cases']=[{**dict(r),'balance_cents':invoice_balance(conn,r['invoice_id'])} for r in conn.execute('SELECT a.*,i.number invoice_number,i.due_date,t.name tenant_name,p.name property_name FROM arrears_cases a JOIN invoices i ON i.id=a.invoice_id JOIN contracts c ON c.id=a.contract_id JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id WHERE a.company_id=? ORDER BY a.updated_at DESC',(company_id,))]
             result['arrears_events']=[dict(r) for r in conn.execute('SELECT e.*,u.name actor_name FROM arrears_events e LEFT JOIN users u ON u.id=e.created_by WHERE e.company_id=? ORDER BY e.id DESC',(company_id,))]
+            from .email_delivery import pending_summary
+            result['email_status']=pending_summary(conn,company_id)
             result['outbound_emails']=[dict(r) for r in conn.execute('SELECT id,invoice_id,kind,recipient,status,attempts,next_attempt_at,last_error,created_at,sent_at FROM outbound_email_jobs WHERE company_id=? ORDER BY id DESC LIMIT 200',(company_id,))]
         if role in ('admin', 'manager'):
             result['audit'] = [dict(r) for r in conn.execute('SELECT a.id,a.created_at,a.action,a.entity,a.entity_id,a.detail,a.hash,u.name user_name FROM audit a LEFT JOIN users u ON u.id=a.user_id WHERE a.company_id=? ORDER BY a.id DESC LIMIT 250', (company_id,))]
@@ -448,9 +520,15 @@ def archive_tenant(tenant_id: int, data: dict, user=Depends(current_user)):
     with transaction() as conn:
         authorize(conn, user, company_id, OPERATIONS + ('landlord',))
         tenant = linked(conn, 'tenants', tenant_id, company_id)
-        active = conn.execute("SELECT 1 FROM contracts WHERE company_id=? AND tenant_id=? AND status IN ('active','notice given') AND start_date<=? AND (end_date IS NULL OR end_date>=?)", (company_id, tenant_id, local_today().isoformat(), local_today().isoformat())).fetchone()
-        if active:
-            raise HTTPException(409, 'This tenant has an active tenancy. Record the tenancy end date before removing the contact.')
+        from .scope import require_own_tenant
+        require_own_tenant(conn, tenant_id)
+        today = local_today().isoformat()
+        # a current OR future tenancy blocks removal (a future one would still be invoiced to a closed contact)
+        if conn.execute("SELECT 1 FROM contracts WHERE company_id=? AND tenant_id=? AND status IN ('active','notice given') AND (end_date IS NULL OR end_date>=?)", (company_id, tenant_id, today)).fetchone():
+            raise HTTPException(409, 'This tenant has a current or upcoming tenancy. Record the tenancy end date before removing the contact.')
+        owed = sum(invoice_balance(conn, r[0]) for r in conn.execute('SELECT i.id FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE c.tenant_id=? AND i.company_id=? AND i.released_at IS NOT NULL', (tenant_id, company_id)))
+        if owed > 0:
+            raise HTTPException(409, f'This tenant still owes {euros(owed)}. Settle or credit the open invoices before removing the contact.')
         if tenant['archived_at']:
             return {'archived': True}
         conn.execute('UPDATE tenants SET archived_at=? WHERE id=? AND company_id=?', (now(), tenant_id, company_id))
@@ -550,6 +628,8 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
         elif kind == 'contracts':
             prop = linked(conn, 'properties', integer(data, 'property_id'), company_id)
             tenant = linked(conn, 'tenants', integer(data, 'tenant_id'), company_id)
+            if tenant['archived_at']:
+                raise HTTPException(409, 'This tenant was removed. Add the person again before making a contract.')
             start, signed = date_field(data, 'start_date'), date_field(data, 'signed_on')
             end = date_field(data, 'end_date') if data.get('end_date') else None
             if signed > start:
@@ -881,8 +961,10 @@ def invoice_run(data: dict, user=Depends(current_user)):
                 why = f'No tenancy is active in {period}. The earliest one starts on {min(r["start_date"] for r in later)}. Pick a month on or after that date.'
             elif not covering:
                 why = f'No tenancy is active in {period} (they have ended or have not been approved yet).'
-    from .email_delivery import deliver_pending_emails
-    delivery = deliver_pending_emails(company_id=company)
+    from .email_delivery import kick, pending_summary
+    kick()   # the emails go out in the background; the button does not wait for the mail server
+    with connect() as conn:
+        delivery = pending_summary(conn, company)
     return {'created': count, 'email_delivery': delivery, 'why': why}
 
 
@@ -1533,8 +1615,8 @@ def arrears_run(data: dict, user=Depends(current_user)):
     with connect() as conn:
         authorize(conn, user, company, FINANCE)
     count=process_overdue_invoices(company)
-    from .email_delivery import deliver_pending_emails
-    deliver_pending_emails(company_id=company)
+    from .email_delivery import kick
+    kick()
     with transaction() as conn:
         audit(conn, user['id'], company, 'arrears_processed', 'arrears', None, {'cases_created': count})
     return {'created': count}
@@ -1550,9 +1632,9 @@ def retry_email_reminder(job_id: int, user=Depends(current_user)):
             raise HTTPException(409, 'Only failed emails can be retried.')
         conn.execute('UPDATE outbound_email_jobs SET status="queued",attempts=0,next_attempt_at=?,last_error=NULL WHERE id=?', (now(), job_id))
         audit(conn, user['id'], company_id, 'retry_queued', 'invoice_email', job_id, {'invoice_id': job['invoice_id'], 'kind': job['kind']})
-    from .email_delivery import deliver_pending_emails
-    result = deliver_pending_emails(company_id=company_id)
-    return {'ok': True, 'result': result}
+    from .email_delivery import kick
+    kick()
+    return {'ok': True, 'result': {'queued': 1}}
 
 
 @app.post('/api/arrears/cases/{case_id}/step')
@@ -1567,6 +1649,8 @@ def arrears_case_step(case_id:int,data:dict,user=Depends(current_user)):
         received_on=date_field(data,'received_on')
         if received_on>local_today().isoformat() or data.get('legal_template_confirmed') is not True:
             raise HTTPException(422,'Confirm the legally reviewed letter was sent and enter its actual receipt date.')
+        if received_on<occurred_on:
+            raise HTTPException(422,'The tenant cannot have received the letter before it was sent.')
     if step=='municipality_reported' and (data.get('municipality_process_confirmed') is not True or data.get('municipality_consent_confirmed') is not True):
         raise HTTPException(422,'Confirm the municipality reporting arrangement and the tenant’s written permission before recording a referral.')
     with transaction() as conn:
@@ -1594,6 +1678,16 @@ def arrears_case_step(case_id:int,data:dict,user=Depends(current_user)):
             raise HTTPException(422,'Record that debt-help information was provided first.')
         if step=='court_review_decision' and age<90:
             raise HTTPException(422,'Manager review is scheduled at about 90 days overdue.')
+        if step in ('court_review_decision','bailiff_handover'):
+            # Dutch rules: a court route only after the 14-day letter (veertiendagenbrief) and once its 14 days have passed,
+            # and not while the tenant keeps to an agreed payment plan
+            letter=conn.execute('SELECT MAX(received_on) FROM arrears_events WHERE case_id=? AND step="fourteen_day_letter_sent"',(case_id,)).fetchone()[0]
+            if not letter:
+                raise HTTPException(422,'Send the 14-day letter (veertiendagenbrief) first and record when the tenant received it.')
+            if (date.fromisoformat(letter)+timedelta(days=14)).isoformat()>local_today().isoformat():
+                raise HTTPException(422,f'The 14 days of the letter run until {(date.fromisoformat(letter)+timedelta(days=14)).isoformat()}. Escalation is possible after that date.')
+            if conn.execute("SELECT 1 FROM payment_plans p WHERE p.contract_id=? AND p.status='approved' AND EXISTS(SELECT 1 FROM plan_instalments i WHERE i.plan_id=p.id AND i.status='open')",(case['contract_id'],)).fetchone():
+                raise HTTPException(422,'An agreed payment plan is running for this tenancy. Escalation is paused while the tenant keeps to it.')
         if step=='bailiff_handover' and not have('court_review_decision'):
             raise HTTPException(422,'A manager must record the court-route decision before bailiff handover.')
         if step=='tenant_objected' and have('municipality_reported'):
@@ -1611,7 +1705,7 @@ def arrears_case_step(case_id:int,data:dict,user=Depends(current_user)):
     return {'id':event_id,'step':step}
 
 
-def pdf_response(title, lines, filename):
+def pdf_response(title, lines, filename, company=None):
     from reportlab.lib import colors
     from reportlab.lib.enums import TA_CENTER
     from reportlab.lib.pagesizes import A4
@@ -1647,7 +1741,7 @@ def pdf_response(title, lines, filename):
         else:
             story.append(Paragraph(escape(text).replace('\n','<br/>'),styles['ReportBody']))
     def page_chrome(canvas,doc):
-        width,height=A4;canvas.saveState();canvas.setFillColor(green);canvas.rect(0,height-5*mm,width,5*mm,stroke=0,fill=1);canvas.setStrokeColor(line_color);canvas.line(20*mm,14*mm,width-20*mm,14*mm);canvas.setFont('Helvetica',8);canvas.setFillColor(muted);canvas.drawString(20*mm,8*mm,str(snap.get('company_name') or 'Haven').upper()[:50]);canvas.drawRightString(width-20*mm,8*mm,f'Page {doc.page}');canvas.restoreState()
+        width,height=A4;canvas.saveState();canvas.setFillColor(green);canvas.rect(0,height-5*mm,width,5*mm,stroke=0,fill=1);canvas.setStrokeColor(line_color);canvas.line(20*mm,14*mm,width-20*mm,14*mm);canvas.setFont('Helvetica',8);canvas.setFillColor(muted);canvas.drawString(20*mm,8*mm,str(company or 'Haven').upper()[:50]);canvas.drawRightString(width-20*mm,8*mm,f'Page {doc.page}');canvas.restoreState()
     document.build(story,onFirstPage=page_chrome,onLaterPages=page_chrome)
     return Response(stream.getvalue(), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
@@ -1730,6 +1824,7 @@ def service_charge_statement_pdf_bytes(company_name, tenant_name, address, year,
 def settlement_pdf(settlement_id: int, user=Depends(current_user)):
     with transaction() as conn:
         s = record(conn, 'settlements', settlement_id, user, FINANCE)
+        company_name = conn.execute('SELECT name FROM companies WHERE id=?', (s['company_id'],)).fetchone()[0]
         snapshot = json.loads(s['snapshot'])
         audit(conn, user['id'], s['company_id'], 'downloaded', 'settlement', settlement_id, {})
     lines = [f'{snapshot["property"]} | {s["year"]} | {s["status"].upper()}', snapshot['method']]
@@ -1740,13 +1835,14 @@ def settlement_pdf(settlement_id: int, user=Depends(current_user)):
             lines.append(f'Calculation for {tenant_line["tenant"]} / contract #{tenant_line["contract_id"]}: cost #{allocation["cost_id"]} {basis} = {euros(allocation["allocated_cents"])}')
     lines += [f'{l["tenant"]}: {l["days"]} days; cost {euros(l["allocated_cents"])}; verified advances {euros(l["advance_cents"])}; balance {euros(l["result_cents"])}' for l in snapshot['lines']]
     lines += [f'Landlord share: {euros(snapshot["landlord_share_cents"])}', 'Internal review report. Create tenant-specific statements before external distribution.']
-    return pdf_response('Service-charge settlement review', lines, f'settlement-{settlement_id}.pdf')
+    return pdf_response('Service-charge settlement review', lines, f'settlement-{settlement_id}.pdf', company_name)
 
 
 @app.get('/api/contracts/{contract_id}/bundle')
 def contract_bundle(contract_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        c = record(conn, 'contracts', contract_id, user, ('manager',))
+        c = record(conn, 'contracts', contract_id, user, ('manager', 'landlord'))
+        company_name = conn.execute('SELECT name FROM companies WHERE id=?', (c['company_id'],)).fetchone()[0]
         tenant = linked(conn, 'tenants', c['tenant_id'], c['company_id'])
         prop = linked(conn, 'properties', c['property_id'], c['company_id'])
         lines = [f'Tenant: {tenant["name"]}', f'Property: {prop["address"]}', f'Signed: {c["signed_on"]} | Start: {c["start_date"]} | End: {c["end_date"] or "Open"}', 'Contract history']
@@ -1762,7 +1858,7 @@ def contract_bundle(contract_id: int, user=Depends(current_user)):
         for r in conn.execute('SELECT * FROM documents WHERE contract_id=? ORDER BY id', (contract_id,)):
             lines.append(f'#{r["id"]}: {r["name"]} | SHA-256 {r["sha256"]}')
         audit(conn, user['id'], c['company_id'], 'bundle_exported', 'contract', contract_id, {})
-    return pdf_response('Tenancy record summary', lines, f'tenancy-{contract_id}.pdf')
+    return pdf_response('Tenancy record summary', lines, f'tenancy-{contract_id}.pdf', company_name)
 
 
 @app.get('/api/export')
@@ -1807,6 +1903,8 @@ from .sla import router as sla_router
 from .portals import router as portal_router
 from .operations import router as operations_router
 from .finance_ops import router as finance_ops_router
+from .privacy import router as privacy_router
+app.include_router(privacy_router)
 app.include_router(portal_router)
 app.include_router(sla_router)
 app.include_router(owners_router)

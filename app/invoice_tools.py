@@ -181,7 +181,7 @@ def edit_invoice(invoice_id: int, data: dict, user=Depends(current_user)):
 @router.post('/api/invoices/{invoice_id}/email')
 def email_invoice(invoice_id: int, user=Depends(current_user)):
     """Queue (or queue again) the invoice email to the tenant, then try to send it right away."""
-    from .email_delivery import deliver_pending_emails, queue_invoice, smtp_settings
+    from .email_delivery import kick, queue_invoice, smtp_settings
     if not smtp_settings():
         raise HTTPException(409, 'Email delivery is not set up on this server. Add the SMTP settings first.')
     with transaction() as conn:
@@ -195,8 +195,8 @@ def email_invoice(invoice_id: int, user=Depends(current_user)):
         elif not queue_invoice(conn, inv, (tenant['email'] if tenant else '') or ''):
             raise HTTPException(422, 'The tenant has no valid email address.')
         audit(conn, user['id'], inv['company_id'], 'email_queued', 'invoice', invoice_id, {'resend': bool(job)})
-    result = deliver_pending_emails(company_id=inv['company_id'])
-    return {'ok': True, 'result': result}
+    kick()
+    return {'ok': True, 'result': {'queued': 1}}
 
 
 def release_one(conn, inv, user):
@@ -209,7 +209,7 @@ def release_one(conn, inv, user):
     if conn.execute('SELECT 1 FROM portal_accounts WHERE tenant_id=? AND company_id=? AND enabled=1', (c['tenant_id'], inv['company_id'])).fetchone():
         notify_tenant(conn, c['id'], 'Monthly rent bill ready', f'Invoice {inv["number"]} for {inv["period"]} is available. Amount: {euros(inv["total_cents"])}. Due: {inv["due_date"]}.', 'payments')
     else:
-        notify_staff(conn, inv['company_id'], 'Rent bill sent; tenant portal not active', f'{c["tenant_name"]} has a new invoice ({inv["number"]}) but no active tenant portal account to receive the alert.', 'settings')
+        notify_staff(conn, inv['company_id'], 'Rent bill sent; tenant portal not active', f'{c["tenant_name"]} has a new invoice ({inv["number"]}) but no active tenant portal account to receive the alert.', 'tenants', contract_id=c['id'])
     audit(conn, user['id'], inv['company_id'], 'released', 'invoice', inv['id'], {'number': inv['number']})
 
 
@@ -220,8 +220,9 @@ def release_invoice(invoice_id: int, user=Depends(current_user)):
         if inv['released_at']:
             raise HTTPException(409, 'This invoice was already sent to the tenant.')
         release_one(conn, inv, user)
-    from .email_delivery import deliver_pending_emails
-    return {'ok': True, 'email': deliver_pending_emails(company_id=inv['company_id'])}
+    from .email_delivery import kick
+    kick()
+    return {'ok': True, 'email': {'queued': 1}}
 
 
 @router.post('/api/invoices/release')
@@ -237,8 +238,9 @@ def release_many(data: dict, user=Depends(current_user)):
             if scope is not None and row['contract_id'] not in scope.contracts:
                 continue   # a landlord only releases his own invoices
             release_one(conn, dict(row), user)
-    from .email_delivery import deliver_pending_emails
-    return {'released': len([d for d in drafts if scope is None or d['contract_id'] in scope.contracts]), 'email': deliver_pending_emails(company_id=company_id)}
+    from .email_delivery import kick
+    kick()
+    return {'released': len([d for d in drafts if scope is None or d['contract_id'] in scope.contracts]), 'email': {'queued': True}}
 
 
 @router.post('/api/companies/{company_id}/invoice-review')

@@ -57,7 +57,9 @@ def row_in_scope(conn, table, row, scope):
         return row['id'] in scope.owners
     if table == 'portfolios':
         return row['id'] in scope.portfolios
-    if table in ('owner_statements', 'owner_expenses'):
+    if table == 'owner_statements':
+        return row['portfolio_id'] in scope.portfolios and row['status'] != 'draft'
+    if table == 'owner_expenses':
         return row['portfolio_id'] in scope.portfolios
     if table in ('payment_proofs', 'credit_notes'):
         return invoice_contract(conn, row['invoice_id']) in scope.contracts
@@ -83,6 +85,18 @@ def require(conn, table, row):
     scope = getattr(conn, 'scope', None)
     if scope is not None and not row_in_scope(conn, table, row, scope):
         raise HTTPException(404, 'Record not found.')
+
+
+def require_own_tenant(conn, tenant_id):
+    """Changing a tenant (details, portal login) is only for a landlord who is that tenant's only landlord in the company.
+    A tenant who also rents from another owner stays readable for both, but only the company's staff may change the record."""
+    scope = getattr(conn, 'scope', None)
+    if scope is None:
+        return
+    others = conn.execute('SELECT 1 FROM contracts WHERE tenant_id=? AND company_id=? AND id NOT IN (' + marks(scope.contracts) + ') LIMIT 1',
+                          (tenant_id, scope.company_id, *scope.contracts)).fetchone()
+    if others or tenant_id not in scope.tenants:
+        raise HTTPException(403, 'This tenant also rents from another owner. Ask the company to change these details.')
 
 
 def filter_payload(conn, result, scope):
@@ -118,7 +132,7 @@ def filter_payload(conn, result, scope):
     out['owners'] = [r for r in result.get('owners', []) if r['id'] in O]
     out['owner_accounts'] = [r for r in result.get('owner_accounts', []) if r.get('owner_id') in O]
     out['portfolios'] = [r for r in result.get('portfolios', []) if r['id'] in PF]
-    out['owner_statements'] = [r for r in result.get('owner_statements', []) if r.get('portfolio_id') in PF]
+    out['owner_statements'] = [r for r in result.get('owner_statements', []) if r.get('portfolio_id') in PF and r.get('status') != 'draft']   # drafts wait for the four-eyes check
     out['owner_expenses'] = [r for r in result.get('owner_expenses', []) if r.get('portfolio_id') in PF]
     out['owner_documents'] = [r for r in result.get('owner_documents', []) if r.get('owner_id') in O]
     out['doc_templates'] = [r for r in result.get('doc_templates', []) if r.get('kind') == 'Lease' and not r.get('archived')]

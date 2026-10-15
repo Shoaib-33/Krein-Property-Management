@@ -434,6 +434,26 @@ ALTER TABLE tenants ADD COLUMN scope_owner_id INTEGER REFERENCES owners(id);
 '''
 
 
+# V26: privacy erasure after the retention period, and indexes for the hot company/contract lookups.
+# Messages and repair notes stay immutable, except while app/privacy.py anonymises a former tenant (a row in privacy_erasure).
+V26 = '''
+ALTER TABLE tenants ADD COLUMN erased_at TEXT;
+CREATE TABLE privacy_erasure (active INTEGER NOT NULL);
+DROP TRIGGER IF EXISTS portal_message_no_update;
+CREATE TRIGGER portal_message_no_update BEFORE UPDATE ON portal_messages WHEN NOT EXISTS (SELECT 1 FROM privacy_erasure) BEGIN SELECT RAISE(ABORT,'Messages are immutable'); END;
+DROP TRIGGER IF EXISTS repair_update_no_update;
+CREATE TRIGGER repair_update_no_update BEFORE UPDATE ON repair_updates WHEN NOT EXISTS (SELECT 1 FROM privacy_erasure) BEGIN SELECT RAISE(ABORT,'Repair updates are immutable'); END;
+CREATE INDEX IF NOT EXISTS documents_company ON documents(company_id, contract_id);
+CREATE INDEX IF NOT EXISTS payment_proofs_company ON payment_proofs(company_id, status);
+CREATE INDEX IF NOT EXISTS portal_messages_company ON portal_messages(company_id, created_at);
+CREATE INDEX IF NOT EXISTS communications_company ON communications(company_id, created_at);
+CREATE INDEX IF NOT EXISTS requests_company ON requests(company_id, status);
+CREATE INDEX IF NOT EXISTS repair_updates_repair ON repair_updates(repair_id);
+CREATE INDEX IF NOT EXISTS ledger_contract ON ledger(contract_id);
+CREATE INDEX IF NOT EXISTS tenants_email ON tenants(email);
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -633,6 +653,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (25, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=26').fetchone():
+            statement = ''
+            for line in V26.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (26, now()))
         conn.commit()
     except Exception:
         conn.rollback()

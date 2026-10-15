@@ -36,9 +36,22 @@ def notify_tenant(conn, contract_id, title, body, target='home'):
     notify(conn, c['company_id'], ids, title, body, target)
 
 
-def notify_staff(conn, company_id, title, body, target):
+def landlords_for(conn, company_id, contract_id=None, property_id=None):
+    """The landlord logins (owners with management access) whose portfolio holds this tenancy's or this unit's property."""
+    if contract_id is not None:
+        row = conn.execute('SELECT property_id FROM contracts WHERE id=? AND company_id=?', (contract_id, company_id)).fetchone()
+        property_id = row[0] if row else None
+    if property_id is None:
+        return []
+    return [r[0] for r in conn.execute(
+        'SELECT a.user_id FROM properties p JOIN portfolios f ON f.id=p.portfolio_id AND f.archived_at IS NULL JOIN owner_accounts a ON a.owner_id=f.owner_id AND a.company_id=p.company_id AND a.enabled=1 '
+        'JOIN memberships m ON m.user_id=a.user_id AND m.company_id=p.company_id AND m.role="landlord" WHERE p.id=? AND p.company_id=?', (property_id, company_id))]
+
+
+def notify_staff(conn, company_id, title, body, target, contract_id=None, property_id=None):
+    """Alert the company's staff, and the landlord of the unit when the alert is about one tenancy or unit."""
     ids = [r[0] for r in conn.execute('SELECT m.user_id FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=? AND u.active=1 AND m.role IN ("admin","manager","property","finance")', (company_id,))]
-    notify(conn, company_id, ids, title, body, target)
+    notify(conn, company_id, ids + landlords_for(conn, company_id, contract_id, property_id), title, body, target)
 
 
 PRIVATE_KINDS = ('payment proof', 'supplier invoice', 'deposit evidence', 'contractor agreement')

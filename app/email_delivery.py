@@ -3,6 +3,7 @@ import os
 import json
 import logging
 import smtplib
+import threading
 import ssl
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
@@ -37,9 +38,13 @@ def smtp_settings():
     }
 
 
+def valid_recipient(recipient):
+    return bool(recipient) and parseaddr(recipient)[1] == recipient and '@' in recipient
+
+
 def queue_reminder(conn, invoice, kind, recipient):
-    """Queue once only when outbound email has been explicitly configured."""
-    if not smtp_settings() or not recipient or parseaddr(recipient)[1] != recipient or '@' not in recipient:
+    """Queue once. Reminders are only queued when email is set up: a reminder that arrives weeks later would be wrong."""
+    if not smtp_settings() or not valid_recipient(recipient):
         return False
     conn.execute(
         'INSERT OR IGNORE INTO outbound_email_jobs '
@@ -51,8 +56,9 @@ def queue_reminder(conn, invoice, kind, recipient):
 
 
 def queue_invoice(conn, invoice, recipient):
-    """Queue the newly issued invoice once, when SMTP and tenant email are configured."""
-    if not smtp_settings() or not recipient or parseaddr(recipient)[1] != recipient or '@' not in recipient:
+    """Queue the newly issued invoice once. It is queued even while email is not set up yet, so nothing is lost:
+    it goes out as soon as the SMTP settings are added (invoices older than STALE_DAYS are then skipped, see deliver_pending_emails)."""
+    if not valid_recipient(recipient):
         return False
     conn.execute(
         'INSERT OR IGNORE INTO outbound_email_jobs '
@@ -176,12 +182,39 @@ def _deliver_one(job, settings):
     return 'sent'
 
 
-def deliver_pending_emails(limit=50, company_id=None):
-    """Attempt due jobs; retry transient errors and stop after five attempts."""
+STALE_DAYS = 30
+_kick_lock = threading.Lock()
+
+
+def kick():
+    """Start sending in the background (used right after a staff action), so the request itself never waits for the mail server."""
+    if not smtp_settings() or not _kick_lock.acquire(blocking=False):
+        return
+    def run():
+        try:
+            deliver_pending_emails(limit=500)
+        except Exception:
+            logging.exception('Background email delivery failed.')
+        finally:
+            _kick_lock.release()
+    threading.Thread(target=run, name='haven-email', daemon=True).start()
+
+
+def pending_summary(conn, company_id):
+    """For the staff screens: what is waiting, and whether email is set up at all."""
+    row = conn.execute("SELECT SUM(status='queued' OR status='sending'),SUM(status='failed') FROM outbound_email_jobs WHERE company_id=?", (company_id,)).fetchone()
+    return {'configured': bool(smtp_settings()), 'waiting': row[0] or 0, 'failed': row[1] or 0}
+
+
+def deliver_pending_emails(limit=200, company_id=None):
+    """Attempt due jobs; retry transient errors (5, 15, 60, 180 minutes) and stop after five attempts."""
     settings = smtp_settings()
     if not settings:
         return {'sent': 0, 'failed': 0, 'queued': 0}
     stamp = now()
+    stale = (datetime.now(timezone.utc) - timedelta(days=STALE_DAYS)).isoformat(timespec='seconds')
+    with db.transaction() as conn:   # an invoice email that waited a month for the SMTP settings is not sent any more
+        conn.execute("UPDATE outbound_email_jobs SET status='cancelled',last_error='Not sent: it waited more than 30 days for email to be set up.' WHERE status='queued' AND kind='invoice_issued' AND attempts=0 AND next_attempt_at=created_at AND created_at<?", (stale,))
     lease_until = (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(timespec='seconds')
     with db.transaction() as conn:
         # Recover stale in-flight work and atomically claim jobs to prevent concurrent sends.

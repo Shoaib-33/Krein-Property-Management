@@ -148,7 +148,10 @@
       const c = company();
       const drafts = rows('invoices').filter(i => !i.released_at).length;
       const draftBanner = drafts ? `<div class="notice inv-drafts"><span>${icon('edit')} <strong>${drafts} draft invoice${drafts === 1 ? '' : 's'} waiting for your review.</strong> Open one with Manage to check or edit it.</span>${canEdit() ? '<button type="button" class="button primary small" data-inv="send-all">Send all to tenants</button>' : ''}</div>` : '';
-      return html.replace(/(<div class="page-heading">)/, m => draftBanner + `<div class="inv-strip">${brandMark(c)}<div><strong>${e(c.name)}</strong><small>${e(c.address || '')}</small></div>${canBrand() && !c.logo_version ? '<button type="button" class="button small" data-action="navigate" data-page="settings">Add your logo</button>' : ''}</div>` + m);
+      const mail = state.data.email_status;
+      const mailBanner = mail && !mail.configured ? `<div class="notice inv-drafts"><span>${icon('clock')} <strong>Email is not set up on this server yet.</strong> Invoices still reach the tenant portal. ${mail.waiting ? `${mail.waiting} email${mail.waiting === 1 ? ' is' : 's are'} waiting and will go out once the SMTP settings are added.` : ''}</span></div>`
+        : mail && mail.failed ? `<div class="notice inv-drafts"><span>${icon('clock')} <strong>${mail.failed} email${mail.failed === 1 ? '' : 's'} could not be delivered.</strong> See Arrears &gt; Invoice email delivery to retry.</span></div>` : '';
+      return html.replace(/(<div class="page-heading">)/, m => mailBanner + draftBanner + `<div class="inv-strip">${brandMark(c)}<div><strong>${e(c.name)}</strong><small>${e(c.address || '')}</small></div>${canBrand() && !c.logo_version ? '<button type="button" class="button small" data-action="navigate" data-page="settings">Add your logo</button>' : ''}</div>` + m);
     }
     return html;
   };

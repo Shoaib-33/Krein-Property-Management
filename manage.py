@@ -138,11 +138,18 @@ def create_admin():
 
 def main():
     parser=argparse.ArgumentParser(description='Haven local administration')
-    parser.add_argument('command',choices=['demo','init','create-admin','backup'])
+    parser.add_argument('command',choices=['demo','init','create-admin','backup','privacy-erase'])
+    parser.add_argument('--apply',action='store_true',help='privacy-erase: really anonymise (without it, only list who would be)')
     args=parser.parse_args()
     if args.command=='demo': demo()
     elif args.command=='init': db.init_db(); print('Database initialized.')
     elif args.command=='create-admin': create_admin()
+    elif args.command=='privacy-erase':
+        from app.privacy import retention_years, run_erasure
+        db.init_db()
+        found=run_erasure(apply=args.apply)
+        print(f'{len(found)} former tenant(s) past the {retention_years()}-year retention period'+(' were anonymised.' if args.apply else ' would be anonymised. Run again with --apply to do it.'))
+        for t in found: print(f'  #{t["id"]} {t["name"]} (removed {str(t["archived_at"])[:10]})')
     elif args.command=='backup':
         import sqlite3
         import zipfile

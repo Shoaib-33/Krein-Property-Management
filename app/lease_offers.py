@@ -441,7 +441,7 @@ def sign(offer_id: int, data: dict, request: Request, user=Depends(current_user)
                      (tenant['name'], stamp, ip, digest, json.dumps(values) if defs is not None else None, image, mode, offer_id))
         if values.get('phone') and not (tenant['phone'] or '').strip():
             conn.execute('UPDATE tenants SET phone=? WHERE id=?', (values['phone'], tenant['id']))
-        notify_staff(conn, offer['company_id'], 'Contract signed, approval needed', f'{tenant["name"]} signed the tenancy agreement.', 'tenants')
+        notify_staff(conn, offer['company_id'], 'Contract signed, approval needed', f'{tenant["name"]} signed the tenancy agreement.', 'tenants', property_id=offer['property_id'])
         audit(conn, user['id'], offer['company_id'], 'signed', 'lease_offer', offer_id, {'ip': ip, 'sha256': digest, 'signature_mode': mode, 'details_given': sorted(values)})
     return {'ok': True}
 
@@ -454,7 +454,7 @@ def decline(offer_id: int, data: dict, user=Depends(current_user)):
         if offer['status'] not in ('sent', 'returned', 'signed'):
             raise HTTPException(409, 'This contract is already closed.')
         conn.execute("UPDATE lease_offers SET status='declined',response_note=? WHERE id=?", (reason, offer_id))
-        notify_staff(conn, offer['company_id'], 'Contract declined by tenant', reason, 'tenants')
+        notify_staff(conn, offer['company_id'], 'Contract declined by tenant', reason, 'tenants', property_id=offer['property_id'])
         audit(conn, user['id'], offer['company_id'], 'declined', 'lease_offer', offer_id, {'reason': reason})
     return {'ok': True}
 

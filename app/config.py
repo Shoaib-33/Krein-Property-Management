@@ -6,7 +6,11 @@ from pathlib import Path
 
 
 def load_local_env() -> None:
-    """Load project-root .env values without overriding deployment environment."""
+    """Load project-root .env values without overriding deployment environment.
+    The test suite never reads .env, so tests can not send real email or use real API keys."""
+    import sys
+    if os.path.basename(os.path.dirname(sys.argv[0] or '')) == 'unittest' or os.environ.get('HAVEN_SKIP_DOTENV') == '1':
+        return
     env_file = Path(__file__).resolve().parent.parent / '.env'
     try:
         lines = env_file.read_text(encoding='utf-8-sig').splitlines()

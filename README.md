@@ -35,7 +35,7 @@ Set HAVEN_RENT_BILL_DAY to a day from 1 to 28 to change the monthly run date. Th
 
 #### SMTP invoice and arrears email
 
-For local use, copy `.env.example` to `.env` in the project folder and fill in your SMTP provider's values. Haven loads `.env` automatically when it starts; values already set by the operating system or deployment take precedence. Keep `.env` private and out of source control. On Hugging Face, set the same names in Space Variables and Secrets. SMTP needs `HAVEN_SMTP_HOST`, `HAVEN_SMTP_FROM`, and `HAVEN_PUBLIC_URL`; set `HAVEN_SMTP_PORT` (default `587`), `HAVEN_SMTP_USERNAME`, `HAVEN_SMTP_PASSWORD`, and optionally `HAVEN_SMTP_STARTTLS` (default `1`) or `HAVEN_SMTP_SSL` (default `0`) for your provider. If SMTP is not configured, Haven continues using in-portal invoices and alerts and staff tasks. Failed deliveries retry automatically up to five times; finance staff can retry failed invoice or reminder emails from the relevant page. Invoice messages include the PDF invoice; overdue messages are friendly reminders only. Haven does not automatically send a formal 14-day notice or postal letters.
+For local use, copy `.env.example` to `.env` in the project folder and fill in your SMTP provider's values. Haven loads `.env` automatically when it starts; values already set by the operating system or deployment take precedence. Keep `.env` private and out of source control. On Hugging Face, set the same names in Space Variables and Secrets. SMTP needs `HAVEN_SMTP_HOST`, `HAVEN_SMTP_FROM`, and `HAVEN_PUBLIC_URL`; set `HAVEN_SMTP_PORT` (default `587`), `HAVEN_SMTP_USERNAME`, `HAVEN_SMTP_PASSWORD`, and optionally `HAVEN_SMTP_STARTTLS` (default `1`) or `HAVEN_SMTP_SSL` (default `0`) for your provider. If SMTP is not configured, Haven continues using in-portal invoices and alerts and staff tasks. Emails go out on their own background loop every 2 minutes (buttons never wait for the mail server). Failed deliveries retry after 5, 15, 60 and 180 minutes, up to five times; finance staff can retry failed invoice or reminder emails from the relevant page. Invoice emails are queued even while SMTP is not set up yet and go out once it is (invoice emails older than 30 days are then skipped); the Invoices page shows a notice while email is not set up or when deliveries failed. Invoice messages include the PDF invoice; overdue messages are friendly reminders only. Haven does not automatically send a formal 14-day notice or postal letters.
 
 ### Demo accounts
 
@@ -173,7 +173,8 @@ Every signed-in screen (landlord, tenant, owner, contractor) has a **Help** bubb
 - **With Groq (tried first):** put a free key from https://console.groq.com/keys in `.env` as `GROQ_API_KEY=...` and restart. The model defaults to `openai/gpt-oss-20b`; override it with `HAVEN_GROQ_MODEL`.
 - **With Gemini (fallback):** put a free key from https://aistudio.google.com/apikey in `.env` as `GEMINI_API_KEY=...` and restart. The model defaults to `gemini-flash-latest` (Google's alias for the newest Flash model); override it with `HAVEN_GEMINI_MODEL`.
 - **Without a key** (or if Gemini is unreachable or over its free quota) a built-in keyword guide answers instead, so the bubble always works.
-- **Privacy:** the browser never sees the key. Only the question, the last few chat turns and the current page name are sent to Google. No tenant, invoice or user data is sent, and the assistant cannot read or change anything. Each user is limited to 15 questions a minute.
+- **Privacy:** the browser never sees the key. What the person types (the question and the last few chat turns) and the current page name are sent to Groq or Google; no records from the database are sent, and the assistant cannot read or change anything. Email addresses, phone numbers, IBANs and other long numbers are masked before sending, and the chat shows a notice not to type personal details. Name Groq and Google as processors in your privacy statement (see `docs/PRIVACY.md`).
+- **Limits:** each user can ask 15 questions a minute; `HAVEN_ASSISTANT_DAILY_LIMIT` (default 2000) caps AI calls per day for the whole server. `HAVEN_ASSISTANT_AI_FOR` (default `staff,owner,contractor,tenant`) chooses who gets the AI; for example `staff,owner` keeps tenants on the built-in guide.
 
 ## Contracts for signature
 
@@ -192,7 +193,8 @@ The staff screens do not download the whole history any more. `GET /api/data` se
 - **Invoices**, the **tenant ledger** and the **audit trail** are paged and searchable on the server (`/api/invoices`, `/api/ledger`, `/api/audit`: `q`, filters, `page`, `page_size`). Search covers every record, not only the loaded ones.
 - Opening an old month on the Overview loads that month on demand (`/api/periods/{YYYY-MM}`). The month-by-month analysis uses the all-time totals.
 - Tickets draw 40 conversations at a time ("Show more"); a search shows every match.
-- Still sent in full: tenants, contracts, properties, tasks, repairs, messages and requests. These are small per record. If they grow into tens of thousands of rows, page them the same way.
+- Tenants, contracts and properties are sent in full. Repairs, tasks, requests, letters, messages and documents are sent when they are still open or from the last `HAVEN_HISTORY_MONTHS` months (default 13); older closed items stay in the database, the tenant export and the reports. With 300 tenants and 5 years of history the page load is about 2.8 MB (0.6 s) instead of 15.8 MB.
+- Request bodies above `HAVEN_MAX_BODY_MB` (default 12) are refused before they are read. The interactive API pages (`/docs`, `/openapi.json`) are off unless `HAVEN_API_DOCS=1`.
 
 ## English and Dutch
 
@@ -250,3 +252,21 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 - **One login, several companies**: if the invited person already has a Haven login, they sign in, open the link and accept. The company is then added to their company picker. Nobody is added to a company without accepting.
 - **All companies** (menu): key figures of every company the user can open: houses, occupancy, rent roll, open and overdue invoices, tickets and approvals. Money figures are shown to admin, manager and finance roles only.
 - Removing someone's last company closes their login; a new invitation opens it again with a new password. A company always keeps at least one administrator.
+
+### Landlords (owners who manage their own units)
+
+- In **Owners & portfolios**, an administrator presses **Give management access** for an owner who has a portal login. That owner signs in at **`/landlord`** (a separate session, so an admin and a landlord can be signed in in the same browser) and sees only the units in his portfolios: their tenants, contracts, invoices, payments, repairs, tickets, messages and documents. He cannot add properties (the administrator assigns them), and he never sees other owners, settings, the team or company-wide figures.
+- He gets the alerts for his own units (new repairs, payment receipts, tenant messages, signed contracts) and can invite his tenants to the portal from **Tenants & contracts > Tenant directory**.
+- A tenant who also rents from another owner can be read by both, but only the company's staff can change that tenant's details.
+
+### Privacy (AVG/GDPR)
+
+- **Tenant data export:** Tenants & contracts > Tenant directory > **Export data** downloads a ZIP with everything Haven holds about that tenant (data.json plus the files of their tenancies).
+- **Erasure after the retention period:** `python manage.py privacy-erase` lists former tenants whose last tenancy ended more than `HAVEN_RETENTION_YEARS` years ago (default 7) and who owe nothing; `python manage.py privacy-erase --apply` anonymises them (name, contact details, messages, form answers, signatures and files are removed; amounts and invoice numbers stay). Run it, for example, once a month.
+- See `docs/PRIVACY.md` for the processors (hosting, email provider, Groq/Google for the help chat) and text for your privacy statement.
+
+### Tenancies, tenants and arrears
+
+- A tenancy whose end date has passed becomes **ended** by itself.
+- A tenant cannot be removed while a tenancy is current or upcoming, or while money is still owed.
+- The court route (court review and bailiff handover) is only possible after the 14-day letter (veertiendagenbrief) was recorded with its receipt date and its 14 days have passed, and not while an agreed payment plan is running.
