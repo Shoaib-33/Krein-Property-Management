@@ -76,7 +76,7 @@ async def security_headers(request, call_next):
     response = await call_next(request)
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['Referrer-Policy'] = 'no-referrer'
+    response.headers['Referrer-Policy'] = 'same-origin'   # never sent to other sites; the landlord address uses it to pick its own session for file downloads
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     response.headers['Cache-Control'] = 'no-store'
     if os.environ.get('HAVEN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
@@ -1846,6 +1846,7 @@ def landing():
 @app.get('/join/{token}')
 @app.get('/tenant')
 @app.get('/owner')
+@app.get('/landlord')
 @app.get('/contractor')
 def index(token: str = ''):
     return FileResponse(ROOT / 'static' / 'index.html')

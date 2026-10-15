@@ -247,6 +247,17 @@ class LandlordScopeTests(unittest.TestCase):
         self.assertEqual(len(self.manager.get('/api/data?company_id=1').json()['properties']), len(self.full['properties']))
         self.assertEqual(self.login('landlord.a@example.com', LANDLORD_PASSWORD, 'owner').get('/api/owner/data').status_code, 200)
 
+    def test_admin_and_landlord_can_be_signed_in_in_the_same_browser(self):
+        c = TestClient(app)
+        self.clients.append(c)
+        self.assertEqual(c.post('/api/login', json={'email': 'admin@haven.local', 'password': PASSWORD}).status_code, 200)
+        landlord = c.post('/api/login', headers={'X-Haven-Portal': 'landlord'}, json={'email': 'landlord.a@example.com', 'password': LANDLORD_PASSWORD})
+        self.assertEqual(landlord.status_code, 200)
+        self.assertEqual(c.get('/api/me').json()['email'], 'admin@haven.local')
+        self.assertEqual(c.get('/api/me', headers={'X-Haven-Portal': 'landlord'}).json()['email'], 'landlord.a@example.com')
+        self.assertEqual(c.get('/api/me', headers={'Referer': 'http://testserver/landlord'}).json()['email'], 'landlord.a@example.com')
+        self.assertEqual(c.get('/landlord').status_code, 200)
+
     def test_a_person_with_a_company_wide_role_cannot_be_turned_into_a_landlord(self):
         manager_owner = self.manager.post('/api/owners', json={'company_id': 1, 'name': 'Staff Owner', 'email': 'manager@haven.local', 'phone': '', 'payout_details': ''}).json()['id']
         self.assertEqual(self.platform.post(f'/api/owners/{manager_owner}/full-access', json={'enabled': True}).status_code, 409)

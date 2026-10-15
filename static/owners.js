@@ -119,7 +119,7 @@
     'full-access-on': id => {
       const o = ownerOf(id), n = activePortfolios().filter(p => p.owner_id === o.id).flatMap(p => unitsOf(p.id)).length;
       if (!confirm(`Give ${o.name} management access? He can then run his own ${n} unit${n === 1 ? '' : 's'} of ${company().name}: dashboard, tenants, contracts, invoices, payments, repairs and documents. He sees nothing of the other units, owners or settings of the company.`)) return;
-      return api(`/api/owners/${id}/full-access`, {method: 'POST', body: {enabled: true}}).then(refresh).then(() => toast(`${o.name} can now manage his own units. He signs in at the main address with the same email and password.`));
+      return api(`/api/owners/${id}/full-access`, {method: 'POST', body: {enabled: true}}).then(refresh).then(() => toast(`${o.name} can now manage his own units. He signs in at /landlord with the same email and password.`));
     },
     'full-access-off': id => {
       const o = ownerOf(id);

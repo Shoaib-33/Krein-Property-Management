@@ -1,3 +1,4 @@
+from urllib.parse import urlparse
 import hashlib
 import hmac
 import os
@@ -45,13 +46,15 @@ def expiry(days=1):
     return (datetime.now(timezone.utc) + timedelta(days=days)).isoformat(timespec='seconds')
 
 
-PORTALS = ('tenant', 'contractor', 'owner')
+PORTALS = ('tenant', 'contractor', 'owner', 'landlord')
 
 
 def portal_of(request: Request):
     portal = request.headers.get('X-Haven-Portal', '')
     if portal not in PORTALS:
         portal = next((p for p in PORTALS if request.url.path.startswith('/api/' + p + '/')), '')
+    if not portal and urlparse(request.headers.get('referer', '')).path == '/landlord':
+        portal = 'landlord'   # a file opened from the landlord page (no custom header on plain links) must use the landlord session
     return portal
 
 

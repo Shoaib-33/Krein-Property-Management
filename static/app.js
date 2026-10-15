@@ -74,6 +74,7 @@ async function api(path,options={}){
   const headers={...(options.headers||{})};
   if(options.body && !(options.body instanceof FormData)){headers['Content-Type']='application/json';options.body=JSON.stringify(options.body);}
   if(state.me?.csrf)headers['X-CSRF-Token']=state.me.csrf;
+  if(location.pathname==='/landlord')headers['X-Haven-Portal']='landlord';
   const response=await fetch(path,{...options,headers});
   const result=await response.json().catch(()=>({detail:'The server returned an unexpected response.'}));
   if(!response.ok){

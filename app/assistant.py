@@ -124,7 +124,7 @@ THANKS = 'You are welcome! Ask me anything else about finding your way around Ha
 
 
 def audience(request: Request):
-    return portal_of(request) or 'staff'
+    return {'landlord': 'staff'}.get(portal_of(request), portal_of(request)) or 'staff'
 
 
 DUTCH_RULE = ('Answer in Dutch (Nederlands). The app screens are shown in Dutch, so use these Dutch menu names: Overzicht, Woningen, Huurders en contracten, '
