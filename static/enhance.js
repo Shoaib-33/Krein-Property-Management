@@ -36,7 +36,7 @@
       title: `${pending.length} payment receipt${pending.length > 1 ? 's' : ''} waiting`,
       copy: 'Verifying quickly keeps tenant balances accurate.', cta: 'Verify now'});
     const signedOffers = rows('lease_offers').filter(o => o.status === 'signed');
-    if (signedOffers.length) out.push({tone: 'amber', weight: 96, icon: 'file', page: 'tenants',
+    if (signedOffers.length) out.push({tone: 'amber', weight: 96, icon: 'file', page: 'contracts',
       title: `${signedOffers.length} signed contract${signedOffers.length > 1 ? 's' : ''} waiting for approval`,
       copy: `${signedOffers[0].tenant_name} signed. Approve it so the tenancy can start.`, cta: 'Review contracts'});
     const lateRepairs = rows('repairs').filter(r => !['done', 'closed'].includes(r.status) && r.due_date < t);
@@ -53,7 +53,7 @@
       title: `${emergencies.length} open emergency repair${emergencies.length > 1 ? 's' : ''}`,
       copy: emergencies[0].title, cta: 'Respond'});
     const ending = rows('contracts').filter(c => c.end_date && c.end_date >= t && daysBetween(t, c.end_date) <= 60 && c.status !== 'ended');
-    if (ending.length) out.push({tone: 'blue', weight: 60, icon: 'calendar', page: 'tenants',
+    if (ending.length) out.push({tone: 'blue', weight: 60, icon: 'calendar', page: 'contracts',
       title: `${ending.length} tenanc${ending.length > 1 ? 'ies end' : 'y ends'} within 60 days`,
       copy: 'Plan move-out inspections and deposit returns ahead of time.', cta: 'See tenancies'});
     const vacant = rows('properties').filter(p => !activeContract(p.id) && !upcomingContract(p.id));

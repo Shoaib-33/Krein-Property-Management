@@ -11,7 +11,7 @@
 
   renderPage = () => {
     const html = baseRender();
-    if (state.page !== 'tenants' || !state.company || !canSend()) return html;
+    if (state.page !== 'contracts' || !state.company || !canSend()) return html;
     const swapped = html.replace(/<button[^>]*data-action="manual-contract-form"[^>]*>[^<]*<\/button>/, () => lease('Send contract for signature', 'send', '', 'primary') + `<button type="button" class="button" data-action="manual-contract-form" title="For a contract that was signed on paper">Signed on paper? Record it</button>`);
     return swapped.replace('<section class="panel">', () => offersPanel() + '<section class="panel">');
   };

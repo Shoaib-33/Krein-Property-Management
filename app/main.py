@@ -1953,6 +1953,8 @@ from .privacy import router as privacy_router
 app.include_router(privacy_router)
 from .banking import router as banking_router
 app.include_router(banking_router)
+from .tenant_file import router as tenant_file_router
+app.include_router(tenant_file_router)
 app.include_router(portal_router)
 app.include_router(sla_router)
 app.include_router(owners_router)

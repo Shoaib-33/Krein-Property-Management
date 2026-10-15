@@ -3,7 +3,7 @@
    The server already cuts every answer down to his own properties; this file only trims the menu to what he can use. */
 (() => {
   if (typeof render !== 'function' || typeof allowedPage !== 'function') return;
-  const PAGES = ['overview', 'properties', 'tenants', 'invoices', 'payments', 'deposits', 'repairs', 'inspections', 'communications', 'portal-inbox', 'tenant-messages', 'documents', 'tasks'];
+  const PAGES = ['overview', 'properties', 'tenants', 'contracts', 'invoices', 'payments', 'deposits', 'repairs', 'inspections', 'communications', 'portal-inbox', 'tenant-messages', 'documents', 'tasks'];
   const STAFF_ONLY = ['deposit-review', 'reverse-proof', 'portfolio-import', 'work-order-form', 'inspector-assignment', 'email-retry', 'credit-review', 'arrears-plan-review',
     'settlement-review', 'rent-review', 'quote-review', 'contractor-agreement-review', 'arrears-step'].map(a => `[data-action="${a}"]`)
     .concat(['a[href^="/api/export"]', '[data-in="starter-replies"]', '[data-in="save-reply"]', '[data-tool="sla-edit"]', 'label:has(#logo-file)']).join(',');

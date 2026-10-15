@@ -90,7 +90,7 @@ async function refresh(){
   render();
 }
 const navGroups=[
- ['WORKSPACE',[['overview','Overview','grid'],['properties','Properties','building'],['tenants','Tenants & contracts','users']]],
+ ['WORKSPACE',[['overview','Overview','grid'],['properties','Properties','building'],['tenants','Tenants','users'],['contracts','Contracts','file']]],
  ['FINANCE',[['invoices','Invoices','file'],['payments','Payment verification','shield'],['arrears','Arrears','clock'],['deposits','Deposits','wallet'],['service','Service charges','chart'],['rent','Rent & valuations','chart']]],
  ['OPERATIONS',[['repairs','Maintenance','wrench'],['inspections','Inspections','clipboard'],['communications','Communications','message'],['portal-inbox','Tenant inbox','message'],['contractors','Contractors','wrench'],['documents','Documents','folder'],['tasks','Tasks & compliance','calendar']]],
  ['ADMINISTRATION',[['reports','Reports & audit','chart'],['settings','Settings','settings']]]
@@ -99,7 +99,7 @@ function allowedPage(page){
  const role=company().role;
  if(page==='settings')return role==='admin';
  if(page==='portal-inbox')return role==='admin'||role==='manager';
- if(role==='inspector')return ['overview','properties','tenants','repairs','inspections','documents','tasks'].includes(page);
+ if(role==='inspector')return ['overview','properties','tenants','contracts','repairs','inspections','documents','tasks'].includes(page);
  if(role==='property')return !['invoices','payments','arrears','deposits','service','rent','reports','settings'].includes(page);
  if(role==='finance')return !['settings','reports','contractors'].includes(page);
  return true;
@@ -118,7 +118,7 @@ function render(){
  applyProgressWidths();
 }
 function applyProgressWidths(){document.querySelectorAll('[data-width]').forEach(el=>{el.style.width=el.dataset.width+'%';});}
-function renderPage(){return ({overview:overview,properties:propertiesPage,tenants:tenantsPage,invoices:invoicesPage,payments:paymentsPage,arrears:arrearsPage,deposits:depositsPage,service:servicePage,rent:rentPage,repairs:repairsPage,inspections:inspectionsPage,communications:communicationsPage,'portal-inbox':inboxPage,contractors:contractorsPage,documents:documentsPage,tasks:tasksPage,reports:reportsPage,settings:settingsPage}[state.page]||overview)();}
+function renderPage(){return ({overview:overview,properties:propertiesPage,tenants:tenantsPage,contracts:contractsPage,invoices:invoicesPage,payments:paymentsPage,arrears:arrearsPage,deposits:depositsPage,service:servicePage,rent:rentPage,repairs:repairsPage,inspections:inspectionsPage,communications:communicationsPage,'portal-inbox':inboxPage,contractors:contractorsPage,documents:documentsPage,tasks:tasksPage,reports:reportsPage,settings:settingsPage}[state.page]||overview)();}
 function stat(label,value,foot,symbol){const page={'Total properties':'properties','Rent collected':'invoices','Active tenancies':'tenants','Awaiting verification':'payments','Open maintenance':'repairs'}[label]||'overview';const content=`<span class="stat-top">${e(label)}<span class="stat-symbol">${icon(symbol)}</span></span><span class="stat-value">${e(value)}</span><span class="stat-foot">${foot}</span>`;return allowedPage(page)?`<button class="stat stat-link" data-action="navigate" data-page="${page}" aria-label="${e(label)}: ${e(value)}. Open ${page}">${content}<span class="stat-hint">View details ${icon('arrow')}</span></button>`:`<div class="stat">${content}</div>`;}
 function overview(){
   const currentPeriod=(state.data.today||today()).slice(0,7);
@@ -156,7 +156,23 @@ function propertiesPage(){
 }
 function tenantsPage(){
  const active=rows('tenants').filter(t=>!t.archived_at),archived=rows('tenants').filter(t=>t.archived_at);
- return heading('People, with a place to call home','Tenant records and the agreements that connect them to your properties.',button('Import portfolio CSV','portfolio-import')+button('Add tenant','form','data-kind="tenants"')+button('Record signed contract','manual-contract-form','','primary'),'TENANCIES')+panel('Rental contracts',`${rows('contracts').length} agreements in this company`,table(['Tenant','Property','Monthly rent','Start date','Due payment','Next scheduled payment','Status',''],rows('contracts').map(c=>{const r=rentFor(c.id);return [tenantCell(tenantFor(c.id)),e(propertyFor(c.id).name),`<span class="amount">${money((r.basic_cents||0)+(r.service_cents||0))}</span>`,dateLabel(c.start_date),dueCell(c.id),nextCell(c.id),badge(c.end_date&&c.end_date<today()?'ended':c.status),actionBtn('Open file','contract-detail',c.id)];})))+`<div class="section-stack">${panel('Tenant directory','Remove a contact after the tenancy ends. Its contract and financial history are retained.',table(['Name','Email','Phone','Language','Bank account (rent paid from)','Portal',''],active.map(t=>{const a=rows('portal_accounts').find(a=>a.tenant_id===t.id);const banks=rows('tenant_bank_accounts').filter(b=>b.tenant_id===t.id);return[e(t.name),e(t.email),e(t.phone),t.language==='nl'?'Dutch':'English',banks.map(b=>`<div class="bank-acc"><span>${e(b.iban.replace(/(.{4})/g,'$1 ').trim())}</span><button type="button" class="link-button" data-bank="account-remove" data-id="${b.id}" aria-label="Remove bank account" title="Remove">×</button>${b.holder?`<small>${e(b.holder)}</small>`:''}</div>`).join('')+`<button type="button" class="button small" data-bank="account-add" data-id="${t.id}">Add IBAN</button>`,a?badge(a.enabled?'Enabled':'Paused'):actionBtn('Invite to portal','invite',t.id,'small primary'),`<div class="actions"><a class="button small" href="/api/tenants/${t.id}/export" title="Everything Haven holds about this tenant (privacy request)">Export data</a>${actionBtn('Remove','tenant-archive',t.id,'danger small')}</div>`];})))}${archived.length?panel('Removed contacts','Archived contacts keep their historical records. Restore to return one to the directory.',table(['Name','Email','Removed',''],archived.map(t=>[e(t.name),e(t.email),dateLabel(t.archived_at),actionBtn('Restore','tenant-restore',t.id,'small')]))):''}</div>`;
+ const money_=!['property','inspector'].includes(company().role);
+ const q=(state.tenantSearch||'').toLowerCase();
+ const list=active.filter(t=>!q||`${t.name} ${t.email} ${t.phone}`.toLowerCase().includes(q));
+ const homeOf=t=>{const cs=rows('contracts').filter(c=>c.tenant_id===t.id);return cs.find(c=>['active','notice given'].includes(c.status)&&!(c.end_date&&c.end_date<today()))||cs[0];};
+ const openOf=t=>rows('invoices').filter(i=>contract(i.contract_id).tenant_id===t.id&&i.released_at&&balance(i)>0).reduce((s,i)=>s+balance(i),0);
+ const body=list.map(t=>{const c=homeOf(t),a=rows('portal_accounts').find(a=>a.tenant_id===t.id),banks=rows('tenant_bank_accounts').filter(b=>b.tenant_id===t.id),r=c?rentFor(c.id):{},open=openOf(t);
+  return [`<button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>`,c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)}</small>`:'<span class="muted">No tenancy</span>',
+   c?`<span class="amount">${money((r.basic_cents||0)+(r.service_cents||0))}</span>`:'—',c?nextCell(c.id):'—',...(money_?[open?`<strong class="late-text">${money(open)}</strong>`:'<span class="muted">Nothing open</span>']:[]),
+   a?badge(a.enabled?'Portal active':'Paused',a.enabled?'green':'amber'):badge('No portal login','gray'),banks.length?badge(`${banks.length} bank account${banks.length===1?'':'s'}`,'blue'):'<span class="muted">No IBAN</span>',
+   `<button type="button" class="button small" data-tenant="${t.id}">Open</button>`];});
+ const search=`<div class="toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email or phone" value="${e(state.tenantSearch||'')}" aria-label="Search tenants"><span class="result-count">${list.length} of ${active.length} tenants</span></div>`;
+ return heading('Your tenants','Click a tenant to see everything about them: tenancies, invoices, payments and how they paid, bank accounts, requests and documents.',button('Add tenant','form','data-kind="tenants"','primary'),'TENANTS')
+  +panel('Tenants',`${active.length} people in this company`,search+table(['Tenant','Home','Rent / month','Next payment',...(money_?['Open balance']:[]),'Portal','Bank account',''],body,'No tenants yet. Add the first one.'))
+  +(archived.length?`<div class="section-stack">${panel('Removed contacts','Archived contacts keep their historical records. Restore to return one to the directory.',table(['Name','Email','Removed',''],archived.map(t=>[`<button type="button" class="tenant-link" data-tenant="${t.id}">${e(t.name)}</button>`,e(t.email),dateLabel(t.archived_at),actionBtn('Restore','tenant-restore',t.id,'small')])))}</div>`:'');
+}
+function contractsPage(){
+ return heading('Every agreement in one place','Rental contracts of all tenants, and contracts sent out for signature.',button('Import portfolio CSV','portfolio-import')+button('Record signed contract','manual-contract-form','','primary'),'CONTRACTS')+panel('Rental contracts',`${rows('contracts').length} agreements in this company`,table(['Tenant','Property','Monthly rent','Start date','End date','Due payment','Next scheduled payment','Status',''],rows('contracts').map(c=>{const r=rentFor(c.id),t=tenantFor(c.id);return [`<button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>`,e(propertyFor(c.id).name),`<span class="amount">${money((r.basic_cents||0)+(r.service_cents||0))}</span>`,dateLabel(c.start_date),c.end_date?dateLabel(c.end_date):'<span class="muted">Open-ended</span>',dueCell(c.id),nextCell(c.id),badge(c.end_date&&c.end_date<today()?'ended':c.status),actionBtn('Open file','contract-detail',c.id)];})));
 }
 function filters(items){return `<div class="toolbar"><div class="filters">${items.map(f=>`<button class="filter-button ${state.filter===f?'active':''}" data-action="filter" data-filter="${f}">${e(f)}</button>`).join('')}</div><span class="result-count">Current company</span></div>`;}
 function invoicesPage(){

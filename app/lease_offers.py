@@ -258,7 +258,7 @@ def send_offer(data: dict, user=Depends(current_user)):
         tenant, prop, template, body = ctx['tenant'], ctx['prop'], ctx['template'], ctx['body']
         users = tenant_users(conn, company_id, tenant['id'])
         if not users:
-            raise HTTPException(422, f'{tenant["name"]} has no portal login yet. Invite them to the tenant portal first (Tenants > Tenant directory), then send the contract.')
+            raise HTTPException(422, f'{tenant["name"]} has no portal login yet. Invite them to the tenant portal first (Tenants > open the tenant > Invite to portal), then send the contract.')
         edited = 0
         custom = data.get('body')
         if isinstance(custom, str) and custom.strip():
@@ -455,7 +455,7 @@ def sign(offer_id: int, data: dict, request: Request, user=Depends(current_user)
         if values.get('iban'):   # the rent account from the contract form: bank payments from it are recognised (app/banking.py)
             from .banking import add_bank_account
             add_bank_account(conn, offer['company_id'], tenant['id'], values['iban'], values.get('account_holder', ''), 'tenant', user['id'])
-        notify_staff(conn, offer['company_id'], 'Contract signed, approval needed', f'{tenant["name"]} signed the tenancy agreement.', 'tenants', property_id=offer['property_id'])
+        notify_staff(conn, offer['company_id'], 'Contract signed, approval needed', f'{tenant["name"]} signed the tenancy agreement.', 'contracts', property_id=offer['property_id'])
         audit(conn, user['id'], offer['company_id'], 'signed', 'lease_offer', offer_id, {'ip': ip, 'sha256': digest, 'signature_mode': mode, 'details_given': sorted(values)})
     return {'ok': True}
 
@@ -468,7 +468,7 @@ def decline(offer_id: int, data: dict, user=Depends(current_user)):
         if offer['status'] not in ('sent', 'returned', 'signed'):
             raise HTTPException(409, 'This contract is already closed.')
         conn.execute("UPDATE lease_offers SET status='declined',response_note=? WHERE id=?", (reason, offer_id))
-        notify_staff(conn, offer['company_id'], 'Contract declined by tenant', reason, 'tenants', property_id=offer['property_id'])
+        notify_staff(conn, offer['company_id'], 'Contract declined by tenant', reason, 'contracts', property_id=offer['property_id'])
         audit(conn, user['id'], offer['company_id'], 'declined', 'lease_offer', offer_id, {'reason': reason})
     return {'ok': True}
 

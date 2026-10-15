@@ -237,3 +237,12 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .link-button:hover{color:var(--red)}
 .bank-trail{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-width:280px}
 .bank-notices{margin-top:22px}
+
+/* Tenants list and tenant file (static/tenants.js) */
+.tenant-link{border:0;background:none;padding:0;text-align:left;cursor:pointer;color:inherit;font:inherit}
+.tenant-link:hover strong,.tenant-link:hover{color:var(--green);text-decoration:underline}
+.tenant-search{flex:1;max-width:360px;border:1px solid var(--line);border-radius:7px;padding:9px 12px;font-size:12px;background:#fff}
+.tf-back{margin-bottom:14px}
+.tf-two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
+@media (max-width:900px){.tf-two{grid-template-columns:1fr}}
+.summary-grid.tf-stats{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}

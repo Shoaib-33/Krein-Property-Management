@@ -34,7 +34,8 @@ PAGES = {
     'staff': {
         'overview': 'Overview: charts, smart insights, rent collected, alerts',
         'properties': 'Properties: add and view properties and units',
-        'tenants': 'Tenants & contracts: tenants, rental contracts, move-out',
+        'tenants': 'Tenants: every tenant; click one to see their tenancies, invoices, payments and how they paid, bank accounts, requests and documents',
+        'contracts': 'Contracts: all rental contracts, Send contract for signature, signed contracts waiting for approval, record a contract signed on paper',
         'owners': 'Owners & portfolios: the people or companies that own properties you manage',
         'invoices': 'Invoices: rent bills per month, issue and send them',
         'payments': 'Payment verification: review receipts tenants upload and approve them',
@@ -85,7 +86,8 @@ GUIDE = {
         (('automat', 'rule'), 'Automation rules (if X then Y) are under Operations > Automation.', 'automation'),
         (('invoice', 'bill'), 'Invoices are under Finance > Invoices. You can issue a month and send or download them.', 'invoices'),
         (('property', 'unit', 'building'), 'Properties are under Workspace > Properties. Use Add property to create one.', 'properties'),
-        (('tenant', 'contract', 'move out', 'moving out'), 'Tenants and rental contracts are under Workspace > Tenants & contracts.', 'tenants'),
+        (('contract', 'signature', 'sign', 'move out', 'moving out'), 'Rental contracts and contracts for signature are under Workspace > Contracts.', 'contracts'),
+        (('tenant',), 'Every tenant is under Workspace > Tenants. Click a tenant to see their payments, bank accounts and documents.', 'tenants'),
         (('deposit',), 'Security deposits are under Finance > Deposits.', 'deposits'),
         (('service charge', 'allocation'), 'Yearly service charge allocation is under Finance > Service charges.', 'service'),
         (('report', 'audit', 'export'), 'Reports and the audit log are under Administration > Reports & audit.', 'reports'),
@@ -138,8 +140,8 @@ DUTCH_RULE = ('Answer in Dutch (Nederlands). The app screens are shown in Dutch,
 HOW = {
     'staff': (
         'How things work in Haven (use this, do not invent steps): '
-        'To add a tenant: Tenants & contracts > Add tenant (name and email). To give them portal access: Settings > Tenant access > Create link, then share the link yourself. '
-        'To start a tenancy: Tenants & contracts > Send contract for signature. Choose tenant, property, template, dates and amounts, tick the details the tenant must fill in, read and edit the contract text, then send. '
+        'To add a tenant: Tenants > Add tenant (name and email). To give them portal access: open the tenant and press Invite to portal (or Settings > Tenant access > Create link), then share the link yourself. '
+        'To start a tenancy: Contracts > Send contract for signature. Choose tenant, property, template, dates and amounts, tick the details the tenant must fill in, read and edit the contract text, then send. '
         'Your own signature is saved once in Settings > Your signature on contracts, so every contract goes out signed by you. '
         'The tenant reads the contract in their portal, fills in the form and signs by drawing, typing or uploading a signature. You then review and approve it, which creates the tenancy. '
         'Invoices: Invoices > Run monthly invoices. Manage opens the invoice, where every field has a pencil to edit it (with a reason). The Email column shows whether it was emailed. '
