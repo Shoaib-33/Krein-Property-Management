@@ -11,7 +11,9 @@
   render = () => {
     mark();
     if (location.pathname === '/landlord' && state.me && !state.me.global_admin && !(state.me.companies || []).length) { $('#app').innerHTML = none(); return; }
-    return baseRender();
+    const out = baseRender();
+    if (isLandlord()) { const t = document.querySelector('.user-text small'); if (t) t.textContent = 'landlord'; }
+    return out;
   };
   const baseAllowed = allowedPage;
   allowedPage = page => isLandlord() ? PAGES.includes(page) && baseAllowed(page) : baseAllowed(page);
