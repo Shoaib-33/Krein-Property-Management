@@ -44,7 +44,7 @@
     const out = [];
     for (const n of i.notices) out.push(badge(`Tenant said paid · ${dateLabel(n.paid_on)}`, n.status === 'confirmed' ? 'green' : 'blue'));
     for (const r of i.receipts) out.push(badge(`Receipt · ${r.status}`, r.status === 'approved' ? 'green' : r.status === 'pending' ? 'amber' : 'gray'));
-    for (const p of i.payments) out.push(paidHow(p));
+    for (const p of i.payments) if (!(p.how === 'receipt' && i.receipts.some(r => r.id === p.proof_id))) out.push(paidHow(p));   // a payment through an approved receipt is already shown by that receipt
     return out.length ? `<div class="bank-trail">${out.join('')}</div>` : '<span class="muted">Nothing yet</span>';
   }
   const invStatusOf = i => !i.released_at ? ['Draft', 'gray'] : i.balance_cents <= 0 ? ['Paid', 'green'] : i.balance_cents < i.total_cents ? ['Partly paid', 'amber'] : i.due_date < today() ? ['Overdue', 'red'] : ['Open', 'blue'];
