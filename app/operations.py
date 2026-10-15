@@ -302,6 +302,9 @@ def create_work_order(data:dict,user=Depends(current_user)):
         c=linked(conn,'contractors',integer(data,'contractor_id'),r['company_id'])
         if not c['active'] or not c['agreement_document_id']:
             raise HTTPException(422,'Attach the contractor agreement before assigning tenant work.')
+        busy=conn.execute("SELECT w.id,c.name FROM work_orders w JOIN contractors c ON c.id=w.contractor_id WHERE w.repair_id=? AND w.status NOT IN ('completed','closed','cancelled')",(r['id'],)).fetchone()
+        if busy:
+            raise HTTPException(409,f'{busy["name"]} is already assigned to this repair. Cancel that work order first if you want another contractor.')
         scheduled=appointment(data)
         wid=insert(conn,'work_orders',{'company_id':r['company_id'],'repair_id':r['id'],'contractor_id':c['id'],'scope':text_field(data,'scope'),'scheduled_for':scheduled,'created_by':user['id'],'created_at':now()})
         conn.execute('UPDATE repairs SET status="planned",assigned_to=? WHERE id=?',(c['name'],r['id']))
@@ -309,8 +312,28 @@ def create_work_order(data:dict,user=Depends(current_user)):
         ids=[x[0] for x in conn.execute('SELECT user_id FROM contractor_accounts WHERE contractor_id=? AND enabled=1',(c['id'],))]
         notify(conn,r['company_id'],ids,'New work order',r['title'],'jobs')
         notify_tenant(conn,r['contract_id'],'A contractor has been assigned',r['title']+(' · '+scheduled if scheduled else ''),'repairs')
+        insert(conn,'repair_updates',{'company_id':r['company_id'],'repair_id':r['id'],'user_id':user['id'],'tenant_visible':1,'created_at':now(),
+                                       'message':f'Contractor assigned: {c["name"]}'+(f' · appointment {scheduled.replace("T"," ")[:16]}' if scheduled else '')})
         audit(conn,user['id'],r['company_id'],'assigned','work_order',wid,{'contractor_id':c['id']})
     return {'id':wid}
+
+
+@router.post('/api/work-orders/{job_id}/cancel')
+def cancel_work_order(job_id:int,data:dict,user=Depends(current_user)):
+    """Take a job away from a contractor (no answer, declined, wrong trade), so another contractor can be assigned."""
+    reason=text_field(data,'reason',maximum=500)
+    with transaction() as conn:
+        w=record(conn,'work_orders',job_id,user,OPS)
+        if w['status'] in ('completed','closed','cancelled'):
+            raise HTTPException(409,'This work order is already finished or cancelled.')
+        c=conn.execute('SELECT name FROM contractors WHERE id=?',(w['contractor_id'],)).fetchone()
+        conn.execute('UPDATE work_orders SET status="cancelled" WHERE id=?',(job_id,))
+        conn.execute("UPDATE repairs SET status=CASE WHEN status IN ('planned','in progress') THEN 'triaged' ELSE status END,assigned_to='' WHERE id=?",(w['repair_id'],))
+        insert(conn,'repair_updates',{'company_id':w['company_id'],'repair_id':w['repair_id'],'user_id':user['id'],'tenant_visible':0,'created_at':now(),'message':f'Work order for {c["name"]} cancelled: {reason}'})
+        ids=[x[0] for x in conn.execute('SELECT user_id FROM contractor_accounts WHERE contractor_id=? AND enabled=1',(w['contractor_id'],))]
+        notify(conn,w['company_id'],ids,'Work order cancelled',reason,'jobs')
+        audit(conn,user['id'],w['company_id'],'cancelled','work_order',job_id,{'reason':reason})
+    return {'ok':True}
 
 
 @router.get('/api/contractor/data')
