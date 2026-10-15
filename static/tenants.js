@@ -40,12 +40,21 @@
     const label = {'bank statement': 'Bank statement', receipt: 'Receipt approved', 'recorded by staff': 'Recorded by staff', 'credit note': 'Credit note', reversal: 'Payment reversed'}[p.how] || p.how;
     return badge(label, tone);
   };
+  // one line per step, each with its dates: when the tenant reported or sent it, and when it was approved or confirmed
+  const day = v => v ? dateLabel(String(v).slice(0, 10)) : '';
+  const step = (chip, ...facts) => `<div class="tf-step">${chip}<small>${facts.filter(Boolean).join(' · ')}</small></div>`;
   function trail(i) {
     const out = [];
-    for (const n of i.notices) out.push(badge(`Tenant said paid · ${dateLabel(n.paid_on)}`, n.status === 'confirmed' ? 'green' : 'blue'));
-    for (const r of i.receipts) out.push(badge(`Receipt · ${r.status}`, r.status === 'approved' ? 'green' : r.status === 'pending' ? 'amber' : 'gray') + (r.document_id ? `<a class="tf-view" href="/api/documents/${r.document_id}/file">View</a>` : ''));
-    for (const p of i.payments) if (!(p.how === 'receipt' && i.receipts.some(r => r.id === p.proof_id))) out.push(paidHow(p));   // a payment through an approved receipt is already shown by that receipt
-    return out.length ? `<div class="bank-trail">${out.join('')}</div>` : '<span class="muted">Nothing yet</span>';
+    for (const n of i.notices) out.push(step(badge('Tenant said paid', n.status === 'confirmed' ? 'green' : 'blue'),
+      `paid ${day(n.paid_on)}`, `told us ${day(n.created_at)}`, n.status === 'confirmed' ? `confirmed by bank ${day(n.confirmed_at)}` : 'waiting for the bank'));
+    for (const r of i.receipts) out.push(step(badge(`Receipt · ${r.status}`, r.status === 'approved' ? 'green' : r.status === 'pending' ? 'amber' : 'gray'),
+      `paid ${day(r.paid_on)}`, `sent ${day(r.created_at)}`, r.reviewed_at ? `${r.status === 'rejected' ? 'rejected' : r.status === 'reversed' ? 'reversed' : 'approved'} ${day(r.reviewed_at)}` : 'waiting for review',
+      r.document_id ? `<a class="tf-view" href="/api/documents/${r.document_id}/file">View receipt</a>` : ''));
+    for (const p of i.payments) {
+      if (p.how === 'receipt' && i.receipts.some(r => r.id === p.proof_id)) continue;   // already shown by that receipt, with its dates
+      out.push(step(paidHow(p), `${p.how === 'bank statement' ? 'received' : p.how === 'credit note' ? 'credited' : p.how === 'reversal' ? 'reversed' : 'booked'} ${day(p.date)}`, p.iban ? `from ${iban(p.iban)}` : ''));
+    }
+    return out.length ? `<div class="tf-trail">${out.join('')}</div>` : '<span class="muted">Nothing yet</span>';
   }
   const invStatusOf = i => !i.released_at ? ['Draft', 'gray'] : i.balance_cents <= 0 ? ['Paid', 'green'] : i.balance_cents < i.total_cents ? ['Partly paid', 'amber'] : i.due_date < today() ? ['Overdue', 'red'] : ['Open', 'blue'];
 
