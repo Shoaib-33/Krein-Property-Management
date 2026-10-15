@@ -202,6 +202,19 @@ def request_status(request_id:int,data:dict,user=Depends(current_user)):
     return {'ok':True}
 
 
+@router.post('/api/repairs/{repair_id}/evidence')
+async def repair_evidence(repair_id:int,file:UploadFile=File(...),kind:str=Form('Repair evidence'),user=Depends(current_user)):
+    """Upload a photo or report for a repair (completion evidence or a progress photo). Returns the document to attach."""
+    with connect() as conn:
+        record(conn,'repairs',repair_id,user,OPS+('landlord',))
+    upload=await read_upload(file)
+    with transaction() as conn:
+        r=record(conn,'repairs',repair_id,user,OPS+('landlord',))
+        doc_id=save_document(conn,r['company_id'],r['contract_id'],user['id'],'Repair completion' if kind=='Repair completion' else 'Repair evidence',upload)
+        audit(conn,user['id'],r['company_id'],'uploaded','repair_evidence',repair_id,{'document_id':doc_id})
+    return {'document_id':doc_id}
+
+
 @router.post('/api/repairs/{repair_id}/update')
 def repair_update(repair_id:int,data:dict,user=Depends(current_user)):
     message=text_field(data,'message')

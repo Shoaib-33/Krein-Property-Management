@@ -291,7 +291,7 @@
     filter: el => { ui.filter = el.dataset.key; ui.limit = 40; render(); },
     type: el => { ui.type = el.dataset.key; ui.limit = 40; render(); },
     'repair-assign': () => assignWork(current().id),
-    'repair-complete': () => showRepairStatus(current().id),
+    'repair-complete': () => showRepairStatus(current().id, 'done'),
     'repair-reopen': () => api(`/api/repairs/${current().id}/status`, {method: 'POST', body: {status: 'reopened'}}).then(() => api(`/api/data?company_id=${state.company}`)).then(d => { state.data = d; redraw(); toast('Ticket reopened.'); }),
     'toggle-resolved': () => { const it = current(); return setState(it, {status: it.resolved ? 'open' : 'resolved'}).then(() => toast(it.resolved ? 'Conversation reopened.' : 'Marked resolved. The tenant was notified.')); },
     'request-state': el => {
