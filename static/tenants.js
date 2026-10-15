@@ -43,7 +43,7 @@
   function trail(i) {
     const out = [];
     for (const n of i.notices) out.push(badge(`Tenant said paid · ${dateLabel(n.paid_on)}`, n.status === 'confirmed' ? 'green' : 'blue'));
-    for (const r of i.receipts) out.push(badge(`Receipt · ${r.status}`, r.status === 'approved' ? 'green' : r.status === 'pending' ? 'amber' : 'gray'));
+    for (const r of i.receipts) out.push(badge(`Receipt · ${r.status}`, r.status === 'approved' ? 'green' : r.status === 'pending' ? 'amber' : 'gray') + (r.document_id ? `<a class="tf-view" href="/api/documents/${r.document_id}/file">View</a>` : ''));
     for (const p of i.payments) if (!(p.how === 'receipt' && i.receipts.some(r => r.id === p.proof_id))) out.push(paidHow(p));   // a payment through an approved receipt is already shown by that receipt
     return out.length ? `<div class="bank-trail">${out.join('')}</div>` : '<span class="muted">Nothing yet</span>';
   }
@@ -90,7 +90,7 @@
       }), 'No invoices yet.'));
       const history = panel('Payment history', 'Every payment, credit and correction, newest first.', table(['Date', 'Amount', 'Invoice', 'How', 'From'], f.payments.map(p => [
         e(dateLabel(p.date)), `<strong class="${p.amount_cents < 0 ? 'late-text' : ''}">${eur(p.amount_cents)}</strong>`, e((f.invoices.find(i => i.id === p.invoice_id) || {}).number || ''), paidHow(p),
-        p.iban ? `${e(p.payer || '')}<small>${e(iban(p.iban))}</small>` : '<span class="muted">—</span>']), 'No payments yet.'));
+        fromCell(p)]), 'No payments yet.'));
       const deposit = f.deposit.length ? panel('Deposit', '', table(['Date', 'What', 'Amount', 'Status', 'Reason'], f.deposit.map(d => [e(dateLabel(d.created_at.slice(0, 10))), e(d.kind), eur(d.amount_cents), badge(d.status), e(d.reason || '')]))) : '';
       const arrears = f.arrears.length ? `<div class="notice warning">${icon('clock')}<span><strong>Arrears follow-up is open</strong> for ${f.arrears.map(a => e(a.number)).join(', ')}. See Finance > Arrears.</span></div>` : '';
       money_ = arrears + invoices + history + deposit;
@@ -108,6 +108,13 @@
     const docs = panel('Documents', '', table(['Document', 'Type', 'Added', ''], f.documents.map(d => [e(d.name), e(d.kind), e(dateLabel(d.created_at.slice(0, 10))),
       `<a class="button small" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">View</a>`]), 'No documents.'));
     return head + stats + `<div class="section-stack">${contracts}${money_}${banks}<div class="tf-two">${requests}${docs}</div></div>`;
+  }
+  // where the money came from: the payer's bank account, and the tenant's receipt when there is one
+  function fromCell(p) {
+    const receipt = (ui.file.invoices || []).flatMap(i => i.receipts).find(r => r.id === p.proof_id);
+    const view = receipt && receipt.document_id ? `<a class="button small" href="/api/documents/${receipt.document_id}/file">View receipt</a>` : '';
+    const bank = p.iban ? `${e(p.payer || '')}<small>${e(iban(p.iban))}</small>` : '';
+    return bank || view ? `<div class="tf-from">${bank ? `<div>${bank}</div>` : ''}${view}</div>` : '<span class="muted">—</span>';
   }
   const statBox = (label, value, foot) => `<div class="stat"><div class="stat-top">${e(label)}</div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></div>`;
 
