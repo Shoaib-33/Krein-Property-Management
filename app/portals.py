@@ -152,7 +152,7 @@ def tenant_data(user=Depends(current_user)):
             ('ledger','ledger','id,contract_id,invoice_id,kind,amount_cents,created_at'),
             ('deposit_events','deposits','id,contract_id,kind,amount_cents,status,reason,created_at'),
             ('repairs','repairs','id,contract_id,title,category,urgency,description,status,reported_on,due_date,written,completed_at'),
-            ('requests','requests','id,contract_id,kind,subject,body,requested_date,status,response,created_at,responded_at'),
+            ('requests','requests','id,contract_id,kind,subject,body,requested_date,status,response,created_at,responded_at,priority'),
             ('inspections','inspections','id,contract_id,kind,inspected_on,findings,status,document_id'),
             ('payment_plans','payment_plans','id,contract_id,title,total_cents,instalment_cents,first_due,interval_days,status')]:
             clause=' AND status="final"' if table=='inspections' else ' AND status<>"pending"' if table=='payment_plans' else ' AND released_at IS NOT NULL' if table=='invoices' else ' AND (invoice_id IS NULL OR invoice_id IN (SELECT id FROM invoices WHERE released_at IS NOT NULL))' if table=='ledger' else ''
@@ -297,13 +297,14 @@ def tenant_request(data:dict,user=Depends(current_user)):
     subject=text_field(data,'subject',maximum=200)
     body=text_field(data,'body')
     requested=date_field(data,'requested_date') if data.get('requested_date') else None
+    priority=choice(data,'urgency',('Routine','Urgent','Emergency'),'Routine')   # the tenant's view; staff can change it
     with transaction() as conn:
         c=tenant_contract(conn,user,integer(data,'contract_id'))
         if kind=='Termination notice' and (not requested or requested<local_today().isoformat()):
             raise HTTPException(422,'Choose your requested future move-out date.')
-        rid=insert(conn,'requests',{'company_id':c['company_id'],'contract_id':c['id'],'kind':kind,'subject':subject,'body':body,'requested_date':requested,'created_by':user['id'],'created_at':now()})
+        rid=insert(conn,'requests',{'company_id':c['company_id'],'contract_id':c['id'],'kind':kind,'subject':subject,'body':body,'requested_date':requested,'priority':priority,'created_by':user['id'],'created_at':now()})
         task(conn,c['company_id'],c['id'],f'Review {kind.lower()} #{rid}: {subject}',(local_today()+timedelta(days=1)).isoformat(),'Tenant request')
-        notify_staff(conn,c['company_id'],kind+' received',subject,'portal-inbox',contract_id=c['id'])
+        notify_staff(conn,c['company_id'],(priority+' ' if priority!='Routine' else '')+kind.lower()+' received' if priority!='Routine' else kind+' received',subject,'portal-inbox',contract_id=c['id'])
         audit(conn,user['id'],c['company_id'],'submitted','request',rid,{'kind':kind})
     return {'id':rid,'status':'open'}
 

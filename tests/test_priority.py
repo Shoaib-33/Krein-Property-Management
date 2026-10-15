@@ -72,6 +72,15 @@ class PriorityTests(unittest.TestCase):
         self.assertEqual(next(r for r in data['requests'] if r['id'] == req['id'])['priority'], 'Urgent')
         self.assertEqual(next(t for t in data['thread_states'] if t['thread_id'] == thread['id'])['priority'], 'Emergency')
 
+    def test_a_tenant_chooses_the_urgency_of_a_request(self):
+        r = self.tenant.post('/api/tenant/requests', json={'contract_id': self.contract, 'kind': 'Complaint', 'subject': 'Water on the stairs', 'body': 'Slippery', 'urgency': 'Emergency'})
+        self.assertEqual(r.status_code, 200, r.text)
+        data = self.manager.get('/api/data?company_id=1').json()
+        self.assertEqual(next(x for x in data['requests'] if x['subject'] == 'Water on the stairs')['priority'], 'Emergency')
+        self.assertIn('Emergency complaint received', [n['title'] for n in data['notifications']])
+        self.assertEqual(self.tenant.get('/api/tenant/data').json()['requests'][0]['priority'], 'Emergency')
+        self.assertEqual(self.tenant.post('/api/tenant/requests', json={'contract_id': self.contract, 'kind': 'Complaint', 'subject': 'x', 'body': 'x', 'urgency': 'Low'}).status_code, 422)
+
 
 if __name__ == '__main__':
     unittest.main()
