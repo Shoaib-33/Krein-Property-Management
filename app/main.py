@@ -1451,6 +1451,23 @@ def deposit_review(event_id: int, data: dict, user=Depends(current_user)):
             raise HTTPException(409, 'Insufficient deposit balance.')
         if ev['kind'] == 'refund' and decision == 'approved' and data.get('receipt_confirmed') is not True:
             raise HTTPException(422, 'Confirm that the refund was paid externally.')
+        if decision == 'approved' and ev['kind'] == 'deduction' and ev['reason'].startswith(('Unpaid rent', 'Unpaid service charges')):
+            # the deposit pays the open rent: book it on the tenant's open invoices, oldest first, so reminders stop
+            opens = [r for r in conn.execute('SELECT id,number FROM invoices WHERE contract_id=? AND released_at IS NOT NULL ORDER BY due_date,id', (ev['contract_id'],)).fetchall()
+                     if invoice_balance(conn, r['id']) > 0]
+            open_total = sum(invoice_balance(conn, r['id']) for r in opens)
+            if ev['amount_cents'] > open_total:
+                raise HTTPException(409, f'Only {euros(open_total)} rent is open for this tenancy. Lower the deduction to that amount (or record the rest as another kind of deduction).')
+            left = ev['amount_cents']
+            for r in opens:
+                if left <= 0:
+                    break
+                part = min(left, invoice_balance(conn, r['id']))
+                insert(conn, 'ledger', {'company_id': ev['company_id'], 'contract_id': ev['contract_id'], 'invoice_id': r['id'], 'kind': 'payment', 'amount_cents': -part,
+                                        'created_by': user['id'], 'created_at': now(), 'note': f'Paid from the deposit (deposit deduction #{event_id})'})
+                left -= part
+            from .portal_access import notify_tenant
+            notify_tenant(conn, ev['contract_id'], 'Deposit used for open rent', f'{euros(ev["amount_cents"])} of your deposit was used to pay open rent. {ev["reason"]}', 'payments')
         conn.execute('UPDATE deposit_events SET status=?,approved_by=? WHERE id=?', (decision, user['id'], event_id))
         audit(conn, user['id'], ev['company_id'], decision, 'deposit_event', event_id, {'note': note})
     return {'ok': True}
@@ -2019,6 +2036,8 @@ from .banking import router as banking_router
 app.include_router(banking_router)
 from .tenant_file import router as tenant_file_router
 app.include_router(tenant_file_router)
+from .password_reset import router as password_reset_router
+app.include_router(password_reset_router)
 app.include_router(portal_router)
 app.include_router(sla_router)
 app.include_router(owners_router)
@@ -2053,6 +2072,7 @@ def landing():
 @app.get('/pay/{token}')
 @app.get('/activate/{token}')
 @app.get('/join/{token}')
+@app.get('/reset/{token}')
 @app.get('/tenant')
 @app.get('/owner')
 @app.get('/landlord')

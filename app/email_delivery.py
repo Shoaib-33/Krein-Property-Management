@@ -136,6 +136,28 @@ def _invoice_body(invoice, tenant_name, language, public_url, payment_instructio
     )
 
 
+def send_plain(recipient, subject, body):
+    """Send one plain email right away (used for password reset links). Raises when email is not set up or fails."""
+    settings = smtp_settings()
+    if not settings or not valid_recipient(recipient):
+        raise RuntimeError('Email is not set up or the address is not valid.')
+    message = EmailMessage()
+    message['From'] = settings['sender']
+    message['To'] = recipient
+    message['Subject'] = subject
+    message.set_content(body)
+    if settings['ssl']:
+        server = smtplib.SMTP_SSL(settings['host'], settings['port'], timeout=settings['timeout'], context=ssl.create_default_context())
+    else:
+        server = smtplib.SMTP(settings['host'], settings['port'], timeout=settings['timeout'])
+    with server:
+        if settings['starttls'] and not settings['ssl']:
+            server.starttls(context=ssl.create_default_context())
+        if settings['username']:
+            server.login(settings['username'], settings['password'])
+        server.send_message(message)
+
+
 def _deliver_one(job, settings):
     with db.connect() as conn:
         row = conn.execute(

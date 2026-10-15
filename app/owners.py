@@ -221,6 +221,8 @@ def add_expense(data: dict, user=Depends(current_user)):
             raise HTTPException(422, 'An expense cannot be dated in the future.')
         if conn.execute("SELECT 1 FROM owner_statements WHERE portfolio_id=? AND period=? AND status<>'draft'", (portfolio['id'], incurred[:7])).fetchone():
             raise HTTPException(409, 'A statement for that month is already published. Record the expense in a later month.')
+        if conn.execute("SELECT 1 FROM owner_statements WHERE portfolio_id=? AND period=? AND status='draft'", (portfolio['id'], incurred[:7])).fetchone():
+            raise HTTPException(409, f'A draft statement for {incurred[:7]} already exists and would not include this expense. Delete that draft (Owner statements), add the expense, then generate the statement again.')
         eid = insert(conn, 'owner_expenses', {'company_id': company_id, 'portfolio_id': portfolio['id'], 'property_id': property_id, 'incurred_on': incurred, 'category': choice(data, 'category', EXPENSE_CATEGORIES), 'description': text_field(data, 'description', maximum=300), 'amount_cents': money(data, 'amount'), 'document_id': doc_id, 'created_by': user['id'], 'created_at': now()})
         audit(conn, user['id'], company_id, 'recorded', 'owner_expense', eid, {'portfolio_id': portfolio['id']})
     return {'id': eid}
@@ -235,7 +237,7 @@ def build_statement(conn, portfolio, period):
         raise HTTPException(422, 'Add at least one unit to this portfolio first.')
     ids = [p['id'] for p in props]
     marks = ','.join('?' for _ in ids)
-    billed = dict(conn.execute(f'SELECT c.property_id,SUM(i.total_cents) FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE c.property_id IN ({marks}) AND i.period=? GROUP BY c.property_id', (*ids, period)).fetchall())
+    billed = dict(conn.execute(f'SELECT c.property_id,SUM(i.total_cents) FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE c.property_id IN ({marks}) AND i.period=? AND i.released_at IS NOT NULL GROUP BY c.property_id', (*ids, period)).fetchall())
     credits = dict(conn.execute(f"SELECT c.property_id,SUM(-l.amount_cents) FROM ledger l JOIN invoices i ON i.id=l.invoice_id JOIN contracts c ON c.id=l.contract_id WHERE c.property_id IN ({marks}) AND i.period=? AND l.kind='credit_note' GROUP BY c.property_id", (*ids, period)).fetchall())
     collected = dict(conn.execute(f"SELECT c.property_id,SUM(-l.amount_cents) FROM ledger l JOIN contracts c ON c.id=l.contract_id WHERE c.property_id IN ({marks}) AND l.kind IN ('payment','reversal') AND substr(l.created_at,1,7)=? GROUP BY c.property_id", (*ids, period)).fetchall())
     spent = dict(conn.execute(f'SELECT property_id,SUM(amount_cents) FROM owner_expenses WHERE portfolio_id=? AND substr(incurred_on,1,7)=? AND property_id IS NOT NULL GROUP BY property_id', (portfolio['id'], period)).fetchall())
@@ -249,7 +251,7 @@ def build_statement(conn, portfolio, period):
     fee = int((Decimal(total_collected) * Decimal(str(portfolio['fee_percent'])) / Decimal(100)).quantize(Decimal(1), rounding=ROUND_HALF_UP)) if total_collected > 0 else 0
     arrears = []
     today = local_today().isoformat()
-    for r in conn.execute(f'SELECT i.id,i.number,i.due_date,i.total_cents,c.property_id,p.name property FROM invoices i JOIN contracts c ON c.id=i.contract_id JOIN properties p ON p.id=c.property_id WHERE c.property_id IN ({marks}) AND i.due_date<? ORDER BY i.due_date', (*ids, today)):
+    for r in conn.execute(f'SELECT i.id,i.number,i.due_date,i.total_cents,c.property_id,p.name property FROM invoices i JOIN contracts c ON c.id=i.contract_id JOIN properties p ON p.id=c.property_id WHERE c.property_id IN ({marks}) AND i.released_at IS NOT NULL AND i.due_date<? ORDER BY i.due_date', (*ids, today)):
         open_cents = conn.execute('SELECT COALESCE(SUM(amount_cents),0) FROM ledger WHERE invoice_id=?', (r['id'],)).fetchone()[0]
         if open_cents > 0:
             arrears.append({'number': r['number'], 'property': r['property'], 'due_date': r['due_date'], 'open_cents': open_cents})
@@ -302,6 +304,10 @@ def publish_statement(statement_id: int, data: dict, user=Depends(current_user))
             raise HTTPException(403, 'A different person must approve the statement before the owner sees it.')
         if data.get('confirmed') is not True:
             raise HTTPException(422, 'Confirm that you checked the collected rent, expenses and fee.')
+        # the figures are worked out again: an expense, payment or credit added after the draft was made must not be lost
+        fresh = build_statement(conn, dict(conn.execute('SELECT * FROM portfolios WHERE id=?', (s['portfolio_id'],)).fetchone()), s['period'])
+        if (fresh['collected_cents'], fresh['expenses_cents'], fresh['fee_cents']) != (s['collected_cents'], s['expenses_cents'], s['fee_cents']):
+            raise HTTPException(409, 'The figures changed since this draft was made (an expense, payment or credit was added). Delete the draft and generate the statement again.')
         conn.execute('UPDATE owner_statements SET status="published",published_at=? WHERE id=?', (now(), statement_id))
         portfolio = conn.execute('SELECT * FROM portfolios WHERE id=?', (s['portfolio_id'],)).fetchone()
         ids = [r[0] for r in conn.execute('SELECT user_id FROM owner_accounts WHERE owner_id=? AND enabled=1', (portfolio['owner_id'],))]
@@ -415,7 +421,7 @@ def owner_data(user=Depends(current_user)):
             statements = [dict(r) for r in conn.execute(f"SELECT s.id,s.portfolio_id,s.period,s.collected_cents,s.fee_cents,s.expenses_cents,s.net_cents,s.status,s.published_at,s.paid_on,s.payout_reference,p.name portfolio FROM owner_statements s JOIN portfolios p ON p.id=s.portfolio_id WHERE s.portfolio_id IN ({pm}) AND s.status IN ('published','paid') ORDER BY s.period DESC,s.id DESC", pids)]
             ids = [u['id'] for u in units]
             im = ','.join('?' for _ in ids) or 'NULL'
-            for r in conn.execute(f'SELECT i.id,i.number,i.due_date,i.total_cents,p.name property FROM invoices i JOIN contracts c ON c.id=i.contract_id JOIN properties p ON p.id=c.property_id WHERE c.property_id IN ({im}) AND i.due_date<? ORDER BY i.due_date', (*ids, today)):
+            for r in conn.execute(f'SELECT i.id,i.number,i.due_date,i.total_cents,p.name property FROM invoices i JOIN contracts c ON c.id=i.contract_id JOIN properties p ON p.id=c.property_id WHERE c.property_id IN ({im}) AND i.released_at IS NOT NULL AND i.due_date<? ORDER BY i.due_date', (*ids, today)):
                 open_cents = conn.execute('SELECT COALESCE(SUM(amount_cents),0) FROM ledger WHERE invoice_id=?', (r['id'],)).fetchone()[0]
                 if open_cents > 0:
                     arrears.append({'number': r['number'], 'property': r['property'], 'due_date': r['due_date'], 'open_cents': open_cents})

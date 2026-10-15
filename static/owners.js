@@ -54,6 +54,7 @@
       if (canManage()) actions.push(acc ? own(acc.enabled ? 'Pause access' : 'Restore access', acc.enabled ? 'pause-owner' : 'restore-owner', o.id) : own('Invite', 'invite-owner', o.id, 'small primary'));
       if (isAdmin()) actions.push(full ? own('Remove management access', 'full-access-off', o.id) : acc && acc.enabled ? own('Give management access', 'full-access-on', o.id, 'small primary') : '');
       if (isAdmin()) actions.push(o.collects_rent ? own('Rent to company account', 'rent-company', o.id) : own("Rent to owner's own account", 'rent-owner', o.id));
+      if (canManage() && acc && acc.enabled) actions.push(`<button type="button" class="button small" data-reset-link="owner:${o.id}">Reset link</button>`);
       if (canManage()) actions.push(own('Remove', 'remove-owner', o.id, 'small danger'));
       return [`<strong>${e(o.name)}</strong><small>${e(o.email)}${o.phone ? ' · ' + e(o.phone) : ''}</small>`, String(activePortfolios().filter(p => p.owner_id === o.id).length), access, `<div class="actions">${actions.join('')}</div>`];
     });

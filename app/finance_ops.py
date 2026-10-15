@@ -57,7 +57,7 @@ def propose_plan(data:dict,user=Depends(current_user)):
         except (ValueError,TypeError):
             raise HTTPException(422,'The first instalment needs a future due date.')
         total=money(data,'total')
-        current=conn.execute('SELECT i.* FROM invoices i WHERE contract_id=?',(c['id'],)).fetchall()
+        current=conn.execute('SELECT i.* FROM invoices i WHERE contract_id=? AND released_at IS NOT NULL',(c['id'],)).fetchall()
         overdue=sum(max(0,invoice_balance(conn,r['id'])) for r in current if r['due_date']<local_today().isoformat())
         if total>overdue or overdue==0:
             raise HTTPException(409,'The arrangement must cover an existing overdue balance and cannot exceed it.')
@@ -82,7 +82,7 @@ def review_plan(plan_id:int,data:dict,user=Depends(current_user)):
         if p['status']!='pending': raise HTTPException(409,'This plan was already reviewed.')
         if p['created_by']==user['id']: raise HTTPException(403,'A different person must approve the payment plan.')
         if decision=='approved':
-            outstanding=sum(max(0,invoice_balance(conn,r['id'])) for r in conn.execute('SELECT * FROM invoices WHERE contract_id=? AND due_date<?',(p['contract_id'],local_today().isoformat())))
+            outstanding=sum(max(0,invoice_balance(conn,r['id'])) for r in conn.execute('SELECT * FROM invoices WHERE contract_id=? AND released_at IS NOT NULL AND due_date<?',(p['contract_id'],local_today().isoformat())))
             if p['total_cents']>outstanding: raise HTTPException(409,'The overdue balance changed. Create a revised plan.')
             remaining=p['total_cents']; due=date.fromisoformat(p['first_due'])
             while remaining:

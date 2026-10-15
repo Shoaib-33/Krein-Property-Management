@@ -516,6 +516,17 @@ ALTER TABLE requests ADD COLUMN video_document_id INTEGER REFERENCES documents(i
 '''
 
 
+# V32: one-time links to set a new password (app/password_reset.py)
+V32 = '''
+CREATE TABLE password_resets (
+ id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id), token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL,
+ used_at TEXT, created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL, ip TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX password_resets_user ON password_resets(user_id, created_at);
+CREATE INDEX password_resets_ip ON password_resets(ip, created_at);
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -763,6 +774,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (31, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=32').fetchone():
+            statement = ''
+            for line in V32.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (32, now()))
         conn.commit()
     except Exception:
         conn.rollback()

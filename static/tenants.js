@@ -109,6 +109,7 @@
     const actions = [
       `<button type="button" class="button small" data-tf="edit">Edit details</button>`,
       f.portal ? '' : `<button type="button" class="button small primary" data-action="invite" data-id="${t.id}">Invite to portal</button>`,
+      f.portal && f.portal.enabled ? `<button type="button" class="button small" data-reset-link="tenant:${t.id}" title="A one-time link to choose a new password">Password reset link</button>` : '',
       `<a class="button small" href="/api/tenants/${t.id}/export">Export data</a>`,
       t.archived_at ? `<button type="button" class="button small" data-action="tenant-restore" data-id="${t.id}">Restore</button>` : `<button type="button" class="button small danger" data-action="tenant-archive" data-id="${t.id}">Remove</button>`,
     ].join('');
