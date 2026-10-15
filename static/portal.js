@@ -152,7 +152,7 @@
  }
  const STEPS=[['received','Received'],['triaged','Reviewed'],['planned','Scheduled'],['in progress','In progress'],['done','Fixed']];
  function repairCard(r,d){
-  const updates=(d.repair_updates||[]).filter(u=>u.repair_id===r.id&&!/^(Tenant reported:|Status: )/.test(u.message||'')).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  const updates=(d.repair_updates||[]).filter(u=>u.repair_id===r.id&&!/^Tenant reported:/.test(u.message||'')&&(!/^Status: /.test(u.message||'')||(u.document_id&&u.document_id!==r.completion_document_id))).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
   const jobs=(d.appointments||[]).filter(a=>a.repair_id===r.id);
   const st=String(r.status||'received').toLowerCase(),closed=st==='closed'||st==='done';
   let at=STEPS.findIndex(x=>x[0]===st);if(closed)at=STEPS.length-1;if(at<0)at=st==='waiting'?3:st==='reopened'?0:0;
@@ -160,7 +160,11 @@
   const next=closed?'This repair is finished. Not fixed properly? Send a message to reopen it.':st==='waiting'?'We are waiting on something (a part or a visit). Your manager will update you here.':st==='reopened'?'Your manager is looking at this again.':'Your manager has your report. You will see updates here as soon as something changes.';
   const visit=jobs.map(a=>'<div class="rp-visit">'+ic('calendar')+'<div><strong>'+day(a.scheduled_for)+'</strong> · '+safe(a.contractor_name)+' ('+safe(a.contractor_trade)+')<small>'+safe(a.status)+(a.contractor_phone?' · '+safe(a.contractor_phone):'')+'</small></div></div>').join('');
   const log=updates.length?'<details class="rp-log"'+(updates.length<=2?' open':'')+'><summary>Updates ('+updates.length+')</summary>'+updates.map(u=>'<div class="rp-upd"><span class="rp-when">'+day(u.created_at)+'</span><p>'+safe(u.message)+'</p>'+(u.document_id?'<a href="/api/tenant/documents/'+u.document_id+'/file">View attachment</a>':'')+'</div>').join('')+'</details>':'';
-  return '<article class="rp-card '+(closed?'is-closed':'')+'"><header><div><h3>'+safe(r.title)+'</h3><small>'+safe(r.category)+' · Reported '+day(r.reported_on)+'</small></div><div class="rp-tags">'+tag(r.urgency)+tag(r.status)+'</div></header>'+stepper+'<p class="rp-next">'+next+'</p>'+(r.description?'<p class="rp-desc">'+safe(r.description)+'</p>':'')+visit+log+'<footer><button class="button small" data-do="follow" data-id="'+r.id+'">'+ic('message')+' Send a message about this</button></footer></article>';
+  const doc=r.completion_document_id?(d.documents||[]).find(x=>x.id===r.completion_document_id)||{id:r.completion_document_id}:null;
+  const isImage=doc&&/^image\//.test(doc.mime||'');
+  const finished=closed&&(r.completion_note||doc)?'<div class="rp-done"><strong>'+ic('check')+' '+L('Work completed','Werk afgerond')+(r.completed_at?' · '+day(r.completed_at):'')+'</strong>'+(r.completion_note?'<p>'+safe(r.completion_note)+'</p>':'')
+    +(doc?(isImage?'<a href="/api/tenant/documents/'+doc.id+'/file" class="rp-photo"><img src="/api/tenant/documents/'+doc.id+'/file" alt="'+safe(L('Photo of the finished work','Foto van het afgeronde werk'))+'"></a>':'')+'<a class="button small" href="/api/tenant/documents/'+doc.id+'/file">'+ic('folder')+' '+(isImage?L('View photo','Foto bekijken'):L('View report','Rapport bekijken'))+'</a>':'')+'</div>':'';
+  return '<article class="rp-card '+(closed?'is-closed':'')+'"><header><div><h3>'+safe(r.title)+'</h3><small>'+safe(r.category)+' · Reported '+day(r.reported_on)+'</small></div><div class="rp-tags">'+tag(r.urgency)+tag(r.status)+'</div></header>'+stepper+'<p class="rp-next">'+next+'</p>'+finished+(r.description?'<p class="rp-desc">'+safe(r.description)+'</p>':'')+visit+log+'<footer><button class="button small" data-do="follow" data-id="'+r.id+'">'+ic('message')+' Send a message about this</button></footer></article>';
  }
  function repairsPage(d){
   const list=d.repairs||[],open=list.filter(r=>!['done','closed'].includes(String(r.status).toLowerCase())),done=list.filter(r=>!open.includes(r));

@@ -177,7 +177,7 @@ def tenant_data(user=Depends(current_user)):
             ('invoices','invoices','*'),('rent_versions','rent_versions','id,contract_id,effective_from,basic_cents,service_cents'),
             ('ledger','ledger','id,contract_id,invoice_id,kind,amount_cents,created_at'),
             ('deposit_events','deposits','id,contract_id,kind,amount_cents,status,reason,created_at'),
-            ('repairs','repairs','id,contract_id,title,category,urgency,description,status,reported_on,due_date,written,completed_at'),
+            ('repairs','repairs','id,contract_id,title,category,urgency,description,status,reported_on,due_date,written,completed_at,completion_note,completion_document_id'),
             ('requests','requests','id,contract_id,kind,subject,body,requested_date,status,response,created_at,responded_at,priority,video_document_id'),
             ('inspections','inspections','id,contract_id,kind,inspected_on,findings,status,document_id'),
             ('payment_plans','payment_plans','id,contract_id,title,total_cents,instalment_cents,first_due,interval_days,status')]:

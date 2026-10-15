@@ -8,3 +8,9 @@
 .portal-shell #portal-main{min-height:calc(100vh - 130px)}
 .portal-shell .searchbox{flex:1}
 .portal-shell .stat{min-height:115px}
+
+/* a finished repair: what was done, with the photo or report */
+.rp-done{background:#eef7f1;border:1px solid #cfe6d8;border-radius:10px;padding:12px 14px;margin:10px 0}
+.rp-done strong{display:flex;align-items:center;gap:6px;color:#1d6b4f;font-size:13px}
+.rp-done p{margin:6px 0 8px;font-size:13px}
+.rp-photo img{display:block;max-width:220px;max-height:160px;border-radius:8px;border:1px solid #cfe6d8;margin:6px 0 8px;object-fit:cover}
