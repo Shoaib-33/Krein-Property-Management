@@ -76,13 +76,23 @@
   }
 
   const nav = [['overview', 'Overview', 'home'], ['units', 'Units', 'building'], ['statements', 'Statements', 'file'], ['documents', 'Documents', 'folder']];
+  // each tab counts its unread alerts; opening the tab marks them read
+  const NAV_TARGETS = {overview: ['home', 'overview'], units: ['units'], statements: ['statements'], documents: ['documents']};
+  const navUnread = id => ((S.data && S.data.notifications) || []).filter(n => !n.is_read && (NAV_TARGETS[id] || [id]).includes(n.target)).length;
+  async function markSeen(id) {
+    const list = ((S.data && S.data.notifications) || []).filter(n => !n.is_read && (NAV_TARGETS[id] || [id]).includes(n.target));
+    if (!list.length || id === 'overview') return;
+    await Promise.all(list.map(n => call('/api/notifications/' + n.id + '/read', {method: 'POST', body: {}}).catch(() => {})));
+    list.forEach(n => { n.is_read = 1; });
+    shell();
+  }
   function shell() {
     const d = S.data;
     const unread = (d.notifications || []).filter(n => !n.is_read).length;
     const page = S.page === 'units' ? units(d) : S.page === 'statements' ? statements(d) : S.page === 'documents' ? documents(d) : overview(d);
     root.innerHTML = `<div class="portal-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">h</span><div>haven<small>OWNER PORTAL</small></div></div>
       <div class="portal-identity"><span class="avatar">${esc((S.me.name || '?').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase())}</span><strong>${esc(S.me.name)}</strong><small>${esc(d.accounts[0]?.company_name || '')}</small></div>
-      <nav>${nav.map(([id, label, i]) => `<a href="#${id}" class="nav-item ${S.page === id ? 'active' : ''}" data-nav="${id}">${ic(i)}<span>${label}</span></a>`).join('')}</nav>
+      <nav>${nav.map(([id, label, i]) => { const n = navUnread(id); return `<a href="#${id}" class="nav-item ${S.page === id ? 'active' : ''}" data-nav="${id}">${ic(i)}<span>${label}</span>${n ? `<span class="count">${n}</span>` : ''}</a>`; }).join('')}</nav>
       <div class="sidebar-footer"><button class="button" data-do="logout">${ic('logout')} Sign out</button></div></aside>
       <div class="workspace"><header class="topbar"><div class="breadcrumb">Owner portal / <span>${esc(nav.find(n => n[0] === S.page)[1])}</span></div><div class="topbar-separator"></div><span class="date-pill">${esc(day(d.today))}</span></header>
       <main id="portal-main">${unread && S.page === 'overview' ? d.notifications.filter(n => !n.is_read).slice(0, 2).map(n => `<div class="notice"><span><strong>${esc(n.title)}</strong><br>${esc(n.body)}</span><button class="button small" data-do="read" data-id="${n.id}">Dismiss</button></div>`).join('') : ''}${page}</main></div></div>`;
@@ -96,7 +106,7 @@
   }
   document.addEventListener('click', async ev => {
     const nv = ev.target.closest('[data-nav]');
-    if (nv && S.data) { ev.preventDefault(); S.page = nv.dataset.nav; history.replaceState(null, '', '#' + S.page); shell(); window.scrollTo(0, 0); return; }
+    if (nv && S.data) { ev.preventDefault(); S.page = nv.dataset.nav; history.replaceState(null, '', '#' + S.page); shell(); window.scrollTo(0, 0); markSeen(S.page); return; }
     const b = ev.target.closest('[data-do]'); if (!b) return;
     try {
       if (b.dataset.do === 'logout') { await call('/api/logout', {method: 'POST', body: {}}); S.me = null; S.csrf = ''; login('You are signed out.'); }
