@@ -264,6 +264,8 @@ def send_offer(data: dict, user=Depends(current_user)):
         if '{{' in body:
             raise HTTPException(422, 'The contract still contains an unfilled {{field}}. Fill it in or remove it.')
         sig = conn.execute('SELECT * FROM company_signatures WHERE company_id=?', (company_id,)).fetchone()
+        if getattr(conn, 'scope', None) is not None:
+            sig = None   # a landlord never sends with the company's stored signature; he signs himself when he approves
         offer_id = insert(conn, 'lease_offers', {'company_id': company_id, 'property_id': prop['id'], 'tenant_id': tenant['id'], 'template_id': template['id'], 'start_date': start, 'end_date': end,
                                                  'basic_cents': basic, 'service_cents': service, 'deposit_cents': deposit, 'body': body, 'status': 'sent', 'sent_by': user['id'], 'sent_at': now(),
                                                  'form_fields': json.dumps(form) if form is not None else None, 'edited': edited,
@@ -435,7 +437,8 @@ def sign(offer_id: int, data: dict, request: Request, user=Depends(current_user)
             # older contracts (no signature pad): the typed full name is the signature
             raise HTTPException(422, f'Type your full name exactly as it appears here: {tenant["name"]}')
         stamp = datetime.now(timezone.utc).isoformat(timespec='seconds')
-        ip = request.client.host if request.client else 'unknown'
+        from .security import client_ip
+        ip = client_ip(request)
         digest = hashlib.sha256((offer['body'] + json.dumps(values, sort_keys=True)).encode()).hexdigest() if values else hashlib.sha256(offer['body'].encode()).hexdigest()
         conn.execute("UPDATE lease_offers SET status='signed',signer_name=?,signed_at=?,signed_ip=?,signed_hash=?,response_note=NULL,form_values=?,tenant_signature=?,tenant_signature_mode=? WHERE id=?",
                      (tenant['name'], stamp, ip, digest, json.dumps(values) if defs is not None else None, image, mode, offer_id))

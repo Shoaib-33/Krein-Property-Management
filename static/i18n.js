@@ -73,7 +73,12 @@
     if (done.get(node) === s || !/[A-Za-z]{2}/.test(s)) return;
     const lead = s.match(/^\s*/)[0], trail = s.match(/\s*$/)[0], core = squash(s);
     const t = tr(core);
-    if (t !== null && t !== core) { node.data = lead + t + trail; done.set(node, node.data); }
+    if (t !== null && t !== core) {
+      // an <option> without a value sends its text: keep sending the English word the server expects, only show Dutch
+      const opt = node.parentNode;
+      if (opt && opt.nodeName === 'OPTION' && !opt.hasAttribute('value')) opt.setAttribute('value', core);
+      node.data = lead + t + trail; done.set(node, node.data);
+    }
   }
   const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
   function translateAttrs(el) {

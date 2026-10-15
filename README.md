@@ -141,7 +141,7 @@ This is an expanded local implementation, **not a certified production deploymen
 
 Legal rules are not certified. Stored reference rules are informational, not an executable legal engine. Service-charge settlement currently allocates costs to individual units by occupancy days. It produces tenant-specific downloadable statements but does not implement all Dutch statutory allocation methods or independently verify costs. Deposit intervals and repair targets need legal review. Tenancy exports are summaries and document indexes, not merged and redacted tribunal bundles. The application must not be represented as automatically ensuring legal compliance.
 
-For an HTTPS deployment, configure `HAVEN_SECURE_COOKIES=1`, a trusted reverse proxy and separate runtime secrets. Do not expose the demo server publicly.
+For an HTTPS deployment, configure `HAVEN_SECURE_COOKIES=1`, a trusted reverse proxy and separate runtime secrets. Behind a reverse proxy set `HAVEN_TRUSTED_PROXY_HOPS` to the number of proxies in front of Haven (the Docker image sets 1, right for Render); the visitor's address for the login limit is then read from the part of `X-Forwarded-For` that your own proxy wrote, so it cannot be forged. Set it to 0 when Haven is reached directly. Sign-in is limited to 8 failed attempts per account and address, and 30 per address, for 15 minutes. Do not expose the demo server publicly.
 
 ## Owners, portfolios and statements
 - **Owners & portfolios** (staff): group units into portfolios, set a management fee, invite the owner to `/owner`.
@@ -270,3 +270,9 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 - A tenancy whose end date has passed becomes **ended** by itself.
 - A tenant cannot be removed while a tenancy is current or upcoming, or while money is still owed.
 - The court route (court review and bailiff handover) is only possible after the 14-day letter (veertiendagenbrief) was recorded with its receipt date and its 14 days have passed, and not while an agreed payment plan is running.
+
+### Billing safety
+
+- The scheduler bills the current month on every run as well as next month from the bill day, so a tenancy that starts after the 15th, or a month missed while the server was down, is invoiced at the next run (never twice).
+- "Run monthly invoices" accepts months up to two months ahead, so a typo such as 2036 cannot create invoices that can never be removed.
+- An end date cannot run over the next tenancy of the same unit. Invoices after a new end date block it until they are fully credited.

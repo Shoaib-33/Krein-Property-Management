@@ -58,6 +58,22 @@ def portal_of(request: Request):
     return portal
 
 
+def client_ip(request: Request):
+    """The visitor's real IP address. Behind a reverse proxy (Render, a load balancer, Caddy/nginx) set
+    HAVEN_TRUSTED_PROXY_HOPS to the number of proxies in front of Haven (usually 1): the address is then read from the
+    right-hand end of X-Forwarded-For, the part our own proxy wrote. The left-hand part is whatever the visitor sent and is
+    never trusted. Without a proxy leave it at 0 (the default), then the header is ignored completely."""
+    try:
+        hops = max(0, int(os.environ.get('HAVEN_TRUSTED_PROXY_HOPS', '0')))
+    except ValueError:
+        hops = 0
+    if hops:
+        chain = [p.strip() for p in request.headers.get('x-forwarded-for', '').split(',') if p.strip()]
+        if len(chain) >= hops:
+            return chain[-hops][:64]
+    return (request.client.host if request.client else 'unknown')[:64]
+
+
 def session_cookie(request: Request):
     portal = portal_of(request)
     return 'haven_' + portal + '_session' if portal else 'haven_session'

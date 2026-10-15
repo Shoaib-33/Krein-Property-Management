@@ -21,6 +21,8 @@ PASSWORD = 'HavenDemo!2026'
 OWNER_PASSWORD = 'OwnerStrongPass-2026'
 
 
+AHEAD = (date.today().replace(day=1) + timedelta(days=62)).strftime('%Y-%m')   # two months ahead: the furthest month an invoice run accepts
+
 class HardeningTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -93,7 +95,7 @@ class HardeningTests(unittest.TestCase):
     # ---------- email
     def test_invoice_emails_wait_in_the_queue_until_email_is_set_up(self):
         with mock.patch.dict(os.environ, {'HAVEN_SMTP_HOST': '', 'HAVEN_SMTP_FROM': '', 'HAVEN_PUBLIC_URL': ''}):
-            run = self.manager.post('/api/invoices/run', json={'company_id': 1, 'period': '2031-01'})
+            run = self.manager.post('/api/invoices/run', json={'company_id': 1, 'period': AHEAD})
             self.assertEqual(run.status_code, 200, run.text)
             self.assertFalse(run.json()['email_delivery']['configured'])
             self.assertGreaterEqual(run.json()['email_delivery']['waiting'], run.json()['created'])

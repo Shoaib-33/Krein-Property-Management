@@ -1,3 +1,4 @@
+from datetime import date, timedelta
 """The property-limited 'landlord' role: he manages his own properties and cannot see, read, change or link to anything else in the company."""
 import contextlib
 import io
@@ -17,6 +18,8 @@ LANDLORD_PASSWORD = 'LandlordStrong-2026'
 HIDDEN_KEYS = ('audit', 'staff', 'contractors', 'work_orders', 'settlements', 'cost_lines', 'service_charge_groups', 'automation_rules', 'automation_runs', 'rules', 'sla_policies',
                'contractor_accounts', 'contractor_agreement_submissions', 'custom_fields', 'canned_replies', 'valuations', 'rent_proposals', 'published_statements', 'outbound_emails_other')
 
+
+AHEAD = (date.today().replace(day=1) + timedelta(days=62)).strftime('%Y-%m')   # two months ahead: the furthest month an invoice run accepts
 
 class LandlordScopeTests(unittest.TestCase):
     @classmethod
@@ -229,10 +232,10 @@ class LandlordScopeTests(unittest.TestCase):
         self.assertEqual(contract.status_code, 200, contract.text)
         # invoices he runs are for his own tenancies only
         before = self.manager.get('/api/data?company_id=1').json()
-        run = self.a.post('/api/invoices/run', json={'company_id': 1, 'period': '2031-03'})
+        run = self.a.post('/api/invoices/run', json={'company_id': 1, 'period': AHEAD})
         self.assertEqual(run.status_code, 200, run.text)
         after = self.manager.get('/api/data?company_id=1').json()
-        made_for = {i['contract_id'] for i in self.manager.get('/api/invoices?company_id=1&period=2031-03&page_size=200').json()['items']}
+        made_for = {i['contract_id'] for i in self.manager.get(f'/api/invoices?company_id=1&period={AHEAD}&page_size=200').json()['items']}
         own_contracts = {c['id'] for c in again['contracts']} | {contract.json()['id']}
         self.assertTrue(made_for and made_for <= own_contracts, 'the run created invoices for tenancies that are not his')
 

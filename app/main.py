@@ -22,7 +22,7 @@ from .clock import local_today
 from . import db, sla
 from .cbs import CBSDataError, cpi_annual_rate
 from .db import audit, connect, now, transaction
-from .security import PORTALS, authorize, current_user, session_cookie, expiry, linked, needs_rehash, password_hash, record, token_hash, verify_password
+from .security import PORTALS, authorize, client_ip, current_user, session_cookie, expiry, linked, needs_rehash, password_hash, record, token_hash, verify_password
 
 ROOT = Path(__file__).resolve().parent.parent
 from .config import load_local_env
@@ -268,6 +268,17 @@ def end_finished_contracts(today=None):
     return len(rows)
 
 
+def scheduled_invoice_periods(today=None):
+    """The months the scheduler bills now. The current month is always included: a tenancy that starts after the bill day,
+    or a month missed while the server was down, is invoiced at the next run (issue_month never makes a second invoice)."""
+    today = today or local_today()
+    periods = [today.strftime('%Y-%m')]
+    upcoming = scheduled_invoice_period(today)
+    if upcoming and upcoming not in periods:
+        periods.append(upcoming)
+    return periods
+
+
 def scheduled_invoice_period(today=None):
     today = today or local_today()
     try:
@@ -358,7 +369,7 @@ def process_overdue_invoices(company_id=None):
 async def monthly_billing_scheduler():
     while True:
         from .automation import run_all_companies
-        steps = [(end_finished_contracts, ()), (run_scheduled_invoices, (scheduled_invoice_period(),)), (process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ())]
+        steps = [(end_finished_contracts, ())] + [(run_scheduled_invoices, (p,)) for p in scheduled_invoice_periods()] + [(process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ())]
         for step, args in steps:
             try:
                 if step is run_scheduled_invoices and not args[0]:
@@ -393,20 +404,26 @@ def health():
 def login(data: dict, request: Request):
     email = text_field(data, 'email', maximum=254).lower()
     password = text_field(data, 'password', maximum=1024)
-    attempt_key = hashlib.sha256((email + '|' + (request.client.host if request.client else 'local')).encode()).hexdigest()
+    ip = client_ip(request)
+    attempt_key = hashlib.sha256((email + '|' + ip).encode()).hexdigest()
+    ip_key = hashlib.sha256(('ip|' + ip).encode()).hexdigest()   # one address trying many accounts (password spraying)
     # the slow password check runs outside the write lock, so many people can sign in at the same moment
     with connect() as conn:
         attempt = conn.execute('SELECT * FROM login_attempts WHERE key=?', (attempt_key,)).fetchone()
+        from_ip = conn.execute('SELECT * FROM login_attempts WHERE key=?', (ip_key,)).fetchone()
         user = conn.execute('SELECT * FROM users WHERE email=? AND active=1', (email,)).fetchone()
-    if attempt and attempt['attempts'] >= 8 and attempt['blocked_until'] > time.time():
+    now_ = time.time()
+    if (attempt and attempt['attempts'] >= 8 and attempt['blocked_until'] > now_) or (from_ip and from_ip['attempts'] >= 30 and from_ip['blocked_until'] > now_):
         raise HTTPException(429, 'Too many attempts. Try again in 15 minutes.')
     valid = verify_password(password, user['password_hash']) if user else verify_password(password, 'pbkdf2:600000:' + 'a'*32 + ':' + '0'*64)
     rehashed = password_hash(password) if valid and needs_rehash(user['password_hash']) else None
     with transaction() as conn:
         attempt = conn.execute('SELECT * FROM login_attempts WHERE key=?', (attempt_key,)).fetchone()
         if not valid:
-            attempts = attempt['attempts'] + 1 if attempt and attempt['blocked_until'] > time.time() else 1
-            conn.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)', (attempt_key, attempts, time.time()+900))
+            for key in (attempt_key, ip_key):
+                row = conn.execute('SELECT * FROM login_attempts WHERE key=?', (key,)).fetchone()
+                attempts = row['attempts'] + 1 if row and row['blocked_until'] > time.time() else 1
+                conn.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)', (key, attempts, time.time()+900))
         else:
             conn.execute('DELETE FROM login_attempts WHERE key=?', (attempt_key,))
             if rehashed:
@@ -468,7 +485,9 @@ def all_data(company_id: int, user=Depends(current_user)):
             result['contracts'] = [dict(r) for r in conn.execute(f'SELECT * FROM contracts WHERE company_id=? AND property_id IN ({marks}) ORDER BY id DESC', (company_id, *assigned))]
             contract_ids = [r['id'] for r in result['contracts']]
             contract_marks = ','.join('?' for _ in contract_ids)
-            for table in ('tenants','repairs','inspections','tasks'):
+            tenant_ids = sorted({r['tenant_id'] for r in result['contracts']})
+            result['tenants'] = [dict(r) for r in conn.execute(f'SELECT * FROM tenants WHERE company_id=? AND id IN ({",".join("?" for _ in tenant_ids) or "NULL"})', (company_id, *tenant_ids))]
+            for table in ('repairs','inspections','tasks'):
                 if contract_ids:
                     result[table] = [dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? AND contract_id IN ({contract_marks}) ORDER BY id DESC', (company_id, *contract_ids))]
                 else:
@@ -671,7 +690,14 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
                 authorize_property(conn, user, company_id, contract['property_id'])
             doc_id = integer(data, 'document_id') if data.get('document_id') else None
             if doc_id:
-                linked(conn, 'documents', doc_id, company_id)
+                doc = linked(conn, 'documents', doc_id, company_id)
+                # the report must be a file of this tenancy, or one the person uploaded themselves and did not link yet;
+                # otherwise finalizing would share someone else's (or a company) document with this tenant
+                if not (doc['contract_id'] == contract['id'] or (doc['contract_id'] is None and doc['created_by'] == user['id'])):
+                    raise HTTPException(422, 'Attach a report of this tenancy, or one you uploaded yourself.')
+                from .portal_access import PRIVATE_KINDS
+                if doc['kind'].strip().casefold() in PRIVATE_KINDS:
+                    raise HTTPException(422, 'This document category is private and cannot be an inspection report.')
             values.update({'contract_id': integer(data, 'contract_id'), 'kind': choice(data, 'kind', ('Move-in','Move-out','Periodic','Repair')), 'inspected_on': date_field(data, 'inspected_on'), 'findings': text_field(data, 'findings'), 'document_id': doc_id, 'created_by': user['id']})
         elif kind == 'valuations':
             linked(conn, 'properties', integer(data, 'property_id'), company_id)
@@ -942,6 +968,11 @@ def invoice_run(data: dict, user=Depends(current_user)):
         authorize(conn, user, company, FINANCE + ('landlord',))
         scope = getattr(conn, 'scope', None)
         period = text_field(data, 'period', maximum=7)
+        latest = local_today().replace(day=1)
+        for _ in range(2):
+            latest = (latest + timedelta(days=32)).replace(day=1)
+        if period > latest.strftime('%Y-%m'):   # a typo such as 2036 would create invoices that can never be removed
+            raise HTTPException(422, f'Invoices can be made up to {latest.strftime("%Y-%m")} (two months ahead). Check the month.')
         count = issue_month(conn, company, period, user['id'], scope.contracts if scope is not None else None)
         why = None
         if not count:
@@ -1049,11 +1080,16 @@ async def upload_document(company_id: int = Form(...), kind: str = Form('General
 def get_document(document_id: int, download: int = 0, user=Depends(current_user)):
     with transaction() as conn:
         doc = record(conn, 'documents', document_id, user, ('inspector','property','finance','manager','landlord'))
-        role = authorize(conn, user, doc['company_id'])
+        role = authorize(conn, user, doc['company_id'], ('inspector','property','finance','manager','landlord'))
         if role == 'property' and doc['kind'] in ('payment proof','supplier invoice','deposit evidence'):
             raise HTTPException(403, 'Financial document access is restricted.')
         if role == 'inspector' and doc['kind'] in ('payment proof','supplier invoice','deposit evidence','Contractor agreement'):
             raise HTTPException(403, 'This document is outside your inspection access.')
+        if role == 'inspector' and doc['created_by'] != user['id'] and not conn.execute(
+                'SELECT 1 FROM contracts c JOIN inspector_assignments a ON a.property_id=c.property_id AND a.company_id=c.company_id WHERE c.id=? AND a.user_id=?', (doc['contract_id'], user['id'])).fetchone():
+            raise HTTPException(404, 'Record not found.')   # an inspector only opens files of the properties assigned to him
+        if not doc['file_key']:
+            raise HTTPException(404, 'This file was removed.')
         audit(conn, user['id'], doc['company_id'], 'downloaded' if download else 'viewed', 'document', document_id, {})
     return FileResponse(db.DATA_DIR / 'uploads' / doc['file_key'], media_type=doc['mime'], filename=doc['name'], content_disposition_type='attachment' if download else 'inline')
 
@@ -1289,9 +1325,17 @@ def end_contract(contract_id: int, data: dict, user=Depends(current_user)):
             raise HTTPException(409, 'This tenancy has already ended.')
         if end < c['start_date']:
             raise HTTPException(422, 'End date cannot precede the start date.')
-        invoiced = conn.execute('SELECT period FROM invoices WHERE contract_id=? ORDER BY period DESC LIMIT 1', (contract_id,)).fetchone()
-        if invoiced and invoiced['period'] >= end[:7] and (end[-2:] != str(calendar.monthrange(int(end[:4]), int(end[5:7]))[1]) or invoiced['period'] > end[:7]):
-            raise HTTPException(409, 'Issued invoices cover this end date. Finance must resolve the final-period adjustment outside this release before termination can be recorded.')
+        # the unit must be free from the day after the new end date: moving an end date over the next tenancy would bill the unit twice
+        clash = conn.execute('SELECT c.start_date,t.name FROM contracts c JOIN tenants t ON t.id=c.tenant_id WHERE c.property_id=? AND c.id<>? AND c.status<>"ended" '
+                             'AND c.start_date<=? AND (c.end_date IS NULL OR c.end_date>=?) ORDER BY c.start_date LIMIT 1', (c['property_id'], contract_id, end, c['start_date'])).fetchone()
+        if clash:
+            raise HTTPException(409, f'The unit is let to {clash["name"]} from {clash["start_date"]}. Choose an end date before that.')
+        # invoices after the end date block it, unless they were fully credited (a credit note cancels them)
+        month_end = end[-2:] == str(calendar.monthrange(int(end[:4]), int(end[5:7]))[1])
+        later = [r for r in conn.execute("SELECT i.number,i.period,i.total_cents+COALESCE((SELECT SUM(l.amount_cents) FROM ledger l WHERE l.invoice_id=i.id AND l.kind='credit_note'),0) net FROM invoices i WHERE i.contract_id=?", (contract_id,))
+                 if (r['period'] > end[:7] or (r['period'] == end[:7] and not month_end)) and r['net'] > 0]
+        if later:
+            raise HTTPException(409, f'Invoice {later[0]["number"]} ({later[0]["period"]}) covers days after this end date. Credit it first (Invoices > Manage > Credit note), then record the end date.')
         conn.execute('UPDATE contracts SET end_date=?,status=? WHERE id=?', (end, 'ended' if end <= local_today().isoformat() else 'notice given', contract_id))
         task(conn, c['company_id'], contract_id, 'Complete move-out inspection', end, 'Inspection')
         task(conn, c['company_id'], contract_id, 'Review and return deposit', (date.fromisoformat(end)+timedelta(days=14)).isoformat(), 'Deposit', 'Finance team')
@@ -1363,6 +1407,8 @@ def finalize_inspection(inspection_id: int, data: dict, user=Depends(current_use
         doc = linked(conn, 'documents', row['document_id'], row['company_id'])
         if doc['contract_id'] and doc['contract_id'] != row['contract_id']:
             raise HTTPException(422, 'The report belongs to another tenancy.')
+        if doc['contract_id'] is None:   # the report becomes part of this tenancy's file
+            conn.execute('UPDATE documents SET contract_id=? WHERE id=?', (row['contract_id'], doc['id']))
         share_document(conn, row['company_id'], row['contract_id'], row['document_id'], user['id'])
         notify_tenant(conn, row['contract_id'], 'Inspection report available', row['kind'] + ' inspection has been finalized.', 'documents')
     return {'ok': True}

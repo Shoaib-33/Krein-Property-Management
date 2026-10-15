@@ -16,6 +16,8 @@ from app.main import app, invoice_pdf_bytes
 from manage import demo
 
 
+AHEAD = (date.today().replace(day=1) + timedelta(days=62)).strftime('%Y-%m')   # two months ahead: the furthest month an invoice run accepts
+
 class WorkflowTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -214,11 +216,11 @@ class WorkflowTests(unittest.TestCase):
         login=tenant.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':'tenant@haven.local','password':'HavenDemo!2026'})
         th={'X-Haven-Portal':'tenant','X-CSRF-Token':login.json()['csrf']}
         before=len(tenant.get('/api/tenant/data',headers=th).json()['invoices'])
-        run=self.post('/api/invoices/run',{'company_id':1,'period':'2031-01'})
+        run=self.post('/api/invoices/run',{'company_id':1,'period':AHEAD})
         self.assertEqual(run.status_code,200,run.text)
         made=run.json()['created']
         self.assertGreater(made,0)
-        listed=self.client.get('/api/invoices?company_id=1&period=2031-01&page_size=100').json()['items']
+        listed=self.client.get(f'/api/invoices?company_id=1&period={AHEAD}&page_size=100').json()['items']
         self.assertTrue(all(i['released_at'] is None and 'Draft' in i['email_note'] for i in listed))
         self.assertEqual(len(self.client.get('/api/invoices?company_id=1&email=Drafts&page_size=100').json()['items']),made)
         self.assertEqual(len(tenant.get('/api/tenant/data',headers=th).json()['invoices']),before)       # the tenant sees no draft
@@ -341,7 +343,7 @@ class WorkflowTests(unittest.TestCase):
             with db.transaction() as conn:   # the demo's earlier invoices also wait in the queue; this test looks at the new run only
                 conn.execute("UPDATE outbound_email_jobs SET status='cancelled'")
             with patch('app.email_delivery.kick',lambda:None):   # the button only queues; the delivery loop sends
-                response=self.post('/api/invoices/run',{'company_id':1,'period':'2027-02'})
+                response=self.post('/api/invoices/run',{'company_id':1,'period':AHEAD})
             self.assertEqual(response.status_code,200,response.text)
             self.assertEqual(response.json()['created'],5)
             self.assertEqual(response.json()['email_delivery']['waiting'],5)
