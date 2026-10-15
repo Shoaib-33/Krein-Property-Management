@@ -59,6 +59,10 @@ async def set_logo(company_id: int, file: UploadFile = File(...), user=Depends(c
         mime = 'image/jpeg'
     else:
         raise HTTPException(422, 'The logo must be a PNG or JPEG image.')
+    from .main import check_image
+    width, height = check_image(content, 'logo')
+    if width * height > 16_000_000:   # it is drawn on every invoice PDF
+        raise HTTPException(422, f'The logo is {width} x {height} pixels. Use a smaller image (for example 1200 x 400).')
     with transaction() as conn:
         authorize(conn, user, company_id, ('manager',))
         conn.execute('INSERT INTO company_logos(company_id,mime,data,updated_at) VALUES(?,?,?,?) ON CONFLICT(company_id) DO UPDATE SET mime=excluded.mime,data=excluded.data,updated_at=excluded.updated_at', (company_id, mime, content, now()))

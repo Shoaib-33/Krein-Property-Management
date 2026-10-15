@@ -70,6 +70,9 @@ class SelectiveGZip:
 app.add_middleware(SelectiveGZip)
 
 
+MAX_REPAIR_PHOTOS = 5
+
+
 def video_limit():
     """The largest video a tenant may attach, in bytes: HAVEN_MAX_VIDEO_MB, default 50 MB (at most 500)."""
     try:
@@ -95,7 +98,7 @@ class BodyLimit:
         limit = self.limit
         path = scope.get('path', '')
         if path == '/api/tenant/repairs' or (path.startswith('/api/tenant/requests/') and path.endswith('/video')):
-            limit = video_limit() + 12 * 1024 * 1024   # a tenant's video (and a photo) on a repair or request
+            limit = video_limit() + (MAX_REPAIR_PHOTOS * 10 + 2) * 1024 * 1024   # a tenant's video and up to MAX_REPAIR_PHOTOS photos
         length = dict(scope.get('headers') or []).get(b'content-length')
         if length is not None and (not length.isdigit() or int(length) > limit):
             return await JSONResponse({'detail': 'This upload is too large.'}, status_code=413)(scope, receive, send)
@@ -131,7 +134,7 @@ async def security_headers(request, call_next):
     response.headers['Cache-Control'] = 'no-store'
     if os.environ.get('HAVEN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    if response.headers.get('content-type', '').startswith(('application/pdf', 'image/png', 'image/jpeg', 'video/')):
+    if response.headers.get('content-type', '').startswith(('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'video/')):
         # only Haven's own pages may show a PDF or a receipt photo inside the portal viewer
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
         response.headers['Content-Security-Policy'] = response.headers['Content-Security-Policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'")
@@ -1048,19 +1051,47 @@ def public_details(token: str):
         return {'number': inv['number'], 'period': inv['period'], 'due_date': inv['due_date'], 'total_cents': inv['total_cents'], 'balance_cents': invoice_balance(conn, inv['id']), 'tenant_name': snap['tenant_name'], 'property': snap['address'], 'company': snap['company_name'], 'payment_instructions': snap['payment_instructions'], 'submissions': proofs}
 
 
+MAX_FILE_MB = 10          # documents, receipts and photos
+MAX_PIXELS = 50_000_000   # a photo larger than 50 megapixels is refused (a 200 MP phone photo is very rare; a forged header is the usual cause)
+
+
+def check_image(content, what='photo'):
+    """Open the image header and refuse absurd sizes before anything decodes the pixels (protects PDFs and the server)."""
+    from PIL import Image
+    try:
+        with Image.open(io.BytesIO(content)) as im:
+            width, height = im.size
+    except Image.DecompressionBombError:
+        raise HTTPException(422, f'This {what} is too large in pixels. Use a normal phone photo or scan.')
+    except Exception:
+        raise HTTPException(422, f'This {what} could not be read. Take a new photo or save it as JPEG or PNG.')
+    if width * height > MAX_PIXELS or width < 1 or height < 1:
+        raise HTTPException(422, f'This {what} is too large in pixels ({width} x {height}). Use a normal phone photo or scan.')
+    return width, height
+
+
 async def read_upload(file):
-    content = await file.read(10 * 1024 * 1024 + 1)
+    """A document or photo: PDF, JPEG, PNG or WebP, at most 10 MB. The type is read from the file, not from its name."""
+    content = await file.read(MAX_FILE_MB * 1024 * 1024 + 1)
     await file.close()
-    if not content or len(content) > 10 * 1024 * 1024:
-        raise HTTPException(422, 'Upload a file between 1 byte and 10 MB.')
+    if not content:
+        raise HTTPException(422, 'The file is empty.')
+    if len(content) > MAX_FILE_MB * 1024 * 1024:
+        raise HTTPException(422, f'The file is larger than {MAX_FILE_MB} MB. Take a smaller photo or scan, or split the document.')
     if content.startswith(b'%PDF-'):
         mime, ext = 'application/pdf', '.pdf'
     elif content.startswith(b'\x89PNG\r\n\x1a\n'):
         mime, ext = 'image/png', '.png'
     elif content.startswith(b'\xff\xd8\xff'):
         mime, ext = 'image/jpeg', '.jpg'
+    elif content[:4] == b'RIFF' and content[8:12] == b'WEBP':
+        mime, ext = 'image/webp', '.webp'
+    elif content[4:12] in (b'ftypheic', b'ftypheix', b'ftypmif1', b'ftyphevc'):
+        raise HTTPException(422, 'This is an iPhone HEIC photo. Upload it from the phone itself (it is converted to JPEG automatically), or set the camera to "Most Compatible".')
     else:
-        raise HTTPException(422, 'Only PDF, PNG, and JPEG files are accepted.')
+        raise HTTPException(422, 'Only PDF, JPEG, PNG and WebP files are accepted.')
+    if mime.startswith('image/'):
+        check_image(content)
     filename = Path((file.filename or 'document').replace('\\', '/')).name[:180]
     return content, mime, ext, filename
 

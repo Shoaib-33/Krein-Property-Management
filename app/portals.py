@@ -214,7 +214,7 @@ def tenant_document(document_id:int,download:int=0,user=Depends(current_user)):
 
 
 @router.post('/api/tenant/repairs')
-async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),description:str=Form(...),category:str=Form('General'),urgency:str=Form('Routine'),file:UploadFile|None=File(None),video:UploadFile|None=File(None),user=Depends(current_user)):
+async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),description:str=Form(...),category:str=Form('General'),urgency:str=Form('Routine'),file:UploadFile|None=File(None),photos:list[UploadFile]|None=File(None),video:UploadFile|None=File(None),user=Depends(current_user)):
     data={'title':title,'description':description,'category':category,'urgency':urgency}
     title=text_field(data,'title',maximum=180)
     description=text_field(data,'description')
@@ -224,8 +224,12 @@ async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),descriptio
         c=tenant_contract(conn,user,contract_id)
         if c['end_date'] and c['end_date']<local_today().isoformat():
             raise HTTPException(409,'This tenancy has ended. Use Messages to contact your manager.')
-    upload=await read_upload(file) if file and file.filename else None
-    from .main import read_video
+    from .main import MAX_REPAIR_PHOTOS, read_video
+    chosen=[f for f in ([file] if file else [])+list(photos or []) if f and f.filename]
+    if len(chosen)>MAX_REPAIR_PHOTOS:
+        raise HTTPException(422,f'Add at most {MAX_REPAIR_PHOTOS} photos to one repair.')
+    uploads=[await read_upload(f) for f in chosen]
+    upload=uploads[0] if uploads else None
     clip=await read_video(video) if video and video.filename else None
     with transaction() as conn:
         c=tenant_contract(conn,user,contract_id)
@@ -235,6 +239,10 @@ async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),descriptio
         if doc_id:
             share_document(conn,c['company_id'],contract_id,doc_id,user['id'])
         insert(conn,'repair_updates',{'company_id':c['company_id'],'repair_id':rid,'user_id':user['id'],'message':'Tenant reported: '+description,'document_id':doc_id,'tenant_visible':1,'created_at':now()})
+        for extra in uploads[1:]:   # more photos of the same repair
+            pid=save_document(conn,c['company_id'],contract_id,user['id'],'Repair evidence',extra)
+            share_document(conn,c['company_id'],contract_id,pid,user['id'])
+            insert(conn,'repair_updates',{'company_id':c['company_id'],'repair_id':rid,'user_id':user['id'],'message':'Photo from the tenant','document_id':pid,'tenant_visible':1,'created_at':now()})
         if clip:   # the tenant's video, kept with the repair and visible to staff and the tenant
             vid=save_document(conn,c['company_id'],contract_id,user['id'],'Repair video',clip)
             share_document(conn,c['company_id'],contract_id,vid,user['id'])

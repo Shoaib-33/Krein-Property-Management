@@ -15,6 +15,28 @@ from manage import demo
 
 PASSWORD = 'HavenDemo!2026'
 MP4 = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom' + b'\x00' * 2000
+def png(width=40, height=30):
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (width, height), (200, 120, 40)).save(buf, 'PNG')
+    return buf.getvalue()
+
+
+def webp():
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new('RGB', (40, 30), (20, 120, 40)).save(buf, 'WEBP')
+    return buf.getvalue()
+
+
+def huge_png():
+    """A tiny file that claims to be 20000 x 20000 pixels (only the header is real)."""
+    import struct, zlib
+    head = struct.pack('>IIBBBBB', 20000, 20000, 8, 2, 0, 0, 0)
+    chunk = lambda kind, data: struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+    return b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', head) + chunk(b'IDAT', zlib.compress(b'\x00' * 100)) + chunk(b'IEND', b'')
+
+
 MOV = b'\x00\x00\x00\x14ftypqt  \x00\x00\x00\x00qt  ' + b'\x00' * 2000
 
 
@@ -82,6 +104,30 @@ class VideoTests(unittest.TestCase):
         req = next(x for x in self.manager.get('/api/data?company_id=1').json()['requests'] if x['id'] == made['id'])
         self.assertEqual(req['video_document_id'], r.json()['document_id'])
         self.assertEqual(self.tenant.get('/api/tenant/data').json()['requests'][0]['video_document_id'], r.json()['document_id'])
+
+    # ---------- photos
+    def test_a_repair_takes_up_to_five_photos_including_webp(self):
+        files = [('photos', (f'p{i}.png', png(), 'image/png')) for i in range(3)] + [('photos', ('w.webp', webp(), 'image/webp'))]
+        r = self.tenant.post('/api/tenant/repairs', data={'contract_id': self.contract, 'title': 'Cracked tiles', 'description': 'Bathroom floor'}, files=files)
+        self.assertEqual(r.status_code, 200, r.text)
+        data = self.manager.get('/api/data?company_id=1').json()
+        rid = r.json()['id']
+        docs = [u['document_id'] for u in data['repair_updates'] if u['repair_id'] == rid and u['document_id']]
+        self.assertEqual(len(docs), 4)
+        too_many = [('photos', (f'p{i}.png', png(), 'image/png')) for i in range(6)]
+        self.assertEqual(self.tenant.post('/api/tenant/repairs', data={'contract_id': self.contract, 'title': 'x', 'description': 'x'}, files=too_many).status_code, 422)
+
+    def test_unreadable_or_absurd_images_are_refused(self):
+        bad = self.tenant.post('/api/tenant/repairs', data={'contract_id': self.contract, 'title': 'x', 'description': 'x'}, files={'photos': ('big.png', huge_png(), 'image/png')})
+        self.assertEqual(bad.status_code, 422)
+        self.assertIn('too large in pixels', bad.json()['detail'])
+        heic = b'\x00\x00\x00\x18ftypheic' + b'\x00' * 500
+        r = self.tenant.post('/api/tenant/repairs', data={'contract_id': self.contract, 'title': 'x', 'description': 'x'}, files={'photos': ('IMG_1.HEIC', heic, 'image/heic')})
+        self.assertEqual(r.status_code, 422)
+        self.assertIn('HEIC', r.json()['detail'])
+        logo = self.manager.post('/api/companies/1/logo', files={'file': ('logo.png', huge_png(), 'image/png')})
+        self.assertEqual(logo.status_code, 422)
+        self.assertEqual(self.manager.post('/api/companies/1/logo', files={'file': ('logo.png', png(400, 120), 'image/png')}).status_code, 200)
 
 
 if __name__ == '__main__':
