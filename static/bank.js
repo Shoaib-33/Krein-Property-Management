@@ -27,6 +27,10 @@
   const eur = c => new Intl.NumberFormat('en-NL', {style: 'currency', currency: 'EUR'}).format((c || 0) / 100);
   const iban = v => v ? String(v).replace(/(.{4})/g, '$1 ').trim() : '';
   const btn = (label, act, id = '', cls = 'small') => `<button type="button" class="button ${cls}" data-bank="${act}" data-id="${id}">${e(label)}</button>`;
+  document.addEventListener('change', ev => {   // the chosen mode card is highlighted
+    if (ev.target.name !== 'mode' || !ev.target.closest('.bank-modes')) return;
+    ev.target.closest('.bank-modes').querySelectorAll('.bank-mode').forEach(x => x.classList.toggle('on', x.contains(ev.target)));
+  });
   const STATUS = {booked: ['Booked', 'green'], suggested: ['Please check', 'amber'], unmatched: ['Not recognised', 'gray'], ignored: ['Ignored', 'gray']};
 
   // what the tenant did for the invoice(s) of a bank payment: said "I have paid", uploaded a receipt, and the bank's own confirmation
@@ -54,24 +58,31 @@
     if (ui.data.error) return heading('Bank statements', '', '', 'FINANCE') + empty('Could not load the bank payments', ui.data.error);
     const c = ui.data.counts || {};
     const upload = panel('Import a bank statement', 'Download the statement from your bank as CAMT.053 (.xml) or MT940 (.sta, .940, .txt) and upload it here. Only incoming payments are read.',
-      `<form id="bank-upload" class="panel-body bank-upload"><input type="file" name="file" accept=".xml,.sta,.940,.txt,.mt940,.swi" required aria-label="Statement file">
-        <label class="bank-auto"><input type="checkbox" name="auto" checked> Book certain matches automatically</label>
-        <button type="submit" class="button primary">Import</button><p class="form-error" role="alert"></p></form>
-        <div class="panel-body"><p class="subtitle"><strong>Certain</strong> = the invoice number is in the description and the amount matches, or the payment comes from a bank account saved for the tenant and the amount equals an open invoice. Everything else waits for you below. Uploading the same file again books nothing twice.</p></div>`);
+      `<form id="bank-upload" class="panel-body">
+        <fieldset class="bank-modes"><legend>How should Haven handle the payments it recognises?${ui.data.mode ? '' : ' <span class="late-text">Choose one</span>'}</legend>
+          <label class="bank-mode ${ui.data.mode === 'auto' ? 'on' : ''}"><input type="radio" name="mode" value="auto" ${ui.data.mode === 'auto' ? 'checked' : ''} required><span><strong>Automatic</strong><small>A certain match is booked right away and the tenant gets "Payment received". Fastest.</small></span></label>
+          <label class="bank-mode ${ui.data.mode === 'review' ? 'on' : ''}"><input type="radio" name="mode" value="review" ${ui.data.mode === 'review' ? 'checked' : ''} required><span><strong>Review first</strong><small>Haven shows each match, marked in the statement PDF. Nothing is booked or sent to the tenant until you press Approve.</small></span></label>
+        </fieldset>
+        <div class="bank-upload"><input type="file" name="file" accept=".xml,.sta,.940,.txt,.mt940,.swi" required aria-label="Statement file"><button type="submit" class="button primary">Import</button></div>
+        <p class="form-error" role="alert"></p></form>
+        <div class="panel-body"><p class="subtitle"><strong>Certain match</strong> = the invoice number is in the description and the amount matches, or the payment comes from a bank account saved for the tenant and the amount equals an open invoice. Everything else always waits for you below. Uploading the same file again books nothing twice. Your choice is remembered for the next import.</p></div>`);
     const tabs = `<div class="tabs bank-tabs" role="tablist">${[['check', `To check (${c.check || 0})`], ['booked', `Booked (${c.booked || 0})`], ['ignored', `Ignored (${c.ignored || 0})`]]
       .map(([k, l]) => `<button type="button" role="tab" class="tab ${ui.tab === k ? 'active' : ''}" aria-selected="${ui.tab === k}" data-bank="tab" data-id="${k}">${e(l)}</button>`).join('')}</div>`;
     const rowsHtml = (ui.data.items || []).map(l => {
-      const [label, tone] = STATUS[l.status] || [l.status, 'gray'];
+      const [label, tone] = l.status === 'suggested' && l.certain ? ['Match found: approve', 'green'] : STATUS[l.status] || [l.status, 'gray'];
       const who = `<strong>${e(l.name || 'Unknown payer')}</strong><small>${e(iban(l.iban))}</small>`;
       const what = l.status === 'booked'
         ? (l.bookings || []).map(b => `${e(b.number || '')} ${eur(-b.amount_cents)}`).join('<br>') + (l.tenant_name ? `<small>${e(l.tenant_name)}</small>` : '')
         : (l.tenant_name || l.invoice_number ? `${e(l.tenant_name || '')}${l.invoice_number ? ' · ' + e(l.invoice_number) : ''}` : '—') + `<small>${e(l.reason || '')}</small>`;
-      const acts = l.status === 'booked' ? (company().landlord || company().role === 'manager' || company().role === 'admin' ? btn('Undo', 'undo', l.id) : '')
+      const show = `<a class="button small" href="/api/bank/lines/${l.id}/statement.pdf" data-pv-title="Bank statement: payment marked">Show in statement</a>`;
+      const acts = show + (l.status === 'booked' ? (company().landlord || company().role === 'manager' || company().role === 'admin' ? btn('Undo', 'undo', l.id) : '')
         : l.status === 'ignored' ? btn('Put back', 'reopen', l.id)
-        : btn('Confirm', 'confirm', l.id, 'small primary') + btn('Ignore', 'ignore', l.id);
+        : l.certain ? btn('Approve', 'approve', l.id, 'small primary') + btn('Other invoice', 'confirm', l.id) + btn('Ignore', 'ignore', l.id)
+        : btn('Confirm', 'confirm', l.id, 'small primary') + btn('Ignore', 'ignore', l.id));
       return [e(dateLabel(l.booked_on)), who, `<strong>${eur(l.amount_cents)}</strong>`, `<span class="bank-desc">${e(l.description || '')}</span>`, badge(label, tone) + `<div class="bank-what">${what}</div>` + proofTrail(l), `<div class="actions">${acts}</div>`];
     });
-    const list = panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : 'Ignored payments',
+    const approveAll = ui.tab === 'check' && ui.data.to_approve ? `<div class="notice bank-approve-all"><span><strong>${ui.data.to_approve} match${ui.data.to_approve === 1 ? '' : 'es'} found, waiting for your approval.</strong> Check them with Show in statement, then approve one by one or all at once. The tenant is told only after approval.</span>${btn(`Approve all ${ui.data.to_approve}`, 'approve-all', '', 'small primary')}</div>` : '';
+    const list = approveAll + panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : 'Ignored payments',
       ui.tab === 'check' ? 'Confirm puts the payment on the invoice you choose (more than its balance goes to the same tenant\'s other open invoices). Ignore is for money that is not rent.' : '',
       table(['Date', 'Payer', 'Amount', 'Description', 'Haven\'s match', ''], rowsHtml, ui.tab === 'check' ? 'Nothing to check. Every imported payment is booked or ignored.' : 'Nothing here yet.'));
     const imports = (ui.data.imports || []).length ? panel('Imported files', '', table(['File', 'Format', 'Payments', 'Booked automatically', 'By', 'When'],
@@ -98,13 +109,17 @@
     const f = ev.target, b = f.querySelector('button[type="submit"]'), err = f.querySelector('.form-error');
     const fd = new FormData();
     fd.append('company_id', state.company);
-    fd.append('auto', f.elements.auto.checked ? '1' : '0');
+    const mode = (f.querySelector('input[name="mode"]:checked') || {}).value;
+    if (!mode) { err.textContent = 'Choose Automatic or Review first.'; return; }
+    fd.append('mode', mode);
     fd.append('file', f.elements.file.files[0]);
     b.disabled = true; err.textContent = '';
     try {
       const r = await api('/api/bank/import', {method: 'POST', body: fd});
       ui.tab = r.suggested + r.unmatched ? 'check' : 'booked';
-      toast(`${r.format}: ${r.payments} incoming payment(s). ${r.booked} booked, ${r.suggested + r.unmatched} to check${r.duplicates ? `, ${r.duplicates} already imported earlier` : ''}.`);
+      toast(r.mode === 'review'
+        ? `${r.format}: ${r.payments} incoming payment(s). ${r.to_approve || 0} match(es) waiting for your approval, ${r.suggested + r.unmatched - (r.to_approve || 0)} to check${r.duplicates ? `, ${r.duplicates} already imported earlier` : ''}. Nothing was booked yet.`
+        : `${r.format}: ${r.payments} incoming payment(s). ${r.booked} booked, ${r.suggested + r.unmatched} to check${r.duplicates ? `, ${r.duplicates} already imported earlier` : ''}.`);
       ui.data = null; await refresh(); load();
     } catch (e2) { err.textContent = e2.message; b.disabled = false; }
   });
@@ -117,6 +132,12 @@
     try {
       if (act === 'tab') { ui.tab = id; ui.data = null; render(); return; }
       if (act === 'confirm') { await confirmLine(id); return; }
+      if (act === 'approve') { el.disabled = true; await api(`/api/bank/lines/${id}/approve`, {method: 'POST', body: {}}); toast('Payment approved and booked. The tenant has been told.'); await refresh(); await load(); return; }
+      if (act === 'approve-all') {
+        if (!confirm(`Approve all ${ui.data.to_approve} matches? Each is booked and its tenant gets "Payment received".`)) return;
+        el.disabled = true; const r = await api('/api/bank/approve-all', {method: 'POST', body: {company_id: state.company}});
+        toast(`${r.approved} payment(s) approved${r.skipped ? `, ${r.skipped} no longer fit and stay on the list` : ''}.`); await refresh(); await load(); return;
+      }
       if (act === 'ignore') {
         formModal('Ignore this payment', [['note', 'Why? (for example: refund from a supplier, not rent)', 'text', {value: 'Not a rent payment'}]],
           d => api(`/api/bank/lines/${id}/ignore`, {method: 'POST', body: d}).then(load), {submit: 'Ignore', success: 'Payment ignored.'});

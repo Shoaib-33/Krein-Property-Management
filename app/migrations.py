@@ -493,6 +493,15 @@ CREATE INDEX payment_notices_invoice ON payment_notices(invoice_id, status);
 '''
 
 
+# V29: choose how bank matches are handled (automatic, or review first), and keep the statement file for the marked PDF
+V29 = '''
+ALTER TABLE companies ADD COLUMN bank_mode TEXT CHECK(bank_mode IN ('auto','review'));
+ALTER TABLE owners ADD COLUMN bank_mode TEXT CHECK(bank_mode IN ('auto','review'));
+ALTER TABLE bank_imports ADD COLUMN mode TEXT NOT NULL DEFAULT 'auto';
+ALTER TABLE bank_lines ADD COLUMN certain INTEGER NOT NULL DEFAULT 0;
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -716,6 +725,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (28, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=29').fetchone():
+            statement = ''
+            for line in V29.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (29, now()))
         conn.commit()
     except Exception:
         conn.rollback()

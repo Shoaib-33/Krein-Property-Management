@@ -234,6 +234,39 @@ class BankingTests(unittest.TestCase):
         booked = rob.get('/api/bank/lines?company_id=1&status=booked').json()['items'][0]
         self.assertEqual(rob.post(f"/api/bank/lines/{booked['id']}/undo", json={'note': 'mistake'}).status_code, 200)
 
+    # ---------- review first
+    def test_review_first_books_nothing_until_a_person_approves_and_shows_the_match_in_the_statement(self):
+        upload = lambda raw, mode='': self.finance.post('/api/bank/import', data={'company_id': '1', **({'mode': mode} if mode else {})}, files={'file': ('s.xml', raw, 'text/xml')})
+        self.assertEqual(upload(camt([])).status_code, 422)   # the admin has to choose first
+        first, second = self.open[0], self.open[1]
+        r = upload(camt([(f"{first['balance_cents'] / 100:.2f}", 'CRDT', 'PAYER ONE', OTHER_IBAN, first['number'], 'R1'),
+                         (f"{second['balance_cents'] / 100:.2f}", 'CRDT', 'PAYER TWO', OTHER_IBAN, second['number'], 'R2')]), 'review').json()
+        self.assertEqual((r['booked'], r['to_approve']), (0, 2), r)
+        self.assertEqual(self.balance(first['id']), first['balance_cents'])          # nothing booked
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM notifications WHERE title='Payment received'").fetchone()[0], 0)   # nobody told
+        listing = self.finance.get('/api/bank/lines?company_id=1&status=check').json()
+        self.assertEqual((listing['mode'], listing['to_approve']), ('review', 2))
+        line = next(l for l in listing['items'] if l['name'] == 'PAYER ONE')
+        self.assertTrue(line['certain'])
+        pdf = self.finance.get(f"/api/bank/lines/{line['id']}/statement.pdf")
+        self.assertEqual(pdf.status_code, 200)
+        self.assertTrue(pdf.content.startswith(b'%PDF'))
+        import fitz
+        text = ' '.join(page.get_text() for page in fitz.open(stream=pdf.content))
+        self.assertIn('PAYER ONE', text)
+        self.assertIn(first['number'], text)
+        self.assertEqual(self.finance.post(f"/api/bank/lines/{line['id']}/approve").status_code, 200)
+        self.assertEqual(self.balance(first['id']), 0)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM notifications WHERE title='Payment received'").fetchone()[0] >= 1, True)
+        done = self.finance.post('/api/bank/approve-all', json={'company_id': 1}).json()
+        self.assertEqual(done, {'approved': 1, 'skipped': 0})
+        self.assertEqual(self.balance(second['id']), 0)
+        # the choice is remembered: the next file without a mode is handled the same way
+        nxt = upload(camt([('12.34', 'CRDT', 'X', OTHER_IBAN, 'misc', 'R3')])).json()
+        self.assertEqual(nxt['mode'], 'review')
+
 
 if __name__ == '__main__':
     unittest.main()

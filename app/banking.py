@@ -353,23 +353,47 @@ def evidence(conn, invoice_ids):
 
 
 # ---------------------------------------------------------------- endpoints
-@router.post('/api/bank/import')
-async def import_statement(company_id: int = Form(...), auto: str = Form('1'), file: UploadFile = File(...), user=Depends(current_user)):
+def saved_mode(conn, company_id, reach):
+    if reach.owner_id:
+        return conn.execute('SELECT bank_mode FROM owners WHERE id=?', (reach.owner_id,)).fetchone()[0]
+    return conn.execute('SELECT bank_mode FROM companies WHERE id=?', (company_id,)).fetchone()[0]
+
+
+@router.get('/api/bank/settings')
+def bank_settings(company_id: int, user=Depends(current_user)):
     with connect() as conn:
-        bank_reach(conn, user, company_id)
+        reach = bank_reach(conn, user, company_id)
+        return {'mode': saved_mode(conn, company_id, reach), 'own_account': reach.owner_id is not None}
+
+
+@router.post('/api/bank/import')
+async def import_statement(company_id: int = Form(...), mode: str = Form(''), auto: str = Form(''), file: UploadFile = File(...), user=Depends(current_user)):
+    """mode 'auto': certain matches are booked and the tenant is told at once.
+    mode 'review': nothing is booked or sent; certain matches wait for a person to approve them (the choice is remembered)."""
+    if mode not in ('auto', 'review'):
+        mode = 'auto' if auto in ('1', 'true') else 'review' if auto in ('0', 'false') else ''
+    with connect() as conn:
+        reach = bank_reach(conn, user, company_id)
+        mode = mode or saved_mode(conn, company_id, reach) or ''
+    if mode not in ('auto', 'review'):
+        raise HTTPException(422, 'Choose how matches are handled: automatically, or review first.')
     raw = await file.read(MAX_FILE + 1)
     await file.close()
     if not raw or len(raw) > MAX_FILE:
         raise HTTPException(422, 'Upload a statement file of at most 5 MB.')
     fmt, parsed = parse_statement(raw, file.filename or '')
-    automatic = auto not in ('0', 'false', '')
-    summary = {'format': fmt, 'payments': len(parsed), 'new': 0, 'duplicates': 0, 'booked': 0, 'suggested': 0, 'unmatched': 0}
+    automatic = mode == 'auto'
+    summary = {'format': fmt, 'mode': mode, 'payments': len(parsed), 'new': 0, 'duplicates': 0, 'booked': 0, 'suggested': 0, 'unmatched': 0}
     with transaction() as conn:
         reach = bank_reach(conn, user, company_id)
         conn.scope = None
         prefix = f'o{reach.owner_id}:' if reach.owner_id else ''
-        import_id = conn.execute('INSERT INTO bank_imports(company_id,owner_id,filename,format,sha256,lines,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)',
-                                 (company_id, reach.owner_id, (file.filename or 'statement')[:120], fmt, hashlib.sha256(raw).hexdigest(), len(parsed), user['id'], now())).lastrowid
+        import_id = conn.execute('INSERT INTO bank_imports(company_id,owner_id,filename,format,sha256,lines,created_by,created_at,mode) VALUES(?,?,?,?,?,?,?,?,?)',
+                                 (company_id, reach.owner_id, (file.filename or 'statement')[:120], fmt, hashlib.sha256(raw).hexdigest(), len(parsed), user['id'], now(), mode)).lastrowid
+        if reach.owner_id:   # remember the choice for next time
+            conn.execute('UPDATE owners SET bank_mode=? WHERE id=?', (mode, reach.owner_id))
+        else:
+            conn.execute('UPDATE companies SET bank_mode=? WHERE id=?', (mode, company_id))
         seen = {}
         for line in parsed:
             if line['amount_cents'] <= 0:
@@ -386,9 +410,11 @@ async def import_statement(company_id: int = Form(...), auto: str = Form('1'), f
                 book(conn, company_id, line_id, allocations, user['id'], tenant, reason)
                 summary['booked'] += 1
                 continue
-            if status == 'booked':
-                status, reason = 'suggested', 'Certain match: ' + reason
-            conn.execute('UPDATE bank_lines SET status=?,tenant_id=?,invoice_id=?,reason=? WHERE id=?', (status, tenant, allocations[0][0]['id'] if allocations else None, reason, line_id))
+            certain = status == 'booked'
+            if certain:   # review first: the match is shown, nothing is booked or sent until a person approves it
+                status, reason = 'suggested', 'Match found: ' + reason
+                summary['to_approve'] = summary.get('to_approve', 0) + 1
+            conn.execute('UPDATE bank_lines SET status=?,tenant_id=?,invoice_id=?,reason=?,certain=? WHERE id=?', (status, tenant, allocations[0][0]['id'] if allocations else None, reason, int(certain), line_id))
             summary[status] += 1
         conn.execute('UPDATE bank_imports SET booked=? WHERE id=?', (summary['booked'], import_id))
         audit(conn, user['id'], company_id, 'imported', 'bank_statement', import_id, {**summary, 'landlord_account': bool(reach.owner_id)})
@@ -414,7 +440,9 @@ def bank_lines(company_id: int, status: str = 'check', page: int = 1, user=Depen
             r['evidence'] = evidence(conn, [b['invoice_id'] for b in r['bookings']] or [r['invoice_id']])
         counts = {k: conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({",".join("?" for _ in v)})', (company_id, *v)).fetchone()[0] for k, v in groups.items()}
         imports = [dict(r) for r in conn.execute(f'SELECT b.id,b.filename,b.format,b.lines,b.booked,b.created_at,u.name user_name FROM bank_imports b LEFT JOIN users u ON u.id=b.created_by WHERE b.company_id=? AND {whose.replace("l.owner_id", "b.owner_id")} ORDER BY b.id DESC LIMIT 20', (company_id,))]
-    return {'items': rows, 'total': total, 'counts': counts, 'imports': imports, 'own_account': reach.owner_id is not None}
+        mode = saved_mode(conn, company_id, reach)
+        to_approve = conn.execute(f"SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status='suggested' AND l.certain=1", (company_id,)).fetchone()[0]
+    return {'items': rows, 'total': total, 'counts': counts, 'imports': imports, 'own_account': reach.owner_id is not None, 'mode': mode, 'to_approve': to_approve}
 
 
 @router.get('/api/bank/open-invoices')
@@ -469,6 +497,95 @@ def confirm_line(line_id: int, data: dict, user=Depends(current_user)):
                 allocations.insert(0, [chosen, left])
         book(conn, line['company_id'], line_id, [tuple(a) for a in allocations], user['id'], tenant, 'Confirmed by ' + user['name'] + '.')
     return {'ok': True, 'booked': [{'invoice_id': a[0]['id'], 'amount_cents': a[1]} for a in allocations]}
+
+
+def approve_one(conn, line, reach, user):
+    """Book a 'match found' line after a person checked it. The match is worked out again, so a balance that changed in
+    the meantime (another payment, a credit note) is never booked blindly."""
+    status, tenant, allocations, reason = match(conn, line['company_id'], line, reach)
+    if status != 'booked':
+        conn.execute("UPDATE bank_lines SET certain=0,reason=? WHERE id=?", ('No longer a certain match: ' + reason, line['id']))
+        return False
+    book(conn, line['company_id'], line['id'], allocations, user['id'], tenant, 'Approved by ' + user['name'] + '. ' + reason)
+    return True
+
+
+@router.post('/api/bank/lines/{line_id}/approve')
+def approve_line(line_id: int, user=Depends(current_user)):
+    with transaction() as conn:
+        line, reach, _ = line_for(conn, line_id, user)
+        if line['status'] != 'suggested' or not line['certain']:
+            raise HTTPException(409, 'This payment has no match to approve. Use Confirm and choose the invoice.')
+        if not approve_one(conn, line, reach, user):
+            raise HTTPException(409, 'The match no longer fits (the balance changed). Use Confirm and choose the invoice.')
+    return {'ok': True}
+
+
+@router.post('/api/bank/approve-all')
+def approve_all(data: dict, user=Depends(current_user)):
+    company_id = int(data.get('company_id') or 0)
+    done = skipped = 0
+    with transaction() as conn:
+        reach = bank_reach(conn, user, company_id)
+        conn.scope = None
+        whose = 'owner_id IS NULL' if reach.owner_id is None else f'owner_id IN ({",".join(str(int(o)) for o in conn.bank_owner_ids)})'
+        for row in conn.execute(f"SELECT * FROM bank_lines WHERE company_id=? AND {whose} AND status='suggested' AND certain=1 ORDER BY booked_on,id", (company_id,)).fetchall():
+            if approve_one(conn, dict(row), reach, user):
+                done += 1
+            else:
+                skipped += 1
+    return {'approved': done, 'skipped': skipped}
+
+
+@router.get('/api/bank/lines/{line_id}/statement.pdf')
+def statement_pdf(line_id: int, user=Depends(current_user)):
+    """The imported statement as a PDF, with this payment highlighted and what Haven matched it to written next to it."""
+    from fastapi.responses import Response
+    with connect() as conn:
+        line, reach, _ = line_for(conn, line_id, user)
+        imp = dict(conn.execute('SELECT b.*,u.name user_name FROM bank_imports b LEFT JOIN users u ON u.id=b.created_by WHERE b.id=?', (line['import_id'],)).fetchone())
+        rows_ = [dict(r) for r in conn.execute('SELECT l.*,i.number invoice_number,t.name tenant_name FROM bank_lines l LEFT JOIN invoices i ON i.id=l.invoice_id LEFT JOIN tenants t ON t.id=l.tenant_id '
+                                               'WHERE l.import_id=? ORDER BY l.booked_on,l.id', (line['import_id'],))]
+        company = conn.execute('SELECT name FROM companies WHERE id=?', (line['company_id'],)).fetchone()[0]
+    return Response(statement_pdf_bytes(company, imp, rows_, line_id), media_type='application/pdf',
+                    headers={'Content-Disposition': f'inline; filename="statement-{imp["id"]}-line-{line_id}.pdf"'})
+
+
+def statement_pdf_bytes(company, imp, rows_, line_id):
+    import io
+    from xml.sax.saxutils import escape
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=landscape(A4), leftMargin=14 * mm, rightMargin=14 * mm, topMargin=14 * mm, bottomMargin=14 * mm, title='Bank statement')
+    st = getSampleStyleSheet()
+    small = ParagraphStyle('s', parent=st['Normal'], fontSize=8, leading=10)
+    bold = ParagraphStyle('b', parent=small, fontName='Helvetica-Bold')
+    p = lambda text, style=small: Paragraph(escape(str(text or '')), style)
+    ink, mark = colors.HexColor('#19372d'), colors.HexColor('#fff3b0')
+    target = next((r for r in rows_ if r['id'] == line_id), None)
+    story = [Paragraph(f'<b>{escape(company)}</b> · bank statement {escape(imp["filename"])} ({escape(imp["format"])})', ParagraphStyle('h', parent=st['Title'], fontSize=14, alignment=0, textColor=ink)),
+             p(f'Imported {imp["created_at"][:16].replace("T", " ")} by {imp.get("user_name") or ""}. Incoming payments read from the file. The highlighted row is the payment you are checking.'), Spacer(1, 8)]
+    if target:
+        what = (f'Haven matched it to invoice {target["invoice_number"]} of {target["tenant_name"]}. ' if target['invoice_number'] else 'Haven found no invoice for it. ') + (target['reason'] or '')
+        story += [Table([[p('Payment checked', bold), p(f'{target["booked_on"]} · EUR {target["amount_cents"] / 100:,.2f} · {target["name"]} {pretty_iban(target["iban"]) if target["iban"] else ""} · "{target["description"]}"'), ], [p('Haven\'s match', bold), p(what)]],
+                        colWidths=[35 * mm, 230 * mm], style=TableStyle([('BACKGROUND', (0, 0), (-1, -1), mark), ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e0b400')), ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('PADDING', (0, 0), (-1, -1), 5)])), Spacer(1, 10)]
+    head = [p(h, bold) for h in ('Date', 'Payer', 'IBAN', 'Amount', 'Description', 'Bank reference', 'Haven')]
+    status = lambda r: {'booked': 'Booked', 'ignored': 'Ignored', 'unmatched': 'Not recognised'}.get(r['status'], 'Match found, to approve' if r['certain'] else 'To check')
+    body = [[p(r['booked_on']), p(r['name']), p(pretty_iban(r['iban']) if r['iban'] else ''), p(f'EUR {r["amount_cents"] / 100:,.2f}'), p(r['description']), p(r['bank_ref']),
+             p((status(r) + (f' · {r["invoice_number"]} · {r["tenant_name"]}' if r['invoice_number'] else '')))] for r in rows_]
+    table = Table([head] + body, colWidths=[20 * mm, 42 * mm, 42 * mm, 24 * mm, 62 * mm, 30 * mm, 49 * mm], repeatRows=1)
+    style = [('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#e8f1ec')), ('GRID', (0, 0), (-1, -1), .25, colors.HexColor('#cfdcd4')), ('VALIGN', (0, 0), (-1, -1), 'TOP')]
+    for n, r in enumerate(rows_, start=1):
+        if r['id'] == line_id:
+            style += [('BACKGROUND', (0, n), (-1, n), mark), ('BOX', (0, n), (-1, n), 1.5, colors.HexColor('#e0b400'))]
+    table.setStyle(TableStyle(style))
+    story.append(table)
+    doc.build(story)
+    return buf.getvalue()
 
 
 @router.post('/api/bank/lines/{line_id}/ignore')
