@@ -84,6 +84,32 @@ def _property_ids(data):
         raise HTTPException(422, 'Choose valid units.')
 
 
+@router.post('/api/owners/{owner_id}/full-access')
+def owner_full_access(owner_id: int, data: dict, user=Depends(current_user)):
+    """Give an owner who already has a portal login the full management access of a company administrator, or take it away again.
+    It applies to this company only; the owner still cannot open any other company."""
+    enabled = data.get('enabled') is True
+    with transaction() as conn:
+        owner = record(conn, 'owners', owner_id, user, ('admin',))
+        if owner['archived_at']:
+            raise HTTPException(409, 'This owner was removed. Restore the owner first.')
+        account = conn.execute('SELECT user_id,enabled FROM owner_accounts WHERE owner_id=?', (owner_id,)).fetchone()
+        if not account or not account['enabled']:
+            raise HTTPException(409, 'The owner needs an active portal login first. Press Invite, or use "Invite as administrator" to send a setup link.')
+        member = conn.execute('SELECT role FROM memberships WHERE user_id=? AND company_id=?', (account['user_id'], owner['company_id'])).fetchone()
+        if enabled:
+            if not member:
+                conn.execute('INSERT INTO memberships VALUES(?,?,?)', (account['user_id'], owner['company_id'], 'admin'))
+            elif member['role'] != 'admin':
+                conn.execute("UPDATE memberships SET role='admin' WHERE user_id=? AND company_id=?", (account['user_id'], owner['company_id']))
+        elif member:
+            if member['role'] == 'admin' and conn.execute("SELECT COUNT(*) FROM memberships WHERE company_id=? AND role='admin'", (owner['company_id'],)).fetchone()[0] <= 1:
+                raise HTTPException(409, 'Keep at least one administrator for the company.')
+            conn.execute('DELETE FROM memberships WHERE user_id=? AND company_id=?', (account['user_id'], owner['company_id']))
+        audit(conn, user['id'], owner['company_id'], 'full_access_on' if enabled else 'full_access_off', 'owner', owner_id, {'name': owner['name']})
+    return {'full_access': enabled}
+
+
 @router.post('/api/owners/{owner_id}/archive')
 def archive_owner(owner_id: int, user=Depends(current_user)):
     """Remove an owner from the lists. Their statements and documents stay in the records; their portal login is closed."""
