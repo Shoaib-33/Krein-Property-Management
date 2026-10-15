@@ -24,9 +24,50 @@
     return `<div class="section-stack tf-removed">${panel('Removed tenant contacts', `${archived.length} removed. They keep their contracts and financial history. Restore one to return it to Tenants.`,
       table(['Name', 'Email', 'Removed', ''], archived.map(x => [`<button type="button" class="tenant-link" data-tenant="${x.id}">${e(x.name)}</button>`, e(x.email), dateLabel(x.archived_at), actionBtn('Restore', 'tenant-restore', x.id, 'small')])))}</div>`;
   }
+  // Tenants list with a month/year filter: who lived where in that period, their invoice, paid or not, and how
+  const howPaid = l => /^(Landlord bank|Bank) /.test(l.note || '') ? 'Bank statement' : l.proof_id ? 'Receipt' : 'Recorded by staff';
+  function periodList() {
+    const key = 'tenants', money_ = !['property', 'inspector'].includes(company().role), r = periodRange(key);
+    ensurePeriodInvoices(key);
+    const q = (state.tenantSearch || '').toLowerCase(), today_ = today();
+    const people = rows('tenants').filter(t => !t.archived_at || t.archived_at.slice(0, 10) >= r[0]).map(t => {
+      const cs = rows('contracts').filter(c => c.tenant_id === t.id && overlapsPeriod(key, c.start_date, c.end_date));
+      if (!cs.length) return null;
+      const ids = new Set(cs.map(c => c.id));
+      const inv = rows('invoices').filter(i => ids.has(i.contract_id) && i.released_at && inPeriod(key, i.period + '-01'));
+      const billed = inv.reduce((s, i) => s + i.total_cents, 0), open = inv.reduce((s, i) => s + Math.max(0, balance(i)), 0);
+      const pays = rows('ledger').filter(l => l.kind === 'payment' && inv.some(i => i.id === l.invoice_id)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      const late = inv.some(i => balance(i) > 0 && i.due_date < today_);
+      const status = !inv.length ? 'Not invoiced' : open <= 0 ? 'Paid' : late ? 'Overdue' : open < billed ? 'Partly paid' : 'Open';
+      return {t, cs, inv, billed, open, pays, status, movedIn: cs.some(c => inPeriod(key, c.start_date)), movingOut: cs.some(c => c.end_date && inPeriod(key, c.end_date))};
+    }).filter(Boolean).filter(x => !q || `${x.t.name} ${x.t.email} ${x.t.phone}`.toLowerCase().includes(q));
+    const f = state.tenantPeriodFilter || 'all';
+    const chips = [['all', 'All', people.length], ['paid', 'Paid', people.filter(x => x.status === 'Paid').length], ['unpaid', 'Not paid', people.filter(x => ['Open', 'Partly paid', 'Overdue'].includes(x.status)).length],
+      ['overdue', 'Overdue', people.filter(x => x.status === 'Overdue').length], ['in', 'Moved in', people.filter(x => x.movedIn).length], ['out', 'Moving out', people.filter(x => x.movingOut).length]];
+    const shown = people.filter(x => f === 'all' || (f === 'paid' && x.status === 'Paid') || (f === 'unpaid' && ['Open', 'Partly paid', 'Overdue'].includes(x.status)) || (f === 'overdue' && x.status === 'Overdue') || (f === 'in' && x.movedIn) || (f === 'out' && x.movingOut));
+    const tone = {Paid: 'green', Overdue: 'red', 'Partly paid': 'amber', Open: 'blue', 'Not invoiced': 'gray'};
+    const body = shown.map(x => {
+      const c = x.cs[0], last = x.pays[0];
+      return [`<button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>`,
+        `<strong>${e(x.cs.map(c => propertyFor(c.id).name).join(', '))}</strong><small>${x.movedIn ? 'moved in ' + e(dateLabel(x.cs.find(c => inPeriod(key, c.start_date)).start_date)) : ''}${x.movingOut ? (x.movedIn ? ' · ' : '') + 'leaves ' + e(dateLabel(x.cs.find(c => c.end_date && inPeriod(key, c.end_date)).end_date)) : ''}</small>`,
+        ...(money_ ? [x.inv.length ? `<span class="amount">${money(x.billed)}</span><small>${x.inv.map(i => e(i.number)).join(', ')}</small>` : '<span class="muted">—</span>',
+          badge(x.status, tone[x.status]), x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>',
+          last ? `<strong>${e(dateLabel(last.created_at.slice(0, 10)))}</strong><small>${e(howPaid(last))} · ${money(-last.amount_cents)}</small>` : '<span class="muted">No payment</span>'] : []),
+        `<button type="button" class="button small" data-tenant="${x.t.id}">Open</button>`];
+    });
+    const head = ['Tenant', 'Home', ...(money_ ? ['Billed', 'Status', 'Still open', 'Last payment'] : []), ''];
+    const filterChips = `<div class="filters tf-chips">${chips.map(([k, l, n]) => `<button type="button" class="filter-button ${f === k ? 'active' : ''}" data-tf-chip="${k}">${e(l)} <span>${n}</span></button>`).join('')}</div>`;
+    const search = `<div class="toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email or phone" value="${e(state.tenantSearch || '')}" aria-label="Search tenants">${filterChips}</div>`;
+    const totals = money_ ? `<div class="tf-period-sum"><span>Billed <strong>${money(people.reduce((s, x) => s + x.billed, 0))}</strong></span><span>Still open <strong>${money(people.reduce((s, x) => s + x.open, 0))}</strong></span><span>${people.filter(x => x.status === 'Paid').length} of ${people.filter(x => x.inv.length).length} paid</span></div>` : '';
+    return heading('Your tenants', 'Click a tenant to see everything about them: tenancies, invoices, payments and how they paid, bank accounts, requests and documents.', button('Add tenant', 'form', 'data-kind="tenants"', 'primary'), 'TENANTS')
+      + periodBar(key, `Tenants who rented in ${e(periodLabel(key))}`) + panel(`Tenants in ${periodLabel(key)}`, '', (totals ? `<div class="panel-body">${totals}</div>` : '') + search + table(head, body, 'No tenant rented in this period.'));
+  }
+  document.addEventListener('click', ev => { const chip = ev.target.closest('[data-tf-chip]'); if (chip) { state.tenantPeriodFilter = chip.dataset.tfChip; render(); } });
+
   const baseRender = renderPage;
   renderPage = () => {
     if (state.page === 'settings') return baseRender() + removedPanel();
+    if (state.page === 'tenants' && !state.tenantView) return periodValue('tenants') ? periodList() : baseRender().replace('<section class="panel">', () => periodBar('tenants', 'Choose a month to see who paid, who did not, and who moved in or out') + '<section class="panel">');
     if (state.page !== 'tenants' || !state.tenantView) return baseRender();
     if (ui.id !== state.tenantView) { ui.id = state.tenantView; ui.file = null; setTimeout(load); }
     return filePage();
@@ -60,7 +101,7 @@
 
   function filePage() {
     const back = `<button type="button" class="button small" data-tenant-back>← All tenants</button>`;
-    const f = ui.file;
+    let f = ui.file;
     if (!f) return `<div class="tf-back">${back}</div>` + heading('Tenant file', 'Loading…', '', 'TENANTS');
     if (f.error) return `<div class="tf-back">${back}</div>` + empty('Could not open this tenant', f.error);
     const t = f.tenant, current = f.contracts.find(c => ['active', 'notice given'].includes(c.status)) || f.contracts[0];
@@ -92,6 +133,13 @@
     // money
     let money_ = '';
     if (f.money) {
+      // a year filter for the money part of the file
+      const yearsOf = [...new Set(f.invoices.map(i => i.period.slice(0, 4)))].sort().reverse();
+      const yr = yearsOf.includes(String(state.tfYear)) ? String(state.tfYear) : 'all';
+      const inYear = d => yr === 'all' || String(d || '').slice(0, 4) === yr;
+      const yearChips = yearsOf.length > 1 ? `<div class="filters tf-years">${['all', ...yearsOf].map(y => `<button type="button" class="filter-button ${yr === y ? 'active' : ''}" data-tf-year="${y}">${y === 'all' ? 'All years' : y}</button>`).join('')}</div>` : '';
+      f = {...f, invoices: f.invoices.filter(i => inYear(i.period)), payments: f.payments.filter(p => inYear(p.date))};
+      money_ = yearChips;
       const invoices = panel('Invoices and how they were paid', 'Each invoice with what the tenant did (said paid, uploaded a receipt) and how the money arrived.', table(['Invoice', 'Period', 'Amount', 'Due', 'Open', 'Status', 'Payment trail', ''], f.invoices.map(i => {
         const [label, tone] = invStatusOf(i);
         return [`<strong>${e(i.number)}</strong>`, e(i.period), `<span class="amount">${eur(i.total_cents)}</span>`, e(dateLabel(i.due_date)), i.balance_cents > 0 ? `<strong>${eur(i.balance_cents)}</strong>` : '—', badge(label, tone), trail(i),
@@ -102,7 +150,7 @@
         fromCell(p)]), 'No payments yet.'));
       const deposit = f.deposit.length ? panel('Deposit', '', table(['Date', 'What', 'Amount', 'Status', 'Reason'], f.deposit.map(d => [e(dateLabel(d.created_at.slice(0, 10))), e(d.kind), eur(d.amount_cents), badge(d.status), e(d.reason || '')]))) : '';
       const arrears = f.arrears.length ? `<div class="notice warning">${icon('clock')}<span><strong>Arrears follow-up is open</strong> for ${f.arrears.map(a => e(a.number)).join(', ')}. See Finance > Arrears.</span></div>` : '';
-      money_ = arrears + invoices + history + deposit;
+      money_ = money_ + arrears + invoices + history + deposit;
     }
     // bank accounts
     const SRC = {tenant: 'Given by the tenant', staff: 'Added by staff', learned: 'Learned from a bank payment'};
@@ -139,6 +187,7 @@
         d => api(`/api/tenants/${t.id}`, {method: 'PATCH', body: d}), {submit: 'Save changes', success: 'Tenant details saved.'});
     }
   });
+  document.addEventListener('click', ev => { const y = ev.target.closest('[data-tf-year]'); if (y) { state.tfYear = y.dataset.tfYear; render(); } });
   document.addEventListener('input', ev => {
     if (ev.target.id !== 'tenant-search') return;
     state.tenantSearch = ev.target.value;

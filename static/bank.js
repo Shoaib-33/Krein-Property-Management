@@ -12,7 +12,7 @@
 
   // Payment verification: the tenants who said "I have paid", waiting for the bank statement or confirmed by it
   function noticesPanel() {
-    const list = rows('payment_notices');
+    const list = rows('payment_notices').filter(n => inPeriod('payments', n.paid_on));
     if (!list.length) return '';
     const age = n => Math.floor((Date.now() - new Date(n.paid_on + 'T12:00:00')) / 86400000);
     const body = list.map(n => {
@@ -46,7 +46,7 @@
     if (ui.loading) return;
     ui.loading = true;
     try {
-      ui.data = await api(`/api/bank/lines?company_id=${state.company}&status=${ui.tab}`);
+      ui.data = await api(`/api/bank/lines?company_id=${state.company}&status=${ui.tab}&period=${encodeURIComponent(periodValue('bank'))}`);
       ui.company = state.company;
     } catch (err) { ui.data = {error: err.message}; }
     ui.loading = false;
@@ -88,7 +88,7 @@
     const imports = (ui.data.imports || []).length ? panel('Imported files', '', table(['File', 'Format', 'Payments', 'Booked automatically', 'By', 'When'],
       ui.data.imports.map(i => [e(i.filename), e(i.format), String(i.lines), String(i.booked), e(i.user_name || ''), e(dateLabel(i.created_at.slice(0, 10)))]))) : '';
     return heading('Match bank payments to invoices', 'Upload the statement from your bank. Haven recognises who paid by the invoice number in the description or the tenant\'s bank account, and books it.', '', 'FINANCE')
-      + `<div class="section-stack">${upload}${tabs}${list}${imports}</div>`;
+      + `<div class="section-stack">${upload}${periodBar('bank', periodValue('bank') ? `Bank payments of ${e(periodLabel('bank'))}` : '')}${tabs}${list}${imports}</div>`;
   }
 
   async function confirmLine(id) {
@@ -161,6 +161,7 @@
     } catch (err) { toast(err.message); }
   });
 
+  document.addEventListener('haven-period', ev => { if (ev.detail === 'bank') { ui.data = null; } });
   // a fresh workspace load (another company, new data) reloads the bank list next time it is opened
   const baseRefresh = refresh;
   refresh = async (...args) => { const r = await baseRefresh(...args); if (state.page !== 'bank') ui.data = null; return r; };

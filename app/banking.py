@@ -422,7 +422,7 @@ async def import_statement(company_id: int = Form(...), mode: str = Form(''), au
 
 
 @router.get('/api/bank/lines')
-def bank_lines(company_id: int, status: str = 'check', page: int = 1, user=Depends(current_user)):
+def bank_lines(company_id: int, status: str = 'check', page: int = 1, period: str = '', user=Depends(current_user)):
     groups = {'check': ('suggested', 'unmatched'), 'booked': ('booked',), 'ignored': ('ignored',)}
     if status not in groups:
         raise HTTPException(422, 'Unknown list.')
@@ -431,6 +431,10 @@ def bank_lines(company_id: int, status: str = 'check', page: int = 1, user=Depen
         reach = bank_reach(conn, user, company_id)
         conn.scope = None
         whose = 'l.owner_id IS NULL' if reach.owner_id is None else f'l.owner_id IN ({",".join(str(int(o)) for o in conn.bank_owner_ids)})'
+        imports_whose = whose.replace('l.owner_id', 'b.owner_id')   # the list of imported files is not filtered by period
+        import re as _re
+        if _re.fullmatch(r'\d{4}(-\d{2})?', period or ''):   # a year (2026) or a month (2026-10): payments booked by the bank in that period
+            whose += f" AND l.booked_on LIKE '{period}%'"
         marks = ','.join('?' for _ in groups[status])
         total = conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({marks})', (company_id, *groups[status])).fetchone()[0]
         rows = [dict(r) for r in conn.execute(f'''SELECT l.*,t.name tenant_name,i.number invoice_number FROM bank_lines l LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN invoices i ON i.id=l.invoice_id
@@ -439,7 +443,7 @@ def bank_lines(company_id: int, status: str = 'check', page: int = 1, user=Depen
             r['bookings'] = [dict(b) for b in conn.execute('SELECT g.ledger_id,l.amount_cents,l.invoice_id,i.number FROM bank_bookings g JOIN ledger l ON l.id=g.ledger_id LEFT JOIN invoices i ON i.id=l.invoice_id WHERE g.line_id=?', (r['id'],))]
             r['evidence'] = evidence(conn, [b['invoice_id'] for b in r['bookings']] or [r['invoice_id']])
         counts = {k: conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({",".join("?" for _ in v)})', (company_id, *v)).fetchone()[0] for k, v in groups.items()}
-        imports = [dict(r) for r in conn.execute(f'SELECT b.id,b.filename,b.format,b.lines,b.booked,b.created_at,u.name user_name FROM bank_imports b LEFT JOIN users u ON u.id=b.created_by WHERE b.company_id=? AND {whose.replace("l.owner_id", "b.owner_id")} ORDER BY b.id DESC LIMIT 20', (company_id,))]
+        imports = [dict(r) for r in conn.execute(f'SELECT b.id,b.filename,b.format,b.lines,b.booked,b.created_at,u.name user_name FROM bank_imports b LEFT JOIN users u ON u.id=b.created_by WHERE b.company_id=? AND {imports_whose} ORDER BY b.id DESC LIMIT 20', (company_id,))]
         mode = saved_mode(conn, company_id, reach)
         to_approve = conn.execute(f"SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status='suggested' AND l.certain=1", (company_id,)).fetchone()[0]
     return {'items': rows, 'total': total, 'counts': counts, 'imports': imports, 'own_account': reach.owner_id is not None, 'mode': mode, 'to_approve': to_approve}

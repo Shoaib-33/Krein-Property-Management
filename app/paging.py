@@ -135,7 +135,7 @@ def period_records(period: str, company_id: int, user=Depends(current_user)):
 
 
 @router.get('/api/ledger')
-def list_ledger(company_id: int, q: str = '', kind: str = 'All', page: int = 1, page_size: int = 50, user=Depends(current_user)):
+def list_ledger(company_id: int, q: str = '', kind: str = 'All', period: str = '', page: int = 1, page_size: int = 50, user=Depends(current_user)):
     page, page_size, offset = page_args(page, page_size)
     with connect() as conn:
         only = finance_company(conn, user, company_id)
@@ -146,6 +146,9 @@ def list_ledger(company_id: int, q: str = '', kind: str = 'All', page: int = 1, 
         if kind != 'All':
             where.append('l.kind=?')
             params.append(kind[:40])
+        if period:   # entries recorded in that month
+            where.append('substr(l.created_at,1,7)=?')
+            params.append(period[:7])
         if q.strip():
             where.append("(t.name LIKE ? ESCAPE '\\' OR l.note LIKE ? ESCAPE '\\' OR i.number LIKE ? ESCAPE '\\')")
             params += [like(q.strip())] * 3

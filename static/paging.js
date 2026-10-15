@@ -18,7 +18,7 @@
     },
     ledger: {
       title: 'Tenant ledger', sub: 'Charges are positive; verified payments are negative. Newest first.', endpoint: '/api/ledger', placeholder: 'Search tenant, invoice or note',
-      filters: [['kind', 'Type', 'kinds']], head: ['Entry', 'Recorded', 'Tenant', 'Type', 'Amount', 'Note'],
+      filters: [['kind', 'Type', 'kinds'], ['period', 'Month', 'month']], head: ['Entry', 'Recorded', 'Tenant', 'Type', 'Amount', 'Note'],
       row: l => [`#${l.id}`, dateLabel(l.created_at), e(l.tenant_name || '—'), badge(l.kind, 'gray'), money(l.amount_cents), e((l.note || '').slice(0, 70))],
       replace: ['Tenant ledger', 'Audit trail']
     },
