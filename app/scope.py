@@ -65,6 +65,8 @@ def row_in_scope(conn, table, row, scope):
         return invoice_contract(conn, row['invoice_id']) in scope.contracts
     if table == 'thread_states':
         return False
+    if table == 'tenant_bank_accounts':
+        return row['tenant_id'] in scope.tenants
     if table == 'doc_templates':
         return row['kind'] == 'Lease' and not row['archived']   # he may use the company's lease templates, read only
     if table in ('invoices', 'rent_versions', 'deposit_events', 'requests', 'communications', 'tasks', 'payment_plans', 'arrears_cases', 'outbound_email_jobs',
@@ -121,6 +123,7 @@ def filter_payload(conn, result, scope):
     out['plan_instalments'] = [r for r in result.get('plan_instalments', []) if r.get('plan_id') in plan_ids]
     message_ids = {r['id'] for r in out['portal_messages']}
     out['thread_states'] = [r for r in result.get('thread_states', []) if r.get('thread_id') in message_ids]
+    out['tenant_bank_accounts'] = [r for r in result.get('tenant_bank_accounts', []) if r.get('tenant_id') in T]
     out['portal_accounts'] = [r for r in result.get('portal_accounts', []) if r.get('tenant_id') in T]
     out['lease_offers'] = [r for r in result.get('lease_offers', []) if r.get('property_id') in P]
     out['invoices'] = [r for r in result.get('invoices', []) if r.get('contract_id') in C]

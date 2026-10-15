@@ -46,6 +46,9 @@ PRESETS = {
     'privacy': ('I agree that my details are processed for this tenancy', 'checkbox', None),
 }
 MAX_FIELDS = 14
+# always asked in the contract form: the account the rent will be paid from, so bank payments are recognised (app/banking.py)
+BANK_FIELDS = [{'key': 'iban', 'label': 'IBAN of the account you will pay the rent from', 'type': 'iban', 'required': True},
+               {'key': 'account_holder', 'label': 'Account holder name (as your bank shows it)', 'type': 'text', 'required': True}]
 
 
 def build_form(raw):
@@ -73,7 +76,7 @@ def build_form(raw):
             if not label:
                 continue
             out.append({'key': f'custom_{custom}', 'label': label, 'type': 'text', 'required': required})
-    return out
+    return [f for f in out if f['key'] not in ('iban', 'account_holder')] + [dict(f) for f in BANK_FIELDS]
 
 
 def clean_form(defs, values):
@@ -109,6 +112,11 @@ def clean_form(defs, values):
         elif kind == 'select':
             if text not in f.get('options', []):
                 raise HTTPException(422, f'Choose a value for {f["label"]}.')
+        elif kind == 'iban':
+            from .banking import normalize_iban, valid_iban, pretty_iban
+            if not valid_iban(text):
+                raise HTTPException(422, f'{f["label"]}: this is not a valid IBAN (for example NL91 ABNA 0417 1643 00).')
+            text = pretty_iban(normalize_iban(text))
         out[f['key']] = text[:600 if kind == 'textarea' else 300]
     return out
 
@@ -444,6 +452,9 @@ def sign(offer_id: int, data: dict, request: Request, user=Depends(current_user)
                      (tenant['name'], stamp, ip, digest, json.dumps(values) if defs is not None else None, image, mode, offer_id))
         if values.get('phone') and not (tenant['phone'] or '').strip():
             conn.execute('UPDATE tenants SET phone=? WHERE id=?', (values['phone'], tenant['id']))
+        if values.get('iban'):   # the rent account from the contract form: bank payments from it are recognised (app/banking.py)
+            from .banking import add_bank_account
+            add_bank_account(conn, offer['company_id'], tenant['id'], values['iban'], values.get('account_holder', ''), 'tenant', user['id'])
         notify_staff(conn, offer['company_id'], 'Contract signed, approval needed', f'{tenant["name"]} signed the tenancy agreement.', 'tenants', property_id=offer['property_id'])
         audit(conn, user['id'], offer['company_id'], 'signed', 'lease_offer', offer_id, {'ip': ip, 'sha256': digest, 'signature_mode': mode, 'details_given': sorted(values)})
     return {'ok': True}

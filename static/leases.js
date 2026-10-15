@@ -50,7 +50,7 @@
       ${sel('property_id', 'Property', rows('properties').map(p => [p.id, p.name + (activeContract(p.id) ? ' (occupied)' : '')]), d.property_id)}${sel('template_id', 'Contract template', templates.map(t => [t.id, t.name]), d.template_id)}
       ${inp('start_date', 'Tenancy starts', 'date', d.start_date || today(), 'required')}${inp('end_date', 'Ends (leave empty if open-ended)', 'date', d.end_date)}
       ${inp('basic_rent', 'Basic rent per month (€)', 'number', d.basic_rent, 'required step="0.01" min="0"')}${inp('service_charge', 'Service-charge advance (€)', 'number', d.service_charge ?? '0', 'step="0.01" min="0"')}${inp('deposit', 'Deposit (€)', 'number', d.deposit ?? '0', 'step="0.01" min="0"')}</div>
-      <h3 class="lf-h">Details the tenant fills in before signing</h3><div class="lf-fields">${ask}</div>
+      <h3 class="lf-h">Details the tenant fills in before signing</h3><p class="modal-note">Always asked: the IBAN and account holder of the account the rent will be paid from, so bank payments are recognised automatically.</p><div class="lf-fields">${ask}</div>
       <div class="form-grid"><div class="field"><label for="ls-c1">Your own question (optional)</label><input id="ls-c1" name="custom1" type="text" maxlength="80" value="${e(d.custom1 || '')}" placeholder="e.g. Licence plate number"></div><div class="field"><label for="ls-c2">Another question (optional)</label><input id="ls-c2" name="custom2" type="text" maxlength="80" value="${e(d.custom2 || '')}"></div></div>
       <p class="form-error" id="ls-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="submit" class="button primary">Next: read and edit the contract</button></div></form>`);
   }

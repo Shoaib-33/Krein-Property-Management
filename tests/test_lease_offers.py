@@ -138,9 +138,9 @@ class LeaseOfferTests(unittest.TestCase):
         oid = sent.json()['id']
         offer = self.tenant_offers()[0]
         self.assertIn('no pets', offer['body'])
-        self.assertEqual([f['key'] for f in offer['form_fields']], ['phone', 'id_number', 'privacy', 'custom_1'])
+        self.assertEqual([f['key'] for f in offer['form_fields']], ['phone', 'id_number', 'privacy', 'custom_1', 'iban', 'account_holder'])   # the rent account is always asked
         self.assertNotIn('tenant_signature', offer)
-        good = {'agree': True, 'signature': self.signature_png(), 'signature_mode': 'draw', 'form': {'phone': '+31 6 1234 5678', 'id_number': 'NL123456', 'privacy': True}}
+        good = {'agree': True, 'signature': self.signature_png(), 'signature_mode': 'draw', 'form': {'phone': '+31 6 1234 5678', 'id_number': 'NL123456', 'privacy': True, 'iban': 'nl91abna0417164300', 'account_holder': 'E Jansen'}}
         sign = lambda **change: self.tenant.post(f'/api/tenant/lease-offers/{oid}/sign', headers=self.th, json={**good, **change})
         self.assertEqual(sign(signature=None).status_code, 422)                      # a signature is needed
         self.assertEqual(sign(signature=self.signature_png(blank=True)).status_code, 422)   # an empty pad is not a signature
@@ -148,6 +148,8 @@ class LeaseOfferTests(unittest.TestCase):
         self.assertEqual(sign(form={'phone': '+31 6 1234 5678', 'privacy': True}).status_code, 422)  # required answer missing
         self.assertEqual(sign(form={**good['form'], 'privacy': False}).status_code, 422)
         self.assertEqual(sign(agree=False).status_code, 422)
+        self.assertEqual(sign(form={**good['form'], 'iban': 'NL91ABNA0417164301'}).status_code, 422)   # wrong check digits
+        self.assertEqual(sign(form={**good['form'], 'iban': ''}).status_code, 422)
         signed = sign()
         self.assertEqual(signed.status_code, 200, signed.text)
         # the PDF people open right after signing already shows the tenant's details and signature, and the landlord's pending line
@@ -160,6 +162,9 @@ class LeaseOfferTests(unittest.TestCase):
             self.assertGreaterEqual(sum(len(page.get_image_info()) for page in shown), 1)
         review = self.staff.get(f'/api/lease-offers/{oid}/review').json()
         self.assertEqual(review['values']['id_number'], 'NL123456')
+        self.assertEqual(review['values']['iban'], 'NL91 ABNA 0417 1643 00')
+        accounts = self.staff.get('/api/data?company_id=1').json()['tenant_bank_accounts']
+        self.assertIn(('NL91ABNA0417164300', 'E Jansen'), [(a['iban'], a['holder']) for a in accounts])
         self.assertTrue(review['signature'].startswith('data:image/png;base64,'))
         self.assertTrue(review['edited'])
         staff_list = next(o for o in self.staff.get('/api/data?company_id=1').json()['lease_offers'] if o['id'] == oid)

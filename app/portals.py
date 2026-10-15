@@ -131,6 +131,8 @@ def tenant_data(user=Depends(current_user)):
         ids=[c['id'] for c in contracts]
         company_ids=sorted({a['company_id'] for a in accounts})
         result={'accounts':accounts,'contracts':contracts,'today':local_today().isoformat()}
+        tmarks=','.join('?' for _ in accounts)
+        result['bank_accounts']=[dict(r) for r in conn.execute(f'SELECT id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE tenant_id IN ({tmarks}) GROUP BY iban ORDER BY id',tuple(a['id'] for a in accounts))]
         from .lease_offers import tenant_offers
         result['lease_offers']=tenant_offers(conn,user['id'])
         from .schedule import payment_schedule

@@ -1,0 +1,124 @@
+'use strict';
+/* Finance > Bank statements: upload the CAMT.053 / MT940 file from the bank, see what Haven booked by itself,
+   and confirm or ignore the payments it could not place with certainty. Server side: app/banking.py. */
+(() => {
+  if (typeof navGroups === 'undefined' || typeof renderPage !== 'function') return;
+  const fin = navGroups.find(g => g[0] === 'FINANCE');
+  if (fin) fin[1].splice(2, 0, ['bank', 'Bank statements', 'wallet']);
+  const baseAllowed = allowedPage;
+  allowedPage = page => page === 'bank' ? ['admin', 'manager', 'finance'].includes(company().role) && !company().landlord : baseAllowed(page);
+  const baseRender = renderPage;
+  renderPage = () => state.page === 'bank' ? bankPage() : baseRender();
+
+  const ui = {tab: 'check', data: null, loading: false, company: null};
+  const eur = c => new Intl.NumberFormat('en-NL', {style: 'currency', currency: 'EUR'}).format((c || 0) / 100);
+  const iban = v => v ? String(v).replace(/(.{4})/g, '$1 ').trim() : '';
+  const btn = (label, act, id = '', cls = 'small') => `<button type="button" class="button ${cls}" data-bank="${act}" data-id="${id}">${e(label)}</button>`;
+  const STATUS = {booked: ['Booked', 'green'], suggested: ['Please check', 'amber'], unmatched: ['Not recognised', 'gray'], ignored: ['Ignored', 'gray']};
+
+  async function load() {
+    if (ui.loading) return;
+    ui.loading = true;
+    try {
+      ui.data = await api(`/api/bank/lines?company_id=${state.company}&status=${ui.tab}`);
+      ui.company = state.company;
+    } catch (err) { ui.data = {error: err.message}; }
+    ui.loading = false;
+    if (state.page === 'bank') render();
+  }
+
+  function bankPage() {
+    if (!ui.data || ui.company !== state.company) { setTimeout(load); return heading('Bank statements', 'Loading…', '', 'FINANCE'); }
+    if (ui.data.error) return heading('Bank statements', '', '', 'FINANCE') + empty('Could not load the bank payments', ui.data.error);
+    const c = ui.data.counts || {};
+    const upload = panel('Import a bank statement', 'Download the statement from your bank as CAMT.053 (.xml) or MT940 (.sta, .940, .txt) and upload it here. Only incoming payments are read.',
+      `<form id="bank-upload" class="panel-body bank-upload"><input type="file" name="file" accept=".xml,.sta,.940,.txt,.mt940,.swi" required aria-label="Statement file">
+        <label class="bank-auto"><input type="checkbox" name="auto" checked> Book certain matches automatically</label>
+        <button type="submit" class="button primary">Import</button><p class="form-error" role="alert"></p></form>
+        <div class="panel-body"><p class="subtitle"><strong>Certain</strong> = the invoice number is in the description and the amount matches, or the payment comes from a bank account saved for the tenant and the amount equals an open invoice. Everything else waits for you below. Uploading the same file again books nothing twice.</p></div>`);
+    const tabs = `<div class="tabs bank-tabs" role="tablist">${[['check', `To check (${c.check || 0})`], ['booked', `Booked (${c.booked || 0})`], ['ignored', `Ignored (${c.ignored || 0})`]]
+      .map(([k, l]) => `<button type="button" role="tab" class="tab ${ui.tab === k ? 'active' : ''}" aria-selected="${ui.tab === k}" data-bank="tab" data-id="${k}">${e(l)}</button>`).join('')}</div>`;
+    const rowsHtml = (ui.data.items || []).map(l => {
+      const [label, tone] = STATUS[l.status] || [l.status, 'gray'];
+      const who = `<strong>${e(l.name || 'Unknown payer')}</strong><small>${e(iban(l.iban))}</small>`;
+      const what = l.status === 'booked'
+        ? (l.bookings || []).map(b => `${e(b.number || '')} ${eur(-b.amount_cents)}`).join('<br>') + (l.tenant_name ? `<small>${e(l.tenant_name)}</small>` : '')
+        : (l.tenant_name || l.invoice_number ? `${e(l.tenant_name || '')}${l.invoice_number ? ' · ' + e(l.invoice_number) : ''}` : '—') + `<small>${e(l.reason || '')}</small>`;
+      const acts = l.status === 'booked' ? (company().role === 'manager' || company().role === 'admin' ? btn('Undo', 'undo', l.id) : '')
+        : l.status === 'ignored' ? btn('Put back', 'reopen', l.id)
+        : btn('Confirm', 'confirm', l.id, 'small primary') + btn('Ignore', 'ignore', l.id);
+      return [e(dateLabel(l.booked_on)), who, `<strong>${eur(l.amount_cents)}</strong>`, `<span class="bank-desc">${e(l.description || '')}</span>`, badge(label, tone) + `<div class="bank-what">${what}</div>`, `<div class="actions">${acts}</div>`];
+    });
+    const list = panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : 'Ignored payments',
+      ui.tab === 'check' ? 'Confirm puts the payment on the invoice you choose (more than its balance goes to the same tenant\'s other open invoices). Ignore is for money that is not rent.' : '',
+      table(['Date', 'Payer', 'Amount', 'Description', 'Haven\'s match', ''], rowsHtml, ui.tab === 'check' ? 'Nothing to check. Every imported payment is booked or ignored.' : 'Nothing here yet.'));
+    const imports = (ui.data.imports || []).length ? panel('Imported files', '', table(['File', 'Format', 'Payments', 'Booked automatically', 'By', 'When'],
+      ui.data.imports.map(i => [e(i.filename), e(i.format), String(i.lines), String(i.booked), e(i.user_name || ''), e(dateLabel(i.created_at.slice(0, 10)))]))) : '';
+    return heading('Match bank payments to invoices', 'Upload the statement from your bank. Haven recognises who paid by the invoice number in the description or the tenant\'s bank account, and books it.', '', 'FINANCE')
+      + `<div class="section-stack">${upload}${tabs}${list}${imports}</div>`;
+  }
+
+  async function confirmLine(id) {
+    const line = (ui.data.items || []).find(l => l.id === Number(id));
+    const open = await api(`/api/bank/open-invoices?company_id=${state.company}`);
+    if (!open.length) { toast('There are no open invoices to put this payment on.'); return; }
+    const pick = open.find(o => o.id === line.invoice_id) || open.find(o => o.tenant_id === line.tenant_id) || open[0];
+    const options = open.map(o => [o.id, `${o.number} · ${o.tenant_name} · ${eur(o.balance_cents)} open · due ${o.due_date}`]);
+    formModal('Book this payment', [selectField('invoice_id', 'Invoice', options, {value: pick.id, wide: true})],
+      d => api(`/api/bank/lines/${id}/confirm`, {method: 'POST', body: {invoice_id: Number(d.invoice_id)}}).then(load),
+      {intro: `<strong>${eur(line.amount_cents)}</strong> from ${e(line.name || 'unknown payer')} ${e(iban(line.iban))} on ${e(dateLabel(line.booked_on))}<br><span>${e(line.description || '')}</span><br><br>The tenant's bank account is remembered, so the next payment from it is recognised automatically.`,
+        submit: 'Book payment', success: 'Payment booked.'});
+  }
+
+  document.addEventListener('submit', async ev => {
+    if (ev.target.id !== 'bank-upload') return;
+    ev.preventDefault();
+    const f = ev.target, b = f.querySelector('button[type="submit"]'), err = f.querySelector('.form-error');
+    const fd = new FormData();
+    fd.append('company_id', state.company);
+    fd.append('auto', f.elements.auto.checked ? '1' : '0');
+    fd.append('file', f.elements.file.files[0]);
+    b.disabled = true; err.textContent = '';
+    try {
+      const r = await api('/api/bank/import', {method: 'POST', body: fd});
+      ui.tab = r.suggested + r.unmatched ? 'check' : 'booked';
+      toast(`${r.format}: ${r.payments} incoming payment(s). ${r.booked} booked, ${r.suggested + r.unmatched} to check${r.duplicates ? `, ${r.duplicates} already imported earlier` : ''}.`);
+      ui.data = null; await refresh(); load();
+    } catch (e2) { err.textContent = e2.message; b.disabled = false; }
+  });
+
+  document.addEventListener('click', async ev => {
+    const el = ev.target.closest('[data-bank]');
+    if (!el) return;
+    ev.preventDefault();
+    const id = el.dataset.id, act = el.dataset.bank;
+    try {
+      if (act === 'tab') { ui.tab = id; ui.data = null; render(); return; }
+      if (act === 'confirm') { await confirmLine(id); return; }
+      if (act === 'ignore') {
+        formModal('Ignore this payment', [['note', 'Why? (for example: refund from a supplier, not rent)', 'text', {value: 'Not a rent payment'}]],
+          d => api(`/api/bank/lines/${id}/ignore`, {method: 'POST', body: d}).then(load), {submit: 'Ignore', success: 'Payment ignored.'});
+        return;
+      }
+      if (act === 'reopen') { el.disabled = true; await api(`/api/bank/lines/${id}/reopen`, {method: 'POST', body: {}}); await load(); return; }
+      if (act === 'undo') {
+        formModal('Take this booking back', [['note', 'Why?', 'text']], d => api(`/api/bank/lines/${id}/undo`, {method: 'POST', body: d}).then(load),
+          {intro: 'The payment is reversed in the ledger (nothing is deleted) and the bank line goes back to the check list.', submit: 'Take back', success: 'Booking taken back.'});
+        return;
+      }
+      if (act === 'account-add') {
+        formModal('Add bank account', [['iban', 'IBAN', 'text', {wide: true}], ['holder', 'Account holder (as the bank shows it)', 'text', {required: false, wide: true}]],
+          d => api(`/api/tenants/${id}/bank-accounts`, {method: 'POST', body: d}), {submit: 'Save', success: 'Bank account saved.'});
+        return;
+      }
+      if (act === 'account-remove') {
+        if (!confirm('Remove this bank account from the tenant?')) return;
+        await api(`/api/bank-accounts/${id}`, {method: 'DELETE'}); await refresh(); toast('Bank account removed.');
+      }
+    } catch (err) { toast(err.message); }
+  });
+
+  // a fresh workspace load (another company, new data) reloads the bank list next time it is opened
+  const baseRefresh = refresh;
+  refresh = async (...args) => { const r = await baseRefresh(...args); if (state.page !== 'bank') ui.data = null; return r; };
+})();

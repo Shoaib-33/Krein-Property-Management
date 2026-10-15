@@ -454,6 +454,30 @@ CREATE INDEX IF NOT EXISTS tenants_email ON tenants(email);
 '''
 
 
+# V27: bank-statement import and matching, and the bank accounts tenants pay from (app/banking.py)
+V27 = '''
+CREATE TABLE tenant_bank_accounts (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+ iban TEXT NOT NULL, holder TEXT NOT NULL DEFAULT '', source TEXT NOT NULL CHECK(source IN ('tenant','staff','learned')),
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL, UNIQUE(company_id,tenant_id,iban)
+);
+CREATE INDEX tenant_bank_accounts_iban ON tenant_bank_accounts(company_id, iban);
+CREATE TABLE bank_imports (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), filename TEXT NOT NULL, format TEXT NOT NULL, sha256 TEXT NOT NULL,
+ lines INTEGER NOT NULL DEFAULT 0, booked INTEGER NOT NULL DEFAULT 0, created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE TABLE bank_lines (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), import_id INTEGER NOT NULL REFERENCES bank_imports(id),
+ dedupe TEXT NOT NULL, booked_on TEXT NOT NULL, amount_cents INTEGER NOT NULL, iban TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '',
+ description TEXT NOT NULL DEFAULT '', bank_ref TEXT NOT NULL DEFAULT '',
+ status TEXT NOT NULL CHECK(status IN ('booked','suggested','unmatched','ignored')), tenant_id INTEGER REFERENCES tenants(id), invoice_id INTEGER REFERENCES invoices(id),
+ reason TEXT, decided_by INTEGER REFERENCES users(id), decided_at TEXT, created_at TEXT NOT NULL, UNIQUE(company_id,dedupe)
+);
+CREATE INDEX bank_lines_status ON bank_lines(company_id, status);
+CREATE TABLE bank_bookings (line_id INTEGER NOT NULL REFERENCES bank_lines(id), ledger_id INTEGER NOT NULL UNIQUE REFERENCES ledger(id));
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -661,6 +685,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (26, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=27').fetchone():
+            statement = ''
+            for line in V27.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (27, now()))
         conn.commit()
     except Exception:
         conn.rollback()

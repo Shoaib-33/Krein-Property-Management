@@ -223,3 +223,15 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .hh-note-inline{display:block;margin-top:8px;font-size:12px;color:var(--muted);font-style:italic}
 .chat-bubble p{white-space:pre-line}
 .conversation-card>.inline-actions{padding:12px 16px;border-top:1px solid var(--line);display:flex;align-items:center;gap:12px}
+
+/* bank statements (static/bank.js) and tenant bank accounts */
+.bank-upload{display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.bank-upload input[type=file]{font-size:12px;max-width:100%}
+.bank-auto{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.bank-upload .form-error{flex-basis:100%;margin:0}
+.bank-desc{display:block;max-width:280px;white-space:normal;line-height:1.5}
+.bank-what{margin-top:6px;white-space:normal;max-width:260px;line-height:1.5}
+.bank-acc{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;margin-bottom:6px;font-variant-numeric:tabular-nums}
+.bank-acc small{flex-basis:100%;margin:0}
+.link-button{border:0;background:none;color:var(--muted);padding:0 4px;font-size:15px;line-height:1}
+.link-button:hover{color:var(--red)}

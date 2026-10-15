@@ -276,3 +276,14 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 - The scheduler bills the current month on every run as well as next month from the bill day, so a tenancy that starts after the 15th, or a month missed while the server was down, is invoiced at the next run (never twice).
 - "Run monthly invoices" accepts months up to two months ahead, so a typo such as 2036 cannot create invoices that can never be removed.
 - An end date cannot run over the next tenancy of the same unit. Invoices after a new end date block it until they are fully credited.
+
+### Bank-statement import and matching
+
+Tenants pay into the company's bank account. **Finance > Bank statements**: download the statement from your bank as **CAMT.053** (.xml) or **MT940** (.sta/.940/.txt) and upload it. Haven reads the incoming payments (date, amount, payer name, IBAN, description) and:
+
+- **books them automatically** when the invoice number (HVN-...) is in the description and the amount matches, or when the payment comes from a bank account saved for the tenant and the amount equals an open invoice (or all of them);
+- **suggests** a match when it is likely (known account or invoice number with another amount, or name and amount), and lists the rest as **not recognised**. Staff confirm (choose the invoice; more than its balance goes to the tenant's other open invoices, oldest first) or ignore (not rent);
+- remembers the payer's IBAN when staff confirm a payment, so the next one is recognised by itself;
+- never books a line twice (the bank's own reference is stored), approves a pending receipt for the same invoice and amount, and lets a manager take a booking back (a reversal in the ledger; nothing is deleted).
+
+Tenants' bank accounts: the **contract form always asks for the IBAN and account holder** (checked with the IBAN check digits), tenants can add or remove accounts under **Rent and payments** in their portal, and staff see and edit them in **Tenants & contracts > Tenant directory**. Uploading a receipt by hand stays possible. The invoice PDF and email ask tenants to put the invoice number in the description of their transfer.

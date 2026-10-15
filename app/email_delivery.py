@@ -120,7 +120,8 @@ def _invoice_body(invoice, tenant_name, language, public_url, payment_instructio
             f'Uw huurfactuur {invoice["number"]} voor {invoice["period"]}',
             f'Beste {tenant_name},\n\nBijgevoegd vindt u de huurfactuur {invoice["number"]} voor {invoice["period"]}. '
             f'Het totaal is EUR {invoice["total_cents"] / 100:,.2f} en de vervaldatum is {invoice["due_date"]}.\n\n'
-            f'{payment_instructions or "Betaal volgens de met uw verhuurder afgesproken betaalmethode."}\n\n'
+            f'{payment_instructions or "Betaal volgens de met uw verhuurder afgesproken betaalmethode."}\n'
+            f'Vermeld factuurnummer {invoice["number"]} in de omschrijving van uw overboeking, dan wordt uw betaling automatisch herkend.\n\n'
             f'U kunt uw facturen en betalingsbewijs ook bekijken in het huurdersportaal: {public_url}/tenant\n\n'
             'Met vriendelijke groet,\nUw vastgoedbeheerder'
         )
@@ -128,7 +129,8 @@ def _invoice_body(invoice, tenant_name, language, public_url, payment_instructio
         f'Your rent invoice {invoice["number"]} for {invoice["period"]}',
         f'Dear {tenant_name},\n\nAttached is rent invoice {invoice["number"]} for {invoice["period"]}. '
         f'The total is EUR {invoice["total_cents"] / 100:,.2f}, due on {invoice["due_date"]}.\n\n'
-        f'{payment_instructions or "Please pay using the method agreed with your landlord."}\n\n'
+        f'{payment_instructions or "Please pay using the method agreed with your landlord."}\n'
+        f'Put invoice number {invoice["number"]} in the description of your bank transfer, so your payment is recognised automatically.\n\n'
         f'You can also view invoices and submit payment proof in the tenant portal: {public_url}/tenant\n\n'
         'Kind regards,\nYour property manager'
     )

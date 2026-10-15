@@ -53,6 +53,10 @@ def staff_extras(conn,user,company_id,role):
     if role in ('admin','manager'):
         result['automation_rules']=[dict(r) for r in conn.execute('SELECT * FROM automation_rules WHERE company_id=? ORDER BY id',(company_id,))]
         result['automation_runs']=[dict(r) for r in conn.execute('SELECT * FROM automation_runs WHERE company_id=? ORDER BY id DESC LIMIT 40',(company_id,))]
+    if role in ('admin','manager','finance','property'):
+        result['tenant_bank_accounts']=[dict(r) for r in conn.execute('SELECT id,tenant_id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE company_id=? ORDER BY id',(company_id,))]
+    if role in ('admin','manager','finance'):
+        result['bank_to_check']=conn.execute("SELECT COUNT(*) FROM bank_lines WHERE company_id=? AND status IN ('suggested','unmatched')",(company_id,)).fetchone()[0]
     result['owner_accounts']=[dict(r) for r in conn.execute('SELECT a.owner_id,a.user_id,a.enabled,u.name,u.email FROM owner_accounts a JOIN users u ON u.id=a.user_id WHERE a.company_id=?',(company_id,))]
     if role in ('admin','manager','finance'):
         result['owner_expenses']=[dict(r) for r in conn.execute('SELECT * FROM owner_expenses WHERE company_id=? ORDER BY incurred_on DESC,id DESC',(company_id,))]

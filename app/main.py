@@ -1850,7 +1850,7 @@ def invoice_pdf_bytes(inv, snap):
     currency=lambda cents:f'€ {cents/100:,.2f}'
     items=[[para('DESCRIPTION','SectionLabel'),para('AMOUNT','SectionLabel')],[para(snap.get('basic_label') or 'Basic rent'),para(currency(inv['basic_cents']))],[para(snap.get('service_label') or 'Service charge advance'),para(currency(inv['service_cents']))]]+[[para(x.get('description','')),para(currency(x.get('amount_cents',0)))] for x in snap.get('extra_items',[])]
     item_table=Table(items,colWidths=[130*mm,40*mm],style=TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(1,0),(1,-1),'RIGHT'),('BACKGROUND',(0,0),(-1,0),pale),('LINEBELOW',(0,0),(-1,0),.7,line),('LINEBELOW',(0,1),(-1,-2),.4,line),('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)]))
-    story += [item_table,Spacer(1,12),Table([[para('TOTAL DUE','TotalLabel'),para(currency(inv['total_cents']),'TotalAmount')]],colWidths=[110*mm,60*mm],style=TableStyle([('BACKGROUND',(0,0),(-1,-1),green),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),12),('RIGHTPADDING',(0,0),(-1,-1),12),('TOPPADDING',(0,0),(-1,-1),12),('BOTTOMPADDING',(0,0),(-1,-1),12)])),Spacer(1,19)]+([para('NOTE','SectionLabel'),para(snap['note']),Spacer(1,12)] if snap.get('note') else [])+[para('HOW TO PAY','SectionLabel'),para(snap.get('payment_instructions') or 'Please contact your property manager for payment instructions.'),Spacer(1,8),para(f'Please include invoice number {inv["number"]} with your payment. Submit your payment receipt through the tenant portal after paying.','SmallMuted')]
+    story += [item_table,Spacer(1,12),Table([[para('TOTAL DUE','TotalLabel'),para(currency(inv['total_cents']),'TotalAmount')]],colWidths=[110*mm,60*mm],style=TableStyle([('BACKGROUND',(0,0),(-1,-1),green),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),12),('RIGHTPADDING',(0,0),(-1,-1),12),('TOPPADDING',(0,0),(-1,-1),12),('BOTTOMPADDING',(0,0),(-1,-1),12)])),Spacer(1,19)]+([para('NOTE','SectionLabel'),para(snap['note']),Spacer(1,12)] if snap.get('note') else [])+[para('HOW TO PAY','SectionLabel'),para(snap.get('payment_instructions') or 'Please contact your property manager for payment instructions.'),Spacer(1,8),rich(f'Put invoice number <b>{esc(inv["number"])}</b> in the description of your bank transfer (omschrijving), so your payment is recognised automatically. You may also upload your receipt in the tenant portal.','SmallMuted')]
     def page_chrome(canvas,doc):
         canvas.saveState();width,height=A4
         canvas.setFillColor(green);canvas.rect(0,height-5*mm,width,5*mm,stroke=0,fill=1)
@@ -1951,6 +1951,8 @@ from .operations import router as operations_router
 from .finance_ops import router as finance_ops_router
 from .privacy import router as privacy_router
 app.include_router(privacy_router)
+from .banking import router as banking_router
+app.include_router(banking_router)
 app.include_router(portal_router)
 app.include_router(sla_router)
 app.include_router(owners_router)
