@@ -84,12 +84,73 @@ def _property_ids(data):
         raise HTTPException(422, 'Choose valid units.')
 
 
+@router.post('/api/owners/{owner_id}/archive')
+def archive_owner(owner_id: int, user=Depends(current_user)):
+    """Remove an owner from the lists. Their statements and documents stay in the records; their portal login is closed."""
+    with transaction() as conn:
+        owner = record(conn, 'owners', owner_id, user, STAFF)
+        if owner['archived_at']:
+            return {'archived': True}
+        if conn.execute('SELECT 1 FROM portfolios WHERE owner_id=? AND archived_at IS NULL', (owner_id,)).fetchone():
+            raise HTTPException(409, "This owner still has portfolios. Remove them first, or give them to another owner with Edit portfolio.")
+        conn.execute('UPDATE owners SET archived_at=? WHERE id=?', (now(), owner_id))
+        conn.execute('UPDATE owner_accounts SET enabled=0 WHERE owner_id=?', (owner_id,))
+        conn.execute("UPDATE account_invitations SET revoked=1 WHERE kind='owner' AND target_id=? AND used_at IS NULL", (owner_id,))
+        for row in conn.execute('SELECT user_id FROM owner_accounts WHERE owner_id=?', (owner_id,)).fetchall():
+            uid = row['user_id']
+            other = (conn.execute('SELECT 1 FROM memberships WHERE user_id=?', (uid,)).fetchone() or conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (uid,)).fetchone()
+                     or conn.execute('SELECT 1 FROM contractor_accounts WHERE user_id=?', (uid,)).fetchone() or conn.execute('SELECT 1 FROM owner_accounts WHERE user_id=? AND enabled=1', (uid,)).fetchone()
+                     or conn.execute('SELECT 1 FROM users WHERE id=? AND global_admin=1', (uid,)).fetchone())
+            if not other:   # the login belonged only to this owner: close it and free the email
+                conn.execute("UPDATE users SET active=0,name='Removed owner',email='removed-'||id||'@removed.invalid',password_hash='!' WHERE id=?", (uid,))
+                conn.execute('DELETE FROM sessions WHERE user_id=?', (uid,))
+        audit(conn, user['id'], owner['company_id'], 'archived', 'owner', owner_id, {'name': owner['name']})
+    return {'archived': True}
+
+
+@router.post('/api/owners/{owner_id}/restore')
+def restore_owner(owner_id: int, user=Depends(current_user)):
+    with transaction() as conn:
+        owner = record(conn, 'owners', owner_id, user, STAFF)
+        conn.execute('UPDATE owners SET archived_at=NULL WHERE id=?', (owner_id,))
+        audit(conn, user['id'], owner['company_id'], 'restored', 'owner', owner_id, {'name': owner['name']})
+    return {'archived': False, 'note': 'The portal login was closed when the owner was removed. Invite the owner again.'}
+
+
+@router.post('/api/portfolios/{portfolio_id}/archive')
+def archive_portfolio(portfolio_id: int, user=Depends(current_user)):
+    """Remove a portfolio from the lists and free its units. Statements already made stay in the records."""
+    with transaction() as conn:
+        p = record(conn, 'portfolios', portfolio_id, user, STAFF)
+        if p['archived_at']:
+            return {'archived': True}
+        if conn.execute("SELECT 1 FROM owner_statements WHERE portfolio_id=? AND status='draft'", (portfolio_id,)).fetchone():
+            raise HTTPException(409, 'Delete or publish the draft statements of this portfolio first.')
+        freed = conn.execute('UPDATE properties SET portfolio_id=NULL WHERE portfolio_id=? AND company_id=?', (portfolio_id, p['company_id'])).rowcount
+        conn.execute('UPDATE portfolios SET archived_at=? WHERE id=?', (now(), portfolio_id))
+        audit(conn, user['id'], p['company_id'], 'archived', 'portfolio', portfolio_id, {'name': p['name'], 'units_freed': freed})
+    return {'archived': True, 'units_freed': freed}
+
+
+@router.post('/api/portfolios/{portfolio_id}/restore')
+def restore_portfolio(portfolio_id: int, user=Depends(current_user)):
+    with transaction() as conn:
+        p = record(conn, 'portfolios', portfolio_id, user, STAFF)
+        owner = conn.execute('SELECT archived_at FROM owners WHERE id=?', (p['owner_id'],)).fetchone()
+        if owner and owner['archived_at']:
+            raise HTTPException(409, 'Restore the owner of this portfolio first.')
+        conn.execute('UPDATE portfolios SET archived_at=NULL WHERE id=?', (portfolio_id,))
+        audit(conn, user['id'], p['company_id'], 'restored', 'portfolio', portfolio_id, {'name': p['name']})
+    return {'archived': False}
+
+
 @router.post('/api/portfolios')
 def create_portfolio(data: dict, user=Depends(current_user)):
     company_id = integer(data, 'company_id')
     with transaction() as conn:
         authorize(conn, user, company_id, STAFF)
-        linked(conn, 'owners', integer(data, 'owner_id'), company_id)
+        if linked(conn, 'owners', integer(data, 'owner_id'), company_id)['archived_at']:
+            raise HTTPException(422, 'This owner was removed. Restore the owner first.')
         pid = insert(conn, 'portfolios', {'company_id': company_id, 'owner_id': integer(data, 'owner_id'), 'name': text_field(data, 'name', maximum=120), 'fee_percent': _percent(data), 'created_at': now()})
         _assign(conn, company_id, pid, _property_ids(data))
         audit(conn, user['id'], company_id, 'created', 'portfolio', pid, {'fee_percent': data.get('fee_percent')})
@@ -118,6 +179,8 @@ def add_expense(data: dict, user=Depends(current_user)):
     with transaction() as conn:
         authorize(conn, user, company_id, FINANCE)
         portfolio = linked(conn, 'portfolios', integer(data, 'portfolio_id'), company_id)
+        if portfolio['archived_at']:
+            raise HTTPException(422, 'This portfolio was removed.')
         property_id = integer(data, 'property_id') if data.get('property_id') else None
         if property_id:
             prop = linked(conn, 'properties', property_id, company_id)

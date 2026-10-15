@@ -417,6 +417,11 @@ CREATE INDEX staff_invites_company ON staff_invites(company_id,revoked,used_at);
 '''
 
 
+V24 = '''
+ALTER TABLE portfolios ADD COLUMN archived_at TEXT;
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -600,6 +605,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (23, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=24').fetchone():
+            statement = ''
+            for line in V24.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (24, now()))
         conn.commit()
     except Exception:
         conn.rollback()

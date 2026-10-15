@@ -20,6 +20,8 @@
   const lastMonth = () => { const d = new Date(); d.setDate(1); d.setMonth(d.getMonth() - 1); return d.toLocaleDateString('en-CA').slice(0, 7); };
   const monthLabel = p => new Intl.DateTimeFormat('en-GB', {month: 'long', year: 'numeric'}).format(new Date(p + '-01T12:00:00'));
   const ownerOf = id => byId('owners', id);
+  const activePortfolios = () => rows('portfolios').filter(p => !p.archived_at);
+  const activeOwners = () => rows('owners').filter(o => !o.archived_at);
   const unitsOf = pid => rows('properties').filter(p => p.portfolio_id === pid);
   const canManage = () => ['admin', 'manager', 'property', 'finance'].includes(company().role);
   const canFinance = () => ['admin', 'manager', 'finance'].includes(company().role);
@@ -32,7 +34,7 @@
     const roll = units.reduce((s, u) => { const c = activeContract(u.id); if (!c) return s; const r = rentFor(c.id); return s + (r.basic_cents || 0) + (r.service_cents || 0); }, 0);
     const owner = ownerOf(p.owner_id);
     return `<article class="portfolio-card">
-      <header><div><h3>${e(p.name)}</h3><small>${e(owner.name || 'No owner')} · ${p.fee_percent}% management fee</small></div>${canManage() ? own('Edit', 'edit-portfolio', p.id) : ''}</header>
+      <header><div><h3>${e(p.name)}</h3><small>${e(owner.name || 'No owner')} · ${p.fee_percent}% management fee</small></div>${canManage() ? own('Edit', 'edit-portfolio', p.id) + own('Remove', 'remove-portfolio', p.id, 'small danger') : ''}</header>
       <div class="pf-metrics"><div><strong>${units.length}</strong><small>units</small></div><div><strong>${pct}%</strong><small>occupied</small></div><div><strong>${money(roll)}</strong><small>monthly rent roll</small></div></div>
       <div class="pf-bar" role="img" aria-label="${pct}% occupied"><span data-width="${pct}"></span></div>
       <div class="pf-units">${units.length ? units.map(u => `<span class="unit-chip ${activeContract(u.id) ? '' : 'vacant'}">${e(u.name)}</span>`).join('') : '<small>No units yet. Edit the portfolio to add units.</small>'}</div>
@@ -40,22 +42,32 @@
   }
 
   function ownersPage() {
-    const owners = rows('owners');
+    const owners = activeOwners();
     const accountOf = id => rows('owner_accounts').find(a => a.owner_id === id);
     const ownerRows = owners.map(o => {
       const acc = accountOf(o.id);
       const access = acc ? (acc.enabled ? badge('Portal active', 'green') : badge('Access paused', 'amber')) : badge('Not invited', 'gray');
       const actions = [own('Edit', 'edit-owner', o.id)];
       if (canManage()) actions.push(acc ? own(acc.enabled ? 'Pause access' : 'Restore access', acc.enabled ? 'pause-owner' : 'restore-owner', o.id) : own('Invite', 'invite-owner', o.id, 'small primary'));
-      return [`<strong>${e(o.name)}</strong><small>${e(o.email)}${o.phone ? ' · ' + e(o.phone) : ''}</small>`, String(rows('portfolios').filter(p => p.owner_id === o.id).length), access, `<div class="actions">${actions.join('')}</div>`];
+      if (canManage()) actions.push(own('Remove', 'remove-owner', o.id, 'small danger'));
+      return [`<strong>${e(o.name)}</strong><small>${e(o.email)}${o.phone ? ' · ' + e(o.phone) : ''}</small>`, String(activePortfolios().filter(p => p.owner_id === o.id).length), access, `<div class="actions">${actions.join('')}</div>`];
     });
-    const portfolios = rows('portfolios');
+    const portfolios = activePortfolios();
     return heading('Owners & portfolios', 'Group units into portfolios, give each owner a portal and report on the rent that belongs to them.', canManage() ? own('New owner', 'new-owner', '', '') + own('New portfolio', 'new-portfolio', '', 'primary') : '', 'PORTFOLIO')
       + (portfolios.length ? `<div class="portfolio-grid">${portfolios.map(portfolioCard).join('')}</div>` : panel('No portfolios yet', 'A portfolio links units to one owner and a management fee.', empty('Start with an owner', 'Add an owner, then create a portfolio and choose its units.')))
       + panel('Owners', 'People and companies that own the units you manage', table(['Owner', 'Portfolios', 'Portal', ''], ownerRows, 'No owners yet.'))
+      + removedPanel()
       + ownerDocsPanel();
   }
 
+  // removed owners and portfolios stay in the records (their statements do) and can be restored
+  function removedPanel() {
+    const owners = rows('owners').filter(o => o.archived_at), portfolios = rows('portfolios').filter(p => p.archived_at);
+    if (!canManage() || (!owners.length && !portfolios.length)) return '';
+    const list = [...owners.map(o => [`<strong>${e(o.name)}</strong><small>Owner · ${e(o.email)}</small>`, e(dateLabel(o.archived_at.slice(0, 10))), own('Restore', 'restore-owner-record', o.id)]),
+      ...portfolios.map(p => [`<strong>${e(p.name)}</strong><small>Portfolio · ${e(ownerOf(p.owner_id).name || '')}</small>`, e(dateLabel(p.archived_at.slice(0, 10))), own('Restore', 'restore-portfolio', p.id)])];
+    return panel('Removed owners and portfolios', 'Their statements stay in the records. A restored owner needs a new portal invitation; a restored portfolio needs its units chosen again.', table(['Name', 'Removed', ''], list));
+  }
   const DOC_CATEGORIES = ['Insurance', 'Deed / title', 'Valuation', 'Energy label', 'Inspection report', 'Tax & levies', 'Other'];
   function ownerDocsPanel() {
     const list = rows('owner_documents').map(s => [`<strong>${e(s.title)}</strong><small>${e(s.category)}</small>`, e(ownerOf(s.owner_id).name || ''), s.from_owner ? badge('Uploaded by owner', 'blue') : badge('Shared by you', 'gray'), s.revoked ? badge('Revoked', 'gray') : e(dateLabel(s.shared_at)),
@@ -83,7 +95,7 @@
   }
 
   const ownerFields = (o = {}) => [['name', 'Owner or company name', 'text', {value: o.name || ''}], ['email', 'Email (also used for their portal login)', 'email', {value: o.email || ''}], ['phone', 'Phone', 'text', {value: o.phone || '', required: false}], ['payout_details', 'Payout notes (shown to staff only, no bank integration)', 'textarea', {value: o.payout_details || '', required: false, wide: true}]];
-  const ownerOptions = () => rows('owners').map(o => [o.id, o.name]);
+  const ownerOptions = () => activeOwners().map(o => [o.id, o.name]);
 
   function unitCheckboxes(pid) {
     return rows('properties').map(p => [`unit_${p.id}`, `${p.name}${p.portfolio_id && p.portfolio_id !== pid ? ' (moves from ' + (byId('portfolios', p.portfolio_id).name || 'another portfolio') + ')' : ''}`, 'checkbox', {value: p.portfolio_id === pid && pid ? 1 : '', required: false}]);
@@ -100,10 +112,22 @@
     'new-owner': () => formModal('New owner', ownerFields(), d => api('/api/owners', {method: 'POST', body: {...d, company_id: state.company}}), {submit: 'Add owner', success: 'Owner added.'}),
     'edit-owner': id => { const o = ownerOf(id); formModal('Edit owner', ownerFields(o), d => api(`/api/owners/${id}`, {method: 'PATCH', body: d}), {submit: 'Save changes'}); },
     'invite-owner': id => createInvitation('owner', Number(id)),
+    'remove-owner': id => {
+      const o = ownerOf(id);
+      if (!confirm(`Remove ${o.name}? Their portal login is closed. Statements already made stay in the records. You can restore the owner later.`)) return;
+      return api(`/api/owners/${id}/archive`, {method: 'POST', body: {}}).then(refresh).then(() => toast('Owner removed.'));
+    },
+    'restore-owner-record': id => api(`/api/owners/${id}/restore`, {method: 'POST', body: {}}).then(refresh).then(() => toast('Owner restored. Invite them again to give them portal access.')),
+    'remove-portfolio': id => {
+      const p = byId('portfolios', id), n = unitsOf(p.id).length;
+      if (!confirm(`Remove the portfolio "${p.name}"? ${n} unit${n === 1 ? ' is' : 's are'} freed from it. Statements already made stay in the records.`)) return;
+      return api(`/api/portfolios/${id}/archive`, {method: 'POST', body: {}}).then(refresh).then(() => toast('Portfolio removed.'));
+    },
+    'restore-portfolio': id => api(`/api/portfolios/${id}/restore`, {method: 'POST', body: {}}).then(refresh).then(() => toast('Portfolio restored. Edit it to choose its units again.')),
     'pause-owner': id => api('/api/accounts/access', {method: 'POST', body: {kind: 'owner', target_id: Number(id), enabled: false}}).then(refresh).then(() => toast('Portal access paused.')),
     'restore-owner': id => api('/api/accounts/access', {method: 'POST', body: {kind: 'owner', target_id: Number(id), enabled: true}}).then(refresh).then(() => toast('Portal access restored.')),
     'share-doc': () => {
-      if (!rows('owners').length) return toast('Add an owner first.');
+      if (!activeOwners().length) return toast('Add an owner first.');
       const docs = rows('documents').filter(d => !['payment proof', 'supplier invoice', 'deposit evidence', 'contractor agreement'].includes(String(d.kind).toLowerCase())).map(d => [d.id, `#${d.id} · ${d.name}`]);
       if (!docs.length) return toast('Upload the document on the Documents page first.');
       formModal('Share a document with an owner', [selectField('owner_id', 'Owner', ownerOptions()), selectField('document_id', 'Document', docs), selectField('category', 'Category', DOC_CATEGORIES), ['title', 'Title shown to the owner (optional)', 'text', {required: false}]],
@@ -111,7 +135,7 @@
     },
     'revoke-doc': id => { if (confirm('Remove the owner\'s access to this document?')) return api(`/api/owner-documents/${id}/revoke`, {method: 'POST', body: {}}).then(refresh).then(() => toast('Access removed.')); },
     'new-portfolio': () => {
-      if (!rows('owners').length) return toast('Add an owner first.');
+      if (!activeOwners().length) return toast('Add an owner first.');
       formModal('New portfolio', [['name', 'Portfolio name', 'text'], selectField('owner_id', 'Owner', ownerOptions()), ['fee_percent', 'Management fee (% of collected rent)', 'number', {value: '6', step: '0.1'}], ...unitCheckboxes(0)],
         d => api('/api/portfolios', {method: 'POST', body: {company_id: state.company, name: d.name, owner_id: Number(d.owner_id), fee_percent: d.fee_percent, property_ids: chosenUnits(d)}}), {submit: 'Create portfolio', intro: 'Choose which units belong to this owner. A unit can be in one portfolio at a time.'});
     },
@@ -121,8 +145,8 @@
         d => api(`/api/portfolios/${id}`, {method: 'PATCH', body: {name: d.name, owner_id: Number(d.owner_id), fee_percent: d.fee_percent, property_ids: chosenUnits(d)}}), {submit: 'Save portfolio'});
     },
     'generate': () => {
-      if (!rows('portfolios').length) return needPortfolio();
-      formModal('Generate owner statement', [selectField('portfolio_id', 'Portfolio', rows('portfolios').map(p => [p.id, p.name])), ['period', 'Month', 'month', {value: lastMonth(), max: lastMonth()}]],
+      if (!activePortfolios().length) return needPortfolio();
+      formModal('Generate owner statement', [selectField('portfolio_id', 'Portfolio', activePortfolios().map(p => [p.id, p.name])), ['period', 'Month', 'month', {value: lastMonth(), max: lastMonth()}]],
         d => api('/api/owner-statements/generate', {method: 'POST', body: {company_id: state.company, portfolio_id: Number(d.portfolio_id), period: d.period}}),
         {submit: 'Calculate draft', intro: 'Haven adds up payments verified in that month, subtracts the management fee and recorded expenses, and saves a draft for a second person to approve.'});
     },
@@ -133,8 +157,8 @@
     },
     'delete-draft': id => { if (confirm('Delete this draft? You can generate it again afterwards.')) api(`/api/owner-statements/${id}`, {method: 'DELETE'}).then(refresh).then(() => toast('Draft deleted.')); },
     'new-expense': () => {
-      if (!rows('portfolios').length) return needPortfolio();
-      formModal('Record an owner expense', [selectField('portfolio_id', 'Portfolio', rows('portfolios').map(p => [p.id, p.name])), selectField('property_id', 'Unit (optional)', rows('properties').filter(p => p.portfolio_id).map(p => [p.id, p.name]), {optional: true, required: false}), dayField('incurred_on', 'Date', today()), selectField('category', 'Category', ['Repairs & maintenance', 'Insurance', 'Taxes & levies', 'Owners association (VvE)', 'Cleaning & utilities', 'Other']), ['description', 'Description', 'text'], amountField('amount', 'Amount (€)'), selectField('document_id', 'Invoice or receipt (optional)', docOptions(), {optional: true, required: false})],
+      if (!activePortfolios().length) return needPortfolio();
+      formModal('Record an owner expense', [selectField('portfolio_id', 'Portfolio', activePortfolios().map(p => [p.id, p.name])), selectField('property_id', 'Unit (optional)', rows('properties').filter(p => p.portfolio_id).map(p => [p.id, p.name]), {optional: true, required: false}), dayField('incurred_on', 'Date', today()), selectField('category', 'Category', ['Repairs & maintenance', 'Insurance', 'Taxes & levies', 'Owners association (VvE)', 'Cleaning & utilities', 'Other']), ['description', 'Description', 'text'], amountField('amount', 'Amount (€)'), selectField('document_id', 'Invoice or receipt (optional)', docOptions(), {optional: true, required: false})],
         d => api('/api/owner-expenses', {method: 'POST', body: {...d, company_id: state.company, portfolio_id: Number(d.portfolio_id)}}), {submit: 'Save expense', intro: 'It will appear on the owner statement for the month of the date you choose.'});
     },
   };
