@@ -31,6 +31,8 @@ class LandlordScopeTests(unittest.TestCase):
         self.clients = []
         self.manager = self.login('manager@haven.local')
         self.platform = self.login('admin@haven.local')
+        for old in self.manager.get('/api/data?company_id=1').json()['portfolios']:   # the demo already groups the units; free them for this test
+            self.assertEqual(self.manager.post(f'/api/portfolios/{old["id"]}/archive').status_code, 200)
         data = self.manager.get('/api/data?company_id=1').json()
         with_contract = []
         for c in data['contracts']:

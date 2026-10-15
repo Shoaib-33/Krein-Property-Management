@@ -239,7 +239,7 @@ function field(def){
  const value=opts.value??'';
  const required=opts.required===false?'':'required';
  const wide=opts.wide?'wide':'';
- if(type==='checkbox')return `<div class="field checkbox wide"><input type="checkbox" name="${name}" id="f-${name}" ${value?'checked':''} ${required}><label for="f-${name}">${e(label)}</label></div>`;
+ if(type==='checkbox')return `<div class="field checkbox wide"><input type="checkbox" name="${name}" id="f-${name}" ${value?'checked':''} ${required} ${opts.disabled?'disabled':''}><label for="f-${name}">${e(label)}</label></div>`;
  let control;
  if(type==='select')control=`<select name="${name}" id="f-${name}" ${required}>${opts.optional?'<option value="">Not linked</option>':''}${(opts.options||[]).map(o=>{const [v,l]=Array.isArray(o)?o:[o,o];return `<option value="${e(v)}" ${String(value)===String(v)?'selected':''}>${e(l)}</option>`;}).join('')}</select>`;
  else if(type==='textarea')control=`<textarea name="${name}" id="f-${name}" ${required} maxlength="5000">${e(value)}</textarea>`;

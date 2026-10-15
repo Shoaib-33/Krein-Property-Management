@@ -102,7 +102,11 @@
   const ownerOptions = () => activeOwners().map(o => [o.id, o.name]);
 
   function unitCheckboxes(pid) {
-    return rows('properties').map(p => [`unit_${p.id}`, `${p.name}${p.portfolio_id && p.portfolio_id !== pid ? ' (moves from ' + (byId('portfolios', p.portfolio_id).name || 'another portfolio') + ')' : ''}`, 'checkbox', {value: p.portfolio_id === pid && pid ? 1 : '', required: false}]);
+    return rows('properties').map(p => {
+      const taken = p.portfolio_id && p.portfolio_id !== pid;   // already belongs to another owner's portfolio: it cannot be picked here
+      const holder = taken ? byId('portfolios', p.portfolio_id) : null, who = holder ? (byId('owners', holder.owner_id) || {}).name : '';
+      return [`unit_${p.id}`, `${p.name}${taken ? ' (already in ' + (holder && holder.name || 'another portfolio') + (who ? ' of ' + who : '') + ')' : ''}`, 'checkbox', {value: p.portfolio_id === pid && pid ? 1 : '', required: false, disabled: !!taken}];
+    });
   }
   const chosenUnits = data => Object.keys(data).filter(k => k.startsWith('unit_') && data[k] === true).map(k => Number(k.slice(5)));
 

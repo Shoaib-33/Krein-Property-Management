@@ -69,6 +69,9 @@ def _assign(conn, company_id, portfolio_id, property_ids):
         found = conn.execute(f'SELECT id FROM properties WHERE company_id=? AND id IN ({marks})', (company_id, *ids)).fetchall()
         if len(found) != len(ids):
             raise HTTPException(422, 'All selected units must belong to this company.')
+        taken = conn.execute(f'SELECT p.name FROM properties p WHERE p.company_id=? AND p.id IN ({marks}) AND p.portfolio_id IS NOT NULL AND p.portfolio_id<>?', (company_id, *ids, portfolio_id or 0)).fetchone()
+        if taken:
+            raise HTTPException(409, f'{taken[0]} already belongs to another portfolio. Take it out of that portfolio first.')
     conn.execute('UPDATE properties SET portfolio_id=NULL WHERE portfolio_id=? AND company_id=?', (portfolio_id, company_id))
     for pid in ids:
         conn.execute('UPDATE properties SET portfolio_id=? WHERE id=? AND company_id=?', (portfolio_id, pid, company_id))
