@@ -4,6 +4,7 @@ import contextlib
 import io
 import tempfile
 import unittest
+from datetime import date
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -18,9 +19,9 @@ KNOWN_IBAN = 'NL91ABNA0417164300'
 OTHER_IBAN = 'NL02RABO0123456789'
 
 
-def camt(entries):
+def camt(entries, booked='2026-11-02'):
     """A minimal CAMT.053 file; entries are (amount, CRDT/DBIT, name, iban, description, ref)."""
-    body = ''.join(f'''<Ntry><Amt Ccy="EUR">{amt}</Amt><CdtDbtInd>{cd}</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>2026-11-02</Dt></BookgDt><AcctSvcrRef>{ref}</AcctSvcrRef>
+    body = ''.join(f'''<Ntry><Amt Ccy="EUR">{amt}</Amt><CdtDbtInd>{cd}</CdtDbtInd><Sts>BOOK</Sts><BookgDt><Dt>{booked}</Dt></BookgDt><AcctSvcrRef>{ref}</AcctSvcrRef>
       <NtryDtls><TxDtls><Refs><EndToEndId>NOTPROVIDED</EndToEndId></Refs><RltdPties><Dbtr><Nm>{name}</Nm></Dbtr><DbtrAcct><Id><IBAN>{iban}</IBAN></Id></DbtrAcct></RltdPties>
       <RmtInf><Ustrd>{desc}</Ustrd></RmtInf></TxDtls></NtryDtls></Ntry>''' for amt, cd, name, iban, desc, ref in entries)
     return f'''<?xml version="1.0" encoding="UTF-8"?><Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.02"><BkToCstmrStmt><Stmt><Id>1</Id>{body}</Stmt></BkToCstmrStmt></Document>'''.encode()
@@ -163,6 +164,75 @@ class BankingTests(unittest.TestCase):
         self.assertEqual([a['iban'] for a in mine], [KNOWN_IBAN])
         self.assertEqual(tenant.delete(f"/api/tenant/bank-accounts/{mine[0]['id']}").status_code, 200)
         self.assertEqual(tenant.get('/api/tenant/data').json()['bank_accounts'], [])
+
+    # ---------- "I have paid"
+    def test_a_tenant_can_say_paid_and_the_bank_line_shows_it_with_the_receipt(self):
+        tenant = self.login('tenant@haven.local', portal='tenant')
+        mine = [i for i in tenant.get('/api/tenant/data').json()['invoices'] if i['balance_cents'] > 0]
+        inv = mine[0]
+        told = tenant.post(f"/api/tenant/invoices/{inv['id']}/paid", json={'amount': f"{inv['balance_cents'] / 100:.2f}", 'paid_on': date.today().isoformat(), 'note': 'paid via app'})
+        self.assertEqual(told.status_code, 200, told.text)
+        self.assertEqual(tenant.post(f"/api/tenant/invoices/{inv['id']}/paid", json={'amount': '1', 'paid_on': date.today().isoformat()}).status_code, 409)   # once
+        staff = self.manager.get('/api/data?company_id=1').json()
+        self.assertEqual([(n['invoice_id'], n['status']) for n in staff['payment_notices']], [(inv['id'], 'waiting')])
+        self.assertIn('Tenant says the rent is paid', [n['title'] for n in staff['notifications']])
+        # the payment arrives without invoice number from an unknown account: the notice makes it a suggestion, a person confirms
+        r = self.upload(camt([(f"{inv['balance_cents'] / 100:.2f}", 'CRDT', 'SOMEONE ELSE', OTHER_IBAN, 'rent', 'N1')], date.today().isoformat())).json()
+        self.assertEqual(r['suggested'], 1, r)
+        line = self.finance.get('/api/bank/lines?company_id=1&status=check').json()['items'][0]
+        self.assertIn('said they paid', line['reason'])
+        self.assertEqual([n['status'] for n in line['evidence']['notices']], ['waiting'])
+        self.assertEqual(self.finance.post(f"/api/bank/lines/{line['id']}/confirm", json={'invoice_id': inv['id']}).status_code, 200)
+        booked = self.finance.get('/api/bank/lines?company_id=1&status=booked').json()['items'][0]
+        self.assertEqual([n['status'] for n in booked['evidence']['notices']], ['confirmed'])
+        self.assertEqual(tenant.get('/api/tenant/data').json()['payment_notices'][0]['status'], 'confirmed')
+
+    def test_a_notice_with_the_paying_account_is_booked_by_itself(self):
+        tenant = self.login('tenant@haven.local', portal='tenant')
+        inv = [i for i in tenant.get('/api/tenant/data').json()['invoices'] if i['balance_cents'] > 0][0]
+        self.assertEqual(tenant.post(f"/api/tenant/invoices/{inv['id']}/paid", json={'amount': f"{inv['balance_cents'] / 100:.2f}", 'paid_on': date.today().isoformat(), 'iban': 'NL69 INGB 0123 4567 89'}).status_code, 200)
+        r = self.upload(camt([(f"{inv['balance_cents'] / 100:.2f}", 'CRDT', 'E JANSEN', 'NL69INGB0123456789', 'huur', 'N2')])).json()
+        self.assertEqual(r['booked'], 1, r)
+
+    # ---------- a landlord who collects the rent himself
+    def landlord_with_own_account(self):
+        platform = self.login('admin@haven.local')
+        with db.connect() as conn:
+            tc = dict(conn.execute("SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id JOIN users u ON u.id=a.user_id WHERE u.email='tenant@haven.local'").fetchone())
+        for old in self.manager.get('/api/data?company_id=1').json()['portfolios']:
+            self.manager.post(f'/api/portfolios/{old["id"]}/archive')
+        owner = self.manager.post('/api/owners', json={'company_id': 1, 'name': 'Rob Rentier', 'email': 'rob@example.com', 'phone': '', 'payout_details': ''}).json()['id']
+        self.manager.post('/api/portfolios', json={'company_id': 1, 'owner_id': owner, 'name': 'Rob', 'fee_percent': 5, 'property_ids': [tc['property_id']]})
+        token = self.manager.post('/api/accounts/invite', json={'kind': 'owner', 'target_id': owner}).json()['path'].split('/')[-1]
+        TestClient(app).post(f'/api/invitations/{token}', json={'password': 'RobStrongPass-2026'})
+        platform.post(f'/api/owners/{owner}/full-access', json={'enabled': True})
+        return self.login('rob@example.com', 'RobStrongPass-2026'), owner, tc, platform
+
+    def test_a_landlord_who_collects_rent_imports_his_own_statement_for_his_own_tenants_only(self):
+        rob, owner, tc, platform = self.landlord_with_own_account()
+        self.assertEqual(self.upload(camt([]), client=rob).status_code, 403)          # not switched on yet
+        self.assertEqual(self.manager.post(f'/api/owners/{owner}/collects-rent', json={'enabled': True}).status_code, 403)   # admins only
+        self.assertEqual(platform.post(f'/api/owners/{owner}/collects-rent', json={'enabled': True}).status_code, 200)
+        self.assertTrue(rob.get('/api/data?company_id=1').json()['collects_rent'])
+        his = next(o for o in self.open if o['contract_id'] == tc['id'])
+        other = next(o for o in self.open if o['contract_id'] != tc['id'])
+        raw = camt([(f"{his['balance_cents'] / 100:.2f}", 'CRDT', 'TENANT', OTHER_IBAN, his['number'], 'L1'),
+                    (f"{other['balance_cents'] / 100:.2f}", 'CRDT', 'OTHER', 'NL69INGB0123456789', other['number'], 'L2')])
+        r = self.upload(raw, client=rob)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual((r.json()['booked'], r.json()['unmatched']), (1, 1), r.json())   # someone else's invoice is never booked from his account
+        self.assertEqual(self.balance(his['id']), 0)
+        self.assertEqual(self.balance(other['id']), other['balance_cents'])
+        theirs = rob.get('/api/bank/lines?company_id=1&status=check').json()['items'][0]
+        self.assertEqual(rob.post(f"/api/bank/lines/{theirs['id']}/confirm", json={'invoice_id': other['id']}).status_code, 404)
+        self.assertNotIn(other['id'], [o['id'] for o in rob.get('/api/bank/open-invoices?company_id=1').json()])
+        # the company does not see his bank lines and no longer books his tenants
+        company = self.finance.get('/api/bank/lines?company_id=1&status=check').json()
+        self.assertEqual(company['counts'], {'check': 0, 'booked': 0, 'ignored': 0})
+        self.assertNotIn(tc['id'], [o['contract_id'] for o in self.finance.get('/api/bank/open-invoices?company_id=1').json()])
+        self.assertEqual(self.finance.post(f"/api/bank/lines/{theirs['id']}/ignore", json={}).status_code, 404)
+        booked = rob.get('/api/bank/lines?company_id=1&status=booked').json()['items'][0]
+        self.assertEqual(rob.post(f"/api/bank/lines/{booked['id']}/undo", json={'note': 'mistake'}).status_code, 200)
 
 
 if __name__ == '__main__':

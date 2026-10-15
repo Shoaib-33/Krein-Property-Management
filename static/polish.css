@@ -235,3 +235,5 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .bank-acc small{flex-basis:100%;margin:0}
 .link-button{border:0;background:none;color:var(--muted);padding:0 4px;font-size:15px;line-height:1}
 .link-button:hover{color:var(--red)}
+.bank-trail{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;max-width:280px}
+.bank-notices{margin-top:22px}

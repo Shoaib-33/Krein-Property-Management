@@ -49,10 +49,11 @@
     const ownerRows = owners.map(o => {
       const acc = accountOf(o.id);
       const full = staffOf(o);
-      const access = (acc ? (acc.enabled ? badge('Portal active', 'green') : badge('Access paused', 'amber')) : badge('Not invited', 'gray')) + (full ? ' ' + badge('Manages own units', 'blue') : '');
+      const access = (acc ? (acc.enabled ? badge('Portal active', 'green') : badge('Access paused', 'amber')) : badge('Not invited', 'gray')) + (full ? ' ' + badge('Manages own units', 'blue') + (o.collects_rent ? ' ' + badge('Collects rent himself', 'amber') : '') : '');
       const actions = [own('Edit', 'edit-owner', o.id)];
       if (canManage()) actions.push(acc ? own(acc.enabled ? 'Pause access' : 'Restore access', acc.enabled ? 'pause-owner' : 'restore-owner', o.id) : own('Invite', 'invite-owner', o.id, 'small primary'));
       if (isAdmin()) actions.push(full ? own('Remove management access', 'full-access-off', o.id) : acc && acc.enabled ? own('Give management access', 'full-access-on', o.id, 'small primary') : '');
+      if (isAdmin()) actions.push(o.collects_rent ? own('Rent to company account', 'rent-company', o.id) : own("Rent to owner's own account", 'rent-owner', o.id));
       if (canManage()) actions.push(own('Remove', 'remove-owner', o.id, 'small danger'));
       return [`<strong>${e(o.name)}</strong><small>${e(o.email)}${o.phone ? ' · ' + e(o.phone) : ''}</small>`, String(activePortfolios().filter(p => p.owner_id === o.id).length), access, `<div class="actions">${actions.join('')}</div>`];
     });
@@ -124,6 +125,16 @@
       const o = ownerOf(id), n = activePortfolios().filter(p => p.owner_id === o.id).flatMap(p => unitsOf(p.id)).length;
       if (!confirm(`Give ${o.name} management access? He can then run his own ${n} unit${n === 1 ? '' : 's'} of ${company().name}: dashboard, tenants, contracts, invoices, payments, repairs and documents. He sees nothing of the other units, owners or settings of the company.`)) return;
       return api(`/api/owners/${id}/full-access`, {method: 'POST', body: {enabled: true}}).then(refresh).then(() => toast(`${o.name} can now manage his own units. He signs in at /landlord with the same email and password.`));
+    },
+    'rent-owner': id => {
+      const o = ownerOf(id);
+      if (!confirm(`Do ${o.name}'s tenants pay the rent into ${o.name}'s own bank account? Then ${o.name} uploads his own bank statements (with management access, under Bank statements) and books the payments of his own tenants. The company no longer books payments for these tenants.`)) return;
+      return api(`/api/owners/${id}/collects-rent`, {method: 'POST', body: {enabled: true}}).then(refresh).then(() => toast(`${o.name} now books his own tenants' payments from his bank statements.`));
+    },
+    'rent-company': id => {
+      const o = ownerOf(id);
+      if (!confirm(`Do ${o.name}'s tenants pay into the company's bank account again? The company then books their payments from its own bank statements.`)) return;
+      return api(`/api/owners/${id}/collects-rent`, {method: 'POST', body: {enabled: false}}).then(refresh).then(() => toast("The company books these tenants' payments again."));
     },
     'full-access-off': id => {
       const o = ownerOf(id);

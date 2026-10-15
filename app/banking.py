@@ -17,6 +17,7 @@ import hashlib
 import json
 import re
 import xml.etree.ElementTree as ET
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -185,12 +186,58 @@ def dedupe_key(line, seen):
 
 
 # ---------------------------------------------------------------- matching
+class Reach:
+    """Whose bank statement this is and which tenancies its payments may be booked on.
+    Company staff: the company's account; tenancies of owners who collect the rent themselves are left to those owners.
+    A landlord who collects his own rent: his own account and only his own tenancies."""
+    def __init__(self, owner_id=None, allowed=None, excluded=frozenset()):
+        self.owner_id, self.allowed, self.excluded = owner_id, allowed, excluded
+
+    def ok(self, contract_id):
+        return (self.allowed is None or contract_id in self.allowed) and contract_id not in self.excluded
+
+
+def self_collected(conn, company_id):
+    """Tenancies on units of owners who collect the rent into their own bank account."""
+    return frozenset(r[0] for r in conn.execute(
+        'SELECT c.id FROM contracts c JOIN properties p ON p.id=c.property_id JOIN portfolios f ON f.id=p.portfolio_id AND f.archived_at IS NULL '
+        'JOIN owners o ON o.id=f.owner_id WHERE c.company_id=? AND o.collects_rent=1', (company_id,)))
+
+
+def bank_reach(conn, user, company_id):
+    """Authorize a bank-statement action and return its Reach."""
+    role = authorize(conn, user, company_id, FINANCE + ('landlord',))
+    scope = getattr(conn, 'scope', None)
+    if role == 'landlord':
+        own = [r[0] for r in conn.execute(f'SELECT id FROM owners WHERE collects_rent=1 AND id IN ({",".join("?" for _ in scope.owners) or "NULL"})', tuple(scope.owners))]
+        if not own:
+            raise HTTPException(403, 'Your rent is collected by the company. Ask the company if you want to upload your own bank statements.')
+        conn.bank_owner_ids = set(own)
+        return Reach(own[0], frozenset(scope.contracts))
+    conn.bank_owner_ids = None
+    return Reach(None, None, self_collected(conn, company_id))
+
+
+def line_for(conn, line_id, user, roles=FINANCE + ('landlord',)):
+    """A bank line the user may act on: a landlord only his own lines, company staff only the company's lines."""
+    row = conn.execute('SELECT * FROM bank_lines WHERE id=?', (line_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, 'Record not found.')
+    row = dict(row)
+    reach = bank_reach(conn, user, row['company_id'])
+    if row['owner_id'] != reach.owner_id and not (reach.owner_id is not None and row['owner_id'] in conn.bank_owner_ids):
+        raise HTTPException(404, 'Record not found.')
+    role = authorize(conn, user, row['company_id'], roles)
+    conn.scope = None
+    return row, reach, role
+
+
 def balance(conn, invoice_id):
     from .main import invoice_balance
     return invoice_balance(conn, invoice_id)
 
 
-def open_invoices(conn, company_id, tenant_ids=None):
+def open_invoices(conn, company_id, tenant_ids=None, reach=None):
     """Released invoices with something still to pay, oldest first."""
     sql = ('SELECT i.id,i.number,i.period,i.due_date,i.total_cents,i.contract_id,c.tenant_id,t.name tenant_name FROM invoices i JOIN contracts c ON c.id=i.contract_id '
            'JOIN tenants t ON t.id=c.tenant_id WHERE i.company_id=? AND i.released_at IS NOT NULL')
@@ -198,6 +245,8 @@ def open_invoices(conn, company_id, tenant_ids=None):
     out = []
     for r in rows:
         if tenant_ids is not None and r['tenant_id'] not in tenant_ids:
+            continue
+        if reach is not None and not reach.ok(r['contract_id']):
             continue
         r['balance_cents'] = balance(conn, r['id'])
         if r['balance_cents'] > 0:
@@ -209,14 +258,16 @@ def words(text):
     return {w for w in re.findall(r'[a-z]{3,}', (text or '').lower()) if w not in ('van', 'der', 'den', 'het', 'een', 'and', 'the', 'eo', 'cj')}
 
 
-def match(conn, company_id, line):
+def match(conn, company_id, line, reach=None):
     """Decide what a bank line pays. Returns (status, tenant_id, allocations[(invoice, cents)], reason)."""
+    reach = reach or Reach()
     amount = line['amount_cents']
     # 1. invoice numbers in the description
     numbers = {f'HVN-{int(a)}-{b}-{c}' for a, b, c in INVOICE_NO.findall(line['description'] or '')}
     if numbers:
         marks = ','.join('?' for _ in numbers)
-        found = [dict(r) for r in conn.execute(f'SELECT i.id,i.number,i.contract_id,c.tenant_id FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE i.company_id=? AND i.number IN ({marks}) ORDER BY i.due_date', (company_id, *numbers))]
+        found = [dict(r) for r in conn.execute(f'SELECT i.id,i.number,i.contract_id,c.tenant_id FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE i.company_id=? AND i.number IN ({marks}) AND i.released_at IS NOT NULL ORDER BY i.due_date', (company_id, *numbers))]
+        found = [f for f in found if reach.ok(f['contract_id'])]
         for f in found:
             f['balance_cents'] = balance(conn, f['id'])
         open_ = [f for f in found if f['balance_cents'] > 0]
@@ -230,8 +281,9 @@ def match(conn, company_id, line):
     # 2. a known bank account
     if line['iban']:
         owners = sorted({r[0] for r in conn.execute('SELECT a.tenant_id FROM tenant_bank_accounts a JOIN tenants t ON t.id=a.tenant_id WHERE a.company_id=? AND a.iban=? AND t.archived_at IS NULL', (company_id, line['iban']))})
+        owners = [t for t in owners if any(reach.ok(c[0]) for c in conn.execute('SELECT id FROM contracts WHERE tenant_id=?', (t,)))]
         if len(owners) == 1:
-            opens = open_invoices(conn, company_id, {owners[0]})
+            opens = open_invoices(conn, company_id, {owners[0]}, reach)
             exact = next((o for o in opens if o['balance_cents'] == amount), None)
             if exact:
                 return 'booked', owners[0], [(exact, amount)], 'Known bank account of this tenant and the amount matches an open invoice.'
@@ -242,44 +294,69 @@ def match(conn, company_id, line):
             return 'suggested', owners[0], [], 'Known bank account of this tenant, but nothing is open. It may be paid in advance or twice.'
         if len(owners) > 1:
             return 'suggested', None, [], 'This bank account is linked to more than one tenant. Choose the invoice.'
-    # 3. name and amount
+    # 3. the tenant said "I have paid" this amount
+    notices = [dict(r) for r in conn.execute("SELECT n.*,i.number,c.tenant_id FROM payment_notices n JOIN invoices i ON i.id=n.invoice_id JOIN contracts c ON c.id=n.contract_id "
+                                             "WHERE n.company_id=? AND n.status='waiting' AND n.amount_cents=?", (company_id, amount)) if reach.ok(r['contract_id'])]
+    if line['iban']:
+        same = [n for n in notices if n['iban'] and n['iban'] == line['iban']]
+        if len(same) == 1 and balance(conn, same[0]['invoice_id']) >= amount:
+            n = same[0]
+            return 'booked', n['tenant_id'], [({'id': n['invoice_id'], 'number': n['number'], 'contract_id': n['contract_id']}, amount)], 'The tenant reported this payment from this bank account.'
+    near = [n for n in notices if abs((date.fromisoformat(n['paid_on']) - date.fromisoformat(line['booked_on'])).days) <= 10]
+    if len({n['tenant_id'] for n in near}) == 1:
+        n = near[0]
+        return 'suggested', n['tenant_id'], [({'id': n['invoice_id'], 'number': n['number'], 'contract_id': n['contract_id']}, amount)], f'The tenant said they paid this amount on {n["paid_on"]}.'
+    # 4. name and amount
     payer = words(line['name'])
-    candidates = [o for o in open_invoices(conn, company_id) if o['balance_cents'] == amount and payer & words(o['tenant_name'])]
+    candidates = [o for o in open_invoices(conn, company_id, None, reach) if o['balance_cents'] == amount and payer & words(o['tenant_name'])]
     tenants = {o['tenant_id'] for o in candidates}
     if len(tenants) == 1:
         return 'suggested', candidates[0]['tenant_id'], [(candidates[0], amount)], 'The payer name and the amount fit this tenant.'
-    return 'unmatched', None, [], 'No invoice number, known bank account or matching name and amount.'
+    return 'unmatched', None, [], 'No invoice number, known bank account, payment notice or matching name and amount.'
 
 
 def book(conn, company_id, line_id, allocations, user_id, tenant_id, reason):
-    """Write the payment(s) to the ledger and mark the line booked. A pending receipt for the same invoice and amount is approved with it."""
+    """Write the payment(s) to the ledger and mark the line booked. A pending receipt for the same invoice and amount is
+    approved with it, and the tenant's "I have paid" notice for the invoice is marked confirmed by the bank."""
     line = dict(conn.execute('SELECT * FROM bank_lines WHERE id=?', (line_id,)).fetchone())
     from .main import insert
     from .portal_access import notify_tenant
+    who = 'Landlord bank' if line['owner_id'] else 'Bank'
     for invoice, amount in allocations:
         if amount <= 0:
             continue
         proof = conn.execute("SELECT id FROM payment_proofs WHERE invoice_id=? AND status='pending' AND amount_cents=? ORDER BY id LIMIT 1", (invoice['id'], amount)).fetchone()
         ledger_id = insert(conn, 'ledger', {'company_id': company_id, 'contract_id': invoice['contract_id'], 'invoice_id': invoice['id'], 'proof_id': proof[0] if proof else None, 'kind': 'payment',
                                             'amount_cents': -amount, 'created_by': user_id, 'created_at': now(),
-                                            'note': f"Bank {line['booked_on']}: {line['name'] or 'payer'} {pretty_iban(line['iban']) if line['iban'] else ''} {line['bank_ref'] or ''}".strip()[:300]})
+                                            'note': f"{who} {line['booked_on']}: {line['name'] or 'payer'} {pretty_iban(line['iban']) if line['iban'] else ''} {line['bank_ref'] or ''}".strip()[:300]})
         conn.execute('INSERT INTO bank_bookings(line_id,ledger_id) VALUES(?,?)', (line_id, ledger_id))
         if proof:
             conn.execute("UPDATE payment_proofs SET status='approved',reviewed_by=?,review_note=?,reviewed_at=? WHERE id=?", (user_id, 'Confirmed by the bank statement.', now(), proof[0]))
+        conn.execute("UPDATE payment_notices SET status='confirmed',bank_line_id=?,confirmed_at=? WHERE invoice_id=? AND status='waiting'", (line_id, now(), invoice['id']))
         number = invoice.get('number') or conn.execute('SELECT number FROM invoices WHERE id=?', (invoice['id'],)).fetchone()[0]
         notify_tenant(conn, invoice['contract_id'], 'Payment received', f'We received EUR {amount / 100:,.2f} for invoice {number}. Thank you.', 'payments')
     first = allocations[0][0]['id'] if allocations else None
     conn.execute("UPDATE bank_lines SET status='booked',tenant_id=?,invoice_id=?,reason=?,decided_by=?,decided_at=? WHERE id=?", (tenant_id, first, reason, user_id, now(), line_id))
     if tenant_id and line['iban']:
         add_bank_account(conn, company_id, tenant_id, line['iban'], line['name'], 'learned', user_id)
-    audit(conn, user_id, company_id, 'booked', 'bank_line', line_id, {'amount_cents': line['amount_cents'], 'invoices': [a[0]['id'] for a in allocations]})
+    audit(conn, user_id, company_id, 'booked', 'bank_line', line_id, {'amount_cents': line['amount_cents'], 'invoices': [a[0]['id'] for a in allocations], 'landlord_account': bool(line['owner_id'])})
+
+
+def evidence(conn, invoice_ids):
+    """What the tenant did for these invoices: "I have paid" notices and uploaded receipts."""
+    ids = [i for i in invoice_ids if i] or [0]
+    marks = ','.join('?' for _ in ids)
+    return {
+        'notices': [dict(r) for r in conn.execute(f'SELECT id,invoice_id,amount_cents,paid_on,status,created_at FROM payment_notices WHERE invoice_id IN ({marks}) AND status<>"withdrawn" ORDER BY id', ids)],
+        'receipts': [dict(r) for r in conn.execute(f'SELECT id,invoice_id,amount_cents,paid_on,status,created_at FROM payment_proofs WHERE invoice_id IN ({marks}) ORDER BY id', ids)],
+    }
 
 
 # ---------------------------------------------------------------- endpoints
 @router.post('/api/bank/import')
 async def import_statement(company_id: int = Form(...), auto: str = Form('1'), file: UploadFile = File(...), user=Depends(current_user)):
     with connect() as conn:
-        authorize(conn, user, company_id, FINANCE)
+        bank_reach(conn, user, company_id)
     raw = await file.read(MAX_FILE + 1)
     await file.close()
     if not raw or len(raw) > MAX_FILE:
@@ -288,21 +365,23 @@ async def import_statement(company_id: int = Form(...), auto: str = Form('1'), f
     automatic = auto not in ('0', 'false', '')
     summary = {'format': fmt, 'payments': len(parsed), 'new': 0, 'duplicates': 0, 'booked': 0, 'suggested': 0, 'unmatched': 0}
     with transaction() as conn:
-        authorize(conn, user, company_id, FINANCE)
-        import_id = conn.execute('INSERT INTO bank_imports(company_id,filename,format,sha256,lines,created_by,created_at) VALUES(?,?,?,?,?,?,?)',
-                                 (company_id, (file.filename or 'statement')[:120], fmt, hashlib.sha256(raw).hexdigest(), len(parsed), user['id'], now())).lastrowid
+        reach = bank_reach(conn, user, company_id)
+        conn.scope = None
+        prefix = f'o{reach.owner_id}:' if reach.owner_id else ''
+        import_id = conn.execute('INSERT INTO bank_imports(company_id,owner_id,filename,format,sha256,lines,created_by,created_at) VALUES(?,?,?,?,?,?,?,?)',
+                                 (company_id, reach.owner_id, (file.filename or 'statement')[:120], fmt, hashlib.sha256(raw).hexdigest(), len(parsed), user['id'], now())).lastrowid
         seen = {}
         for line in parsed:
             if line['amount_cents'] <= 0:
                 continue
-            cur = conn.execute('INSERT OR IGNORE INTO bank_lines(company_id,import_id,dedupe,booked_on,amount_cents,iban,name,description,bank_ref,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-                               (company_id, import_id, dedupe_key(line, seen), line['booked_on'], line['amount_cents'], line['iban'], line['name'][:140], line['description'][:500], line['bank_ref'][:120], 'unmatched', now()))
+            cur = conn.execute('INSERT OR IGNORE INTO bank_lines(company_id,owner_id,import_id,dedupe,booked_on,amount_cents,iban,name,description,bank_ref,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                               (company_id, reach.owner_id, import_id, prefix + dedupe_key(line, seen), line['booked_on'], line['amount_cents'], line['iban'], line['name'][:140], line['description'][:500], line['bank_ref'][:120], 'unmatched', now()))
             if cur.rowcount == 0:
                 summary['duplicates'] += 1
                 continue
             summary['new'] += 1
             line_id = cur.lastrowid
-            status, tenant, allocations, reason = match(conn, company_id, line)
+            status, tenant, allocations, reason = match(conn, company_id, line, reach)
             if status == 'booked' and automatic:
                 book(conn, company_id, line_id, allocations, user['id'], tenant, reason)
                 summary['booked'] += 1
@@ -312,7 +391,7 @@ async def import_statement(company_id: int = Form(...), auto: str = Form('1'), f
             conn.execute('UPDATE bank_lines SET status=?,tenant_id=?,invoice_id=?,reason=? WHERE id=?', (status, tenant, allocations[0][0]['id'] if allocations else None, reason, line_id))
             summary[status] += 1
         conn.execute('UPDATE bank_imports SET booked=? WHERE id=?', (summary['booked'], import_id))
-        audit(conn, user['id'], company_id, 'imported', 'bank_statement', import_id, {k: v for k, v in summary.items()})
+        audit(conn, user['id'], company_id, 'imported', 'bank_statement', import_id, {**summary, 'landlord_account': bool(reach.owner_id)})
     return summary
 
 
@@ -323,23 +402,31 @@ def bank_lines(company_id: int, status: str = 'check', page: int = 1, user=Depen
         raise HTTPException(422, 'Unknown list.')
     page = max(1, page)
     with connect() as conn:
-        authorize(conn, user, company_id, FINANCE)
+        reach = bank_reach(conn, user, company_id)
+        conn.scope = None
+        whose = 'l.owner_id IS NULL' if reach.owner_id is None else f'l.owner_id IN ({",".join(str(int(o)) for o in conn.bank_owner_ids)})'
         marks = ','.join('?' for _ in groups[status])
-        total = conn.execute(f'SELECT COUNT(*) FROM bank_lines WHERE company_id=? AND status IN ({marks})', (company_id, *groups[status])).fetchone()[0]
+        total = conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({marks})', (company_id, *groups[status])).fetchone()[0]
         rows = [dict(r) for r in conn.execute(f'''SELECT l.*,t.name tenant_name,i.number invoice_number FROM bank_lines l LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN invoices i ON i.id=l.invoice_id
-            WHERE l.company_id=? AND l.status IN ({marks}) ORDER BY l.booked_on DESC,l.id DESC LIMIT 100 OFFSET ?''', (company_id, *groups[status], (page - 1) * 100))]
+            WHERE l.company_id=? AND {whose} AND l.status IN ({marks}) ORDER BY l.booked_on DESC,l.id DESC LIMIT 100 OFFSET ?''', (company_id, *groups[status], (page - 1) * 100))]
         for r in rows:
-            r['bookings'] = [dict(b) for b in conn.execute('SELECT g.ledger_id,l.amount_cents,i.number FROM bank_bookings g JOIN ledger l ON l.id=g.ledger_id LEFT JOIN invoices i ON i.id=l.invoice_id WHERE g.line_id=?', (r['id'],))]
-        counts = {k: conn.execute(f'SELECT COUNT(*) FROM bank_lines WHERE company_id=? AND status IN ({",".join("?" for _ in v)})', (company_id, *v)).fetchone()[0] for k, v in groups.items()}
-        imports = [dict(r) for r in conn.execute('SELECT b.id,b.filename,b.format,b.lines,b.booked,b.created_at,u.name user_name FROM bank_imports b LEFT JOIN users u ON u.id=b.created_by WHERE b.company_id=? ORDER BY b.id DESC LIMIT 20', (company_id,))]
-    return {'items': rows, 'total': total, 'counts': counts, 'imports': imports}
+            r['bookings'] = [dict(b) for b in conn.execute('SELECT g.ledger_id,l.amount_cents,l.invoice_id,i.number FROM bank_bookings g JOIN ledger l ON l.id=g.ledger_id LEFT JOIN invoices i ON i.id=l.invoice_id WHERE g.line_id=?', (r['id'],))]
+            r['evidence'] = evidence(conn, [b['invoice_id'] for b in r['bookings']] or [r['invoice_id']])
+        counts = {k: conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({",".join("?" for _ in v)})', (company_id, *v)).fetchone()[0] for k, v in groups.items()}
+        imports = [dict(r) for r in conn.execute(f'SELECT b.id,b.filename,b.format,b.lines,b.booked,b.created_at,u.name user_name FROM bank_imports b LEFT JOIN users u ON u.id=b.created_by WHERE b.company_id=? AND {whose.replace("l.owner_id", "b.owner_id")} ORDER BY b.id DESC LIMIT 20', (company_id,))]
+    return {'items': rows, 'total': total, 'counts': counts, 'imports': imports, 'own_account': reach.owner_id is not None}
 
 
 @router.get('/api/bank/open-invoices')
 def bank_open_invoices(company_id: int, user=Depends(current_user)):
     with connect() as conn:
-        authorize(conn, user, company_id, FINANCE)
-        return open_invoices(conn, company_id)
+        reach = bank_reach(conn, user, company_id)
+        conn.scope = None
+        out = open_invoices(conn, company_id, None, reach)
+        notes = evidence(conn, [o['id'] for o in out])
+        for o in out:
+            o['notice'] = next((n for n in notes['notices'] if n['invoice_id'] == o['id'] and n['status'] == 'waiting'), None)
+        return out
 
 
 @router.post('/api/bank/lines/{line_id}/confirm')
@@ -347,7 +434,7 @@ def confirm_line(line_id: int, data: dict, user=Depends(current_user)):
     """Book a line on the chosen invoice. More than its balance goes to the same tenant's other open invoices, oldest first;
     anything left stays on the chosen invoice as credit."""
     with transaction() as conn:
-        line = record(conn, 'bank_lines', line_id, user, FINANCE)
+        line, reach, _ = line_for(conn, line_id, user)
         if line['status'] == 'booked':
             raise HTTPException(409, 'This payment is already booked.')
         try:
@@ -355,6 +442,8 @@ def confirm_line(line_id: int, data: dict, user=Depends(current_user)):
         except (TypeError, ValueError):
             raise HTTPException(422, 'Choose the invoice this payment is for.')
         inv = linked(conn, 'invoices', invoice_id, line['company_id'])
+        if not reach.ok(inv['contract_id']):
+            raise HTTPException(404, 'Record not found.')
         if not inv['released_at']:
             raise HTTPException(422, 'This invoice is still a draft. Send it to the tenant first.')
         tenant = conn.execute('SELECT tenant_id FROM contracts WHERE id=?', (inv['contract_id'],)).fetchone()[0]
@@ -365,7 +454,7 @@ def confirm_line(line_id: int, data: dict, user=Depends(current_user)):
         if first:
             allocations.append([chosen, first])
             left -= first
-        for other in open_invoices(conn, line['company_id'], {tenant}):
+        for other in open_invoices(conn, line['company_id'], {tenant}, reach):
             if left <= 0:
                 break
             if other['id'] == inv['id']:
@@ -385,7 +474,7 @@ def confirm_line(line_id: int, data: dict, user=Depends(current_user)):
 @router.post('/api/bank/lines/{line_id}/ignore')
 def ignore_line(line_id: int, data: dict, user=Depends(current_user)):
     with transaction() as conn:
-        line = record(conn, 'bank_lines', line_id, user, FINANCE)
+        line, _, _ = line_for(conn, line_id, user)
         if line['status'] == 'booked':
             raise HTTPException(409, 'Undo the booking first.')
         note = str(data.get('note') or 'Not a rent payment').strip()[:200]
@@ -397,7 +486,7 @@ def ignore_line(line_id: int, data: dict, user=Depends(current_user)):
 @router.post('/api/bank/lines/{line_id}/reopen')
 def reopen_line(line_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        line = record(conn, 'bank_lines', line_id, user, FINANCE)
+        line, _, _ = line_for(conn, line_id, user)
         if line['status'] != 'ignored':
             raise HTTPException(409, 'Only an ignored payment can be put back on the list.')
         conn.execute("UPDATE bank_lines SET status='unmatched',decided_by=NULL,decided_at=NULL WHERE id=?", (line_id,))
@@ -406,13 +495,14 @@ def reopen_line(line_id: int, user=Depends(current_user)):
 
 @router.post('/api/bank/lines/{line_id}/undo')
 def undo_line(line_id: int, data: dict, user=Depends(current_user)):
-    """Take a booking back: each payment entry gets a reversal (the ledger itself never changes) and the line returns to the check list."""
+    """Take a booking back: each payment entry gets a reversal (the ledger itself never changes) and the line returns to the check list.
+    Company lines: a manager. A landlord's own lines: that landlord."""
     note = str(data.get('note') or '').strip()[:300]
     if not note:
         raise HTTPException(422, 'Say why the booking is taken back.')
     from .main import insert
     with transaction() as conn:
-        line = record(conn, 'bank_lines', line_id, user, ('manager',))
+        line, reach, _ = line_for(conn, line_id, user, ('manager', 'landlord'))
         if line['status'] != 'booked':
             raise HTTPException(409, 'This payment is not booked.')
         for b in conn.execute('SELECT g.ledger_id,l.* FROM bank_bookings g JOIN ledger l ON l.id=g.ledger_id WHERE g.line_id=?', (line_id,)).fetchall():
@@ -420,9 +510,68 @@ def undo_line(line_id: int, data: dict, user=Depends(current_user)):
                                     'reverses_id': b['ledger_id'], 'created_by': user['id'], 'created_at': now(), 'note': 'Bank booking taken back: ' + note})
             if b['proof_id']:
                 conn.execute("UPDATE payment_proofs SET status='pending',reviewed_by=NULL,review_note=NULL,reviewed_at=NULL WHERE id=?", (b['proof_id'],))
+        conn.execute("UPDATE payment_notices SET status='waiting',bank_line_id=NULL,confirmed_at=NULL WHERE bank_line_id=?", (line_id,))
         conn.execute('DELETE FROM bank_bookings WHERE line_id=?', (line_id,))
         conn.execute("UPDATE bank_lines SET status='suggested',reason=?,decided_by=?,decided_at=? WHERE id=?", ('Booking taken back: ' + note, user['id'], now(), line_id))
         audit(conn, user['id'], line['company_id'], 'undone', 'bank_line', line_id, {'note': note})
+    return {'ok': True}
+
+
+@router.post('/api/owners/{owner_id}/collects-rent')
+def owner_collects_rent(owner_id: int, data: dict, user=Depends(current_user)):
+    """Admin switch: this owner's tenants pay into the owner's own bank account, so he imports his own statements."""
+    enabled = data.get('enabled') is True
+    with transaction() as conn:
+        owner = record(conn, 'owners', owner_id, user, ('admin',))
+        if enabled and conn.execute("SELECT 1 FROM bank_lines l JOIN invoices i ON i.id=l.invoice_id JOIN contracts c ON c.id=i.contract_id JOIN properties p ON p.id=c.property_id "
+                                    "JOIN portfolios f ON f.id=p.portfolio_id WHERE f.owner_id=? AND l.owner_id IS NULL AND l.status IN ('suggested','unmatched')", (owner_id,)).fetchone():
+            raise HTTPException(409, 'The company still has bank payments to check for this owner\'s tenants. Book or ignore them first.')
+        conn.execute('UPDATE owners SET collects_rent=? WHERE id=?', (int(enabled), owner_id))
+        audit(conn, user['id'], owner['company_id'], 'collects_rent_on' if enabled else 'collects_rent_off', 'owner', owner_id, {'name': owner['name']})
+    return {'collects_rent': enabled}
+
+
+# ---------------------------------------------------------------- "I have paid" (tenant) and the staff view of it
+@router.post('/api/tenant/invoices/{invoice_id}/paid')
+def tenant_says_paid(invoice_id: int, data: dict, user=Depends(current_user)):
+    """The tenant tells the landlord the rent is paid (no receipt needed). It is confirmed when the payment shows up in the bank statement."""
+    from .main import money, date_field
+    from .portal_access import notify_staff, tenant_record
+    amount = money(data, 'amount')
+    paid_on = date_field(data, 'paid_on')
+    from .clock import local_today
+    if paid_on > local_today().isoformat():
+        raise HTTPException(422, 'The payment date cannot be in the future.')
+    iban = normalize_iban(data.get('iban'))
+    if iban and not valid_iban(iban):
+        raise HTTPException(422, 'This is not a valid IBAN. Check it on your bank card or banking app (for example NL91 ABNA 0417 1643 00).')
+    note = str(data.get('note') or '').strip()[:300]
+    with transaction() as conn:
+        inv = tenant_record(conn, user, 'invoices', invoice_id)
+        if not inv.get('released_at'):
+            raise HTTPException(404, 'Record not found.')
+        if balance(conn, invoice_id) <= 0:
+            raise HTTPException(409, 'This invoice is already paid.')
+        if conn.execute("SELECT 1 FROM payment_notices WHERE invoice_id=? AND status='waiting'", (invoice_id,)).fetchone():
+            raise HTTPException(409, 'You already told us this invoice is paid. It is confirmed as soon as the payment shows in the bank statement.')
+        tenant_id = conn.execute('SELECT tenant_id FROM contracts WHERE id=?', (inv['contract_id'],)).fetchone()[0]
+        nid = conn.execute('INSERT INTO payment_notices(company_id,contract_id,invoice_id,amount_cents,paid_on,iban,note,status,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                           (inv['company_id'], inv['contract_id'], invoice_id, amount, paid_on, iban, note, 'waiting', user['id'], now())).lastrowid
+        if iban:
+            add_bank_account(conn, inv['company_id'], tenant_id, iban, user['name'], 'tenant', user['id'])
+        notify_staff(conn, inv['company_id'], 'Tenant says the rent is paid', f'{user["name"]} paid EUR {amount / 100:,.2f} for {inv["number"]} on {paid_on}. It is confirmed when it shows in the bank statement.', 'payments', contract_id=inv['contract_id'])
+        audit(conn, user['id'], inv['company_id'], 'reported_paid', 'invoice', invoice_id, {'amount_cents': amount, 'paid_on': paid_on})
+    return {'id': nid}
+
+
+@router.post('/api/tenant/payment-notices/{notice_id}/withdraw')
+def tenant_withdraw_notice(notice_id: int, user=Depends(current_user)):
+    from .portal_access import tenant_record
+    with transaction() as conn:
+        n = tenant_record(conn, user, 'payment_notices', notice_id)
+        if n['status'] != 'waiting':
+            raise HTTPException(409, 'This payment is already confirmed by the bank.')
+        conn.execute("UPDATE payment_notices SET status='withdrawn' WHERE id=?", (notice_id,))
     return {'ok': True}
 
 

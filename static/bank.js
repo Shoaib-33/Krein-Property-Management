@@ -6,15 +6,37 @@
   const fin = navGroups.find(g => g[0] === 'FINANCE');
   if (fin) fin[1].splice(2, 0, ['bank', 'Bank statements', 'wallet']);
   const baseAllowed = allowedPage;
-  allowedPage = page => page === 'bank' ? ['admin', 'manager', 'finance'].includes(company().role) && !company().landlord : baseAllowed(page);
+  allowedPage = page => page === 'bank' ? (company().landlord ? !!(state.data && state.data.collects_rent) : ['admin', 'manager', 'finance'].includes(company().role)) : baseAllowed(page);
   const baseRender = renderPage;
-  renderPage = () => state.page === 'bank' ? bankPage() : baseRender();
+  renderPage = () => state.page === 'bank' ? bankPage() : state.page === 'payments' ? baseRender() + noticesPanel() : baseRender();
+
+  // Payment verification: the tenants who said "I have paid", waiting for the bank statement or confirmed by it
+  function noticesPanel() {
+    const list = rows('payment_notices');
+    if (!list.length) return '';
+    const age = n => Math.floor((Date.now() - new Date(n.paid_on + 'T12:00:00')) / 86400000);
+    const body = list.map(n => {
+      const t = tenantFor(n.contract_id), status = n.status === 'confirmed' ? badge('Confirmed by bank', 'green') : n.status === 'withdrawn' ? badge('Withdrawn', 'gray')
+        : age(n) > 7 ? badge('Not in the bank yet', 'amber') : badge('Waiting for bank statement', 'blue');
+      return [`<strong>${e(t.name || '')}</strong><small>${e(propertyFor(n.contract_id).name || '')}</small>`, e(n.invoice_number), `<strong>${eur(n.amount_cents)}</strong>`, e(dateLabel(n.paid_on)), e(n.iban ? n.iban.replace(/(.{4})/g, '$1 ').trim() : '—'), status, e(n.note || '')];
+    });
+    return `<div class="section-stack bank-notices">${panel('Tenants who said they paid', 'A tenant can report a payment without a receipt. It is confirmed automatically when the payment shows up in an imported bank statement.', table(['Tenant', 'Invoice', 'Amount', 'Paid on', 'From account', 'Status', 'Note'], body))}</div>`;
+  }
 
   const ui = {tab: 'check', data: null, loading: false, company: null};
   const eur = c => new Intl.NumberFormat('en-NL', {style: 'currency', currency: 'EUR'}).format((c || 0) / 100);
   const iban = v => v ? String(v).replace(/(.{4})/g, '$1 ').trim() : '';
   const btn = (label, act, id = '', cls = 'small') => `<button type="button" class="button ${cls}" data-bank="${act}" data-id="${id}">${e(label)}</button>`;
   const STATUS = {booked: ['Booked', 'green'], suggested: ['Please check', 'amber'], unmatched: ['Not recognised', 'gray'], ignored: ['Ignored', 'gray']};
+
+  // what the tenant did for the invoice(s) of a bank payment: said "I have paid", uploaded a receipt, and the bank's own confirmation
+  function proofTrail(l) {
+    const ev = l.evidence || {notices: [], receipts: []}, out = [];
+    for (const n of ev.notices) out.push(badge(`Tenant said paid · ${dateLabel(n.paid_on)}`, n.status === 'confirmed' ? 'green' : 'blue'));
+    for (const r of ev.receipts) out.push(badge(`Receipt uploaded · ${r.status}`, r.status === 'approved' ? 'green' : r.status === 'pending' ? 'amber' : 'gray'));
+    if (l.status === 'booked') out.push(badge('Confirmed by bank', 'green'));
+    return out.length ? `<div class="bank-trail">${out.join('')}</div>` : '';
+  }
 
   async function load() {
     if (ui.loading) return;
@@ -44,10 +66,10 @@
       const what = l.status === 'booked'
         ? (l.bookings || []).map(b => `${e(b.number || '')} ${eur(-b.amount_cents)}`).join('<br>') + (l.tenant_name ? `<small>${e(l.tenant_name)}</small>` : '')
         : (l.tenant_name || l.invoice_number ? `${e(l.tenant_name || '')}${l.invoice_number ? ' · ' + e(l.invoice_number) : ''}` : '—') + `<small>${e(l.reason || '')}</small>`;
-      const acts = l.status === 'booked' ? (company().role === 'manager' || company().role === 'admin' ? btn('Undo', 'undo', l.id) : '')
+      const acts = l.status === 'booked' ? (company().landlord || company().role === 'manager' || company().role === 'admin' ? btn('Undo', 'undo', l.id) : '')
         : l.status === 'ignored' ? btn('Put back', 'reopen', l.id)
         : btn('Confirm', 'confirm', l.id, 'small primary') + btn('Ignore', 'ignore', l.id);
-      return [e(dateLabel(l.booked_on)), who, `<strong>${eur(l.amount_cents)}</strong>`, `<span class="bank-desc">${e(l.description || '')}</span>`, badge(label, tone) + `<div class="bank-what">${what}</div>`, `<div class="actions">${acts}</div>`];
+      return [e(dateLabel(l.booked_on)), who, `<strong>${eur(l.amount_cents)}</strong>`, `<span class="bank-desc">${e(l.description || '')}</span>`, badge(label, tone) + `<div class="bank-what">${what}</div>` + proofTrail(l), `<div class="actions">${acts}</div>`];
     });
     const list = panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : 'Ignored payments',
       ui.tab === 'check' ? 'Confirm puts the payment on the invoice you choose (more than its balance goes to the same tenant\'s other open invoices). Ignore is for money that is not rent.' : '',
@@ -63,7 +85,7 @@
     const open = await api(`/api/bank/open-invoices?company_id=${state.company}`);
     if (!open.length) { toast('There are no open invoices to put this payment on.'); return; }
     const pick = open.find(o => o.id === line.invoice_id) || open.find(o => o.tenant_id === line.tenant_id) || open[0];
-    const options = open.map(o => [o.id, `${o.number} · ${o.tenant_name} · ${eur(o.balance_cents)} open · due ${o.due_date}`]);
+    const options = open.map(o => [o.id, `${o.number} · ${o.tenant_name} · ${eur(o.balance_cents)} open · due ${o.due_date}${o.notice ? ' · tenant said paid ' + o.notice.paid_on : ''}`]);
     formModal('Book this payment', [selectField('invoice_id', 'Invoice', options, {value: pick.id, wide: true})],
       d => api(`/api/bank/lines/${id}/confirm`, {method: 'POST', body: {invoice_id: Number(d.invoice_id)}}).then(load),
       {intro: `<strong>${eur(line.amount_cents)}</strong> from ${e(line.name || 'unknown payer')} ${e(iban(line.iban))} on ${e(dateLabel(line.booked_on))}<br><span>${e(line.description || '')}</span><br><br>The tenant's bank account is remembered, so the next payment from it is recognised automatically.`,

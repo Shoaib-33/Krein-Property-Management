@@ -30,6 +30,7 @@
     return out;
   };
   const baseAllowed = allowedPage;
-  allowedPage = page => isLandlord() ? PAGES.includes(page) && baseAllowed(page) : baseAllowed(page);
+  // Bank statements only for a landlord who collects the rent into his own bank account (switched on by the company's admin)
+  allowedPage = page => isLandlord() ? (PAGES.includes(page) || (page === 'bank' && !!(state.data && state.data.collects_rent))) && baseAllowed(page) : baseAllowed(page);
   mark();
 })();

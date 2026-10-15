@@ -143,7 +143,7 @@ def tenant_data(user=Depends(current_user)):
         else:
             result['notifications']=[]
         if not ids:
-            for name in ('invoices','ledger','payment_proofs','documents','repairs','repair_updates','messages','requests','deposits','rent_versions','inspections','payment_plans','instalments','appointments','thread_states'):
+            for name in ('invoices','ledger','payment_proofs','payment_notices','documents','repairs','repair_updates','messages','requests','deposits','rent_versions','inspections','payment_plans','instalments','appointments','thread_states'):
                 result[name]=[]
             return result
         placeholders=','.join('?' for _ in ids)
@@ -158,6 +158,7 @@ def tenant_data(user=Depends(current_user)):
             clause=' AND status="final"' if table=='inspections' else ' AND status<>"pending"' if table=='payment_plans' else ' AND released_at IS NOT NULL' if table=='invoices' else ' AND (invoice_id IS NULL OR invoice_id IN (SELECT id FROM invoices WHERE released_at IS NOT NULL))' if table=='ledger' else ''
             result[key]=[dict(r) for r in conn.execute(f'SELECT {columns} FROM {table} WHERE contract_id IN ({placeholders}){clause} ORDER BY id DESC',ids)]
         result['invoices']=[{**r,'balance_cents':invoice_balance(conn,r['id'])} for r in result['invoices']]
+        result['payment_notices']=[dict(r) for r in conn.execute(f"SELECT id,contract_id,invoice_id,amount_cents,paid_on,iban,note,status,created_at,confirmed_at FROM payment_notices WHERE contract_id IN ({placeholders}) AND status<>'withdrawn' ORDER BY id DESC",ids)]
         result['payment_proofs']=[dict(r) for r in conn.execute(f'SELECT p.id,p.invoice_id,p.document_id,p.amount_cents,p.paid_on,p.method,p.reference,p.note,p.status,p.review_note,p.created_at FROM payment_proofs p JOIN invoices i ON i.id=p.invoice_id WHERE i.contract_id IN ({placeholders}) ORDER BY p.id DESC',ids)]
         result['documents']=[dict(r) for r in conn.execute(f'SELECT d.id,d.name,d.kind,d.size,d.mime,s.contract_id,s.shared_at FROM shared_documents s JOIN documents d ON d.id=s.document_id WHERE s.contract_id IN ({placeholders}) AND s.revoked=0 ORDER BY s.id DESC',ids)]
         result['messages']=[dict(r) for r in conn.execute(f'SELECT p.id,p.contract_id,p.sender_id,p.subject,p.body,p.document_id,p.created_at,COALESCE(p.thread_id,p.id) thread_id,u.name sender_name FROM portal_messages p JOIN users u ON u.id=p.sender_id WHERE p.contract_id IN ({placeholders}) ORDER BY p.id DESC',ids)]

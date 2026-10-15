@@ -478,6 +478,21 @@ CREATE TABLE bank_bookings (line_id INTEGER NOT NULL REFERENCES bank_lines(id), 
 '''
 
 
+# V28: landlords who collect the rent into their own bank account, and tenants who report "I have paid"
+V28 = '''
+ALTER TABLE owners ADD COLUMN collects_rent INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE bank_imports ADD COLUMN owner_id INTEGER REFERENCES owners(id);
+ALTER TABLE bank_lines ADD COLUMN owner_id INTEGER REFERENCES owners(id);
+CREATE TABLE payment_notices (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), contract_id INTEGER NOT NULL REFERENCES contracts(id),
+ invoice_id INTEGER NOT NULL REFERENCES invoices(id), amount_cents INTEGER NOT NULL CHECK(amount_cents>0), paid_on TEXT NOT NULL,
+ iban TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'waiting' CHECK(status IN ('waiting','confirmed','withdrawn')),
+ bank_line_id INTEGER REFERENCES bank_lines(id), created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL, confirmed_at TEXT
+);
+CREATE INDEX payment_notices_invoice ON payment_notices(invoice_id, status);
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -693,6 +708,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (27, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=28').fetchone():
+            statement = ''
+            for line in V28.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (28, now()))
         conn.commit()
     except Exception:
         conn.rollback()

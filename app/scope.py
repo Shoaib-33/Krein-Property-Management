@@ -123,6 +123,8 @@ def filter_payload(conn, result, scope):
     out['plan_instalments'] = [r for r in result.get('plan_instalments', []) if r.get('plan_id') in plan_ids]
     message_ids = {r['id'] for r in out['portal_messages']}
     out['thread_states'] = [r for r in result.get('thread_states', []) if r.get('thread_id') in message_ids]
+    out['payment_notices'] = by_contract(result.get('payment_notices', []))
+    out['collects_rent'] = bool(O) and bool(conn.execute(f'SELECT 1 FROM owners WHERE collects_rent=1 AND id IN ({marks(O)})', tuple(O)).fetchone())
     out['tenant_bank_accounts'] = [r for r in result.get('tenant_bank_accounts', []) if r.get('tenant_id') in T]
     out['portal_accounts'] = [r for r in result.get('portal_accounts', []) if r.get('tenant_id') in T]
     out['lease_offers'] = [r for r in result.get('lease_offers', []) if r.get('property_id') in P]
