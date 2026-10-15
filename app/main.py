@@ -372,6 +372,8 @@ def logout(request: Request, user=Depends(current_user)):
 def me(user=Depends(current_user)):
     with connect() as conn:
         companies = [dict(r) for r in conn.execute('SELECT c.*,m.role,(SELECT updated_at FROM company_logos l WHERE l.company_id=c.id) logo_version FROM companies c JOIN memberships m ON m.company_id=c.id WHERE m.user_id=? ORDER BY c.name', (user['id'],))]
+        from .scope import landlord_scope
+        companies = [c for c in companies if c['role'] != 'landlord' or landlord_scope(conn, user['id'], c['id']).properties]   # a landlord without a unit sees no company at all
         if user['global_admin']:
             mine = {c['id'] for c in companies}
             companies += [dict(r, role='admin', platform=True) for r in conn.execute('SELECT c.*,(SELECT updated_at FROM company_logos l WHERE l.company_id=c.id) logo_version FROM companies c ORDER BY c.name') if r['id'] not in mine]

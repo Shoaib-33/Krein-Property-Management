@@ -235,13 +235,13 @@ class LandlordScopeTests(unittest.TestCase):
         own_contracts = {c['id'] for c in again['contracts']} | {contract.json()['id']}
         self.assertTrue(made_for and made_for <= own_contracts, 'the run created invoices for tenancies that are not his')
 
-    def test_a_landlord_with_an_empty_portfolio_sees_nothing_until_he_adds_a_property(self):
-        owner = self.make_owner('Landlord C', 'landlord.c@example.com', 'Empty', [], with_login=True)
+    def test_a_landlord_without_any_unit_sees_no_company_and_gets_no_data(self):
+        self.make_owner('Landlord C', 'landlord.c@example.com', 'Empty', [], with_login=True)
         c = self.login('landlord.c@example.com', LANDLORD_PASSWORD)
-        data = c.get('/api/data?company_id=1').json()
-        self.assertEqual((data['properties'], data['tenants'], data['contracts'], data['invoices']), ([], [], [], []))
-        self.assertEqual(c.post('/api/records/properties', json={'company_id': 1, 'name': 'X', 'address': 'X 1', 'city': 'X', 'postcode': '1', 'kind': 'House', 'energy_label': 'B', 'area': 10, 'rooms': 1}).status_code, 200)
-        self.assertEqual([p['name'] for p in c.get('/api/data?company_id=1').json()['properties']], ['X'])
+        self.assertEqual(c.get('/api/me').json()['companies'], [])
+        self.assertEqual(c.get('/api/data?company_id=1').status_code, 403)
+        self.assertEqual(c.post('/api/records/properties', json={'company_id': 1, 'name': 'X', 'address': 'X 1', 'city': 'X', 'postcode': '1', 'kind': 'House', 'energy_label': 'B', 'area': 10, 'rooms': 1}).status_code, 403)
+        self.assertEqual([x['id'] for x in self.a.get('/api/me').json()['companies']], [1])   # with a unit he sees the company
 
     def test_taking_access_away_and_the_normal_roles_still_work(self):
         self.assertEqual(self.platform.post(f'/api/owners/{self.owner_a}/full-access', json={'enabled': False}).status_code, 200)

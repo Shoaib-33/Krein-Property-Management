@@ -90,6 +90,8 @@ def authorize(conn, user, company_id, roles=None, scoped=False):
             raise HTTPException(403, 'Your role cannot perform this action.')
         from .scope import landlord_scope
         conn.scope = landlord_scope(conn, user['id'], company_id)
+        if not conn.scope.properties:
+            raise HTTPException(403, 'No property has been assigned to you yet. Ask your manager to add one to your portfolio.')
         return role
     if roles and role not in roles and role != 'admin':
         raise HTTPException(403, 'Your role cannot perform this action.')

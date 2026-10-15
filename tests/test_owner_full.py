@@ -45,6 +45,10 @@ class OwnerFullAccessTests(unittest.TestCase):
         owner = self.platform.post('/api/owners', json={'company_id': 1, 'name': 'Protyoy Rafi', 'email': 'protyoy@example.com', 'phone': '', 'payout_details': ''}).json()['id']
         token = self.platform.post('/api/accounts/invite', json={'kind': 'owner', 'target_id': owner}).json()['path'].split('/')[-1]
         self.assertEqual(TestClient(app).post(f'/api/invitations/{token}', json={'password': 'OwnerStrongPass-2026'}).status_code, 200)
+        first = self.platform.get('/api/data?company_id=1').json()
+        for old in first['portfolios']:
+            self.platform.post(f'/api/portfolios/{old["id"]}/archive')
+        self.assertEqual(self.platform.post('/api/portfolios', json={'company_id': 1, 'owner_id': owner, 'name': 'Raf units', 'fee_percent': 5, 'property_ids': [first['properties'][0]['id']]}).status_code, 200)
         return owner
 
     def test_an_owner_with_a_login_can_be_given_management_of_his_own_properties_only(self):
