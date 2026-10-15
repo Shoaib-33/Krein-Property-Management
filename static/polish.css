@@ -285,3 +285,11 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .forgot-link{border:0;background:none;color:var(--green);font-size:12px;padding:6px 0;cursor:pointer;text-decoration:underline;display:block;margin:2px 0 10px}
 .forgot-form .forgot-done{background:var(--soft);border-radius:8px;padding:12px;font-size:12px;line-height:1.6}
 .reset-panel{max-width:460px}
+
+/* contractor service agreements */
+.ca-values{width:100%;border-collapse:collapse;margin-bottom:12px}
+.ca-values th{width:45%;font-size:11px;color:var(--muted);text-transform:none;letter-spacing:0;padding:7px 10px;background:#fafbf9;border:1px solid var(--line)}
+.ca-values td{font-size:12px;padding:7px 10px;border:1px solid var(--line);white-space:normal}
+.ca-sig{max-width:260px;max-height:90px;border:1px solid var(--line);border-radius:8px;padding:6px;background:#fff;margin-bottom:12px}
+.ca-confirm{display:flex;gap:8px;align-items:center;font-size:12px;margin:12px 0}
+.co-offer .sign-sum{margin-bottom:10px}

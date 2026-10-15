@@ -527,6 +527,23 @@ CREATE INDEX password_resets_ip ON password_resets(ip, created_at);
 '''
 
 
+# V33: service agreements sent to contractors and signed electronically (app/contractor_agreements.py)
+V33 = '''
+CREATE TABLE contractor_offers (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), contractor_id INTEGER NOT NULL REFERENCES contractors(id),
+ body TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT,
+ hourly_cents INTEGER NOT NULL, callout_cents INTEGER NOT NULL DEFAULT 0, emergency_percent INTEGER NOT NULL DEFAULT 0,
+ quote_threshold_cents INTEGER NOT NULL DEFAULT 0, payment_days INTEGER NOT NULL DEFAULT 30, warranty_months INTEGER NOT NULL DEFAULT 6,
+ status TEXT NOT NULL CHECK(status IN ('sent','returned','signed','approved','declined','withdrawn')),
+ sent_by INTEGER REFERENCES users(id), sent_at TEXT NOT NULL,
+ client_signature BLOB, client_signature_mode TEXT, client_signer_name TEXT, client_signer_title TEXT, client_signed_at TEXT,
+ form_values TEXT, signer_name TEXT, signed_at TEXT, signed_ip TEXT, signed_hash TEXT, contractor_signature BLOB, contractor_signature_mode TEXT,
+ response_note TEXT, reviewed_by INTEGER REFERENCES users(id), reviewed_at TEXT, final_document_id INTEGER REFERENCES documents(id), created_at TEXT NOT NULL
+);
+CREATE INDEX contractor_offers_contractor ON contractor_offers(contractor_id, status);
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -782,6 +799,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (32, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=33').fetchone():
+            statement = ''
+            for line in V33.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (33, now()))
         conn.commit()
     except Exception:
         conn.rollback()

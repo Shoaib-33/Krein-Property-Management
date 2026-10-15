@@ -35,6 +35,8 @@ def staff_extras(conn,user,company_id,role):
     for table,key in [('portal_accounts','tenant_id'),('contractor_accounts','contractor_id')]:
         result[table]=[dict(r) for r in conn.execute(f'SELECT a.{key},a.user_id,a.enabled,u.name,u.email FROM {table} a JOIN users u ON u.id=a.user_id WHERE a.company_id=?',(company_id,))]
     if role in ('admin','manager','property'):
+        from .contractor_agreements import public_offer
+        result['contractor_offers']=[public_offer(r) for r in conn.execute("SELECT * FROM contractor_offers WHERE company_id=? AND status<>'withdrawn' ORDER BY id DESC",(company_id,))]
         result['contractor_agreement_submissions']=[dict(r) for r in conn.execute('SELECT s.*,c.name contractor_name,d.name document_name FROM contractor_agreement_submissions s JOIN contractors c ON c.id=s.contractor_id JOIN documents d ON d.id=s.document_id WHERE s.company_id=? ORDER BY s.id DESC',(company_id,))]
     result['portal_messages']=[dict(r) for r in conn.execute(history.messages_sql(),(company_id,company_id,since))]
     if role in ('admin','manager','finance'):
@@ -312,7 +314,8 @@ def contractor_data(user=Depends(current_user)):
         jobs=[dict(r) for r in conn.execute('SELECT w.*,r.title,r.category,r.urgency,r.description,p.address,p.city,p.postcode,t.name tenant_name,t.phone tenant_phone FROM work_orders w JOIN contractor_accounts a ON a.contractor_id=w.contractor_id AND a.company_id=w.company_id JOIN repairs r ON r.id=w.repair_id JOIN contracts ct ON ct.id=r.contract_id JOIN properties p ON p.id=ct.property_id JOIN tenants t ON t.id=ct.tenant_id WHERE a.user_id=? AND a.enabled=1 ORDER BY w.id DESC',(user['id'],))]
         for company_id in {a['company_id'] for a in accounts}:
             db.audit_view(user['id'],company_id,'contractor_portal',None)
-        return {'accounts':accounts,'jobs':jobs,'agreements':agreements,'today':local_today().isoformat()}
+        from .contractor_agreements import offers_for_contractor
+        return {'accounts':accounts,'jobs':jobs,'agreements':agreements,'agreement_offers':offers_for_contractor(conn,user['id']),'today':local_today().isoformat()}
 
 
 @router.post('/api/contractor/agreement')

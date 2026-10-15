@@ -2,7 +2,7 @@
 /* View a PDF inside the portal instead of downloading it: invoices (staff and tenant) and contracts.
    Any link to one of those PDFs opens a viewer with "Open in new tab" and "Download". */
 (() => {
-  const VIEWABLE = [/^\/api\/bank\/lines\/\d+\/statement\.pdf$/, /^\/api\/documents\/\d+\/file$/, /^\/api\/tenant\/documents\/\d+\/file$/, /^\/api\/invoices\/\d+\/pdf$/, /^\/api\/tenant\/invoices\/\d+\/pdf$/, /^\/api\/lease-offers\/\d+\/file$/, /^\/api\/tenant\/lease-offers\/\d+\/file$/];
+  const VIEWABLE = [/^\/api\/contractor-agreements\/\d+\/file$/, /^\/api\/contractor\/agreement-offers\/\d+\/file$/, /^\/api\/bank\/lines\/\d+\/statement\.pdf$/, /^\/api\/documents\/\d+\/file$/, /^\/api\/tenant\/documents\/\d+\/file$/, /^\/api\/invoices\/\d+\/pdf$/, /^\/api\/tenant\/invoices\/\d+\/pdf$/, /^\/api\/lease-offers\/\d+\/file$/, /^\/api\/tenant\/lease-offers\/\d+\/file$/];
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   let dialog = null;
 
