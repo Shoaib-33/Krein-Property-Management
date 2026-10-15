@@ -70,6 +70,15 @@ class SelectiveGZip:
 app.add_middleware(SelectiveGZip)
 
 
+def video_limit():
+    """The largest video a tenant may attach, in bytes: HAVEN_MAX_VIDEO_MB, default 50 MB (at most 500)."""
+    try:
+        mb = float(os.environ.get('HAVEN_MAX_VIDEO_MB', '50'))
+    except ValueError:
+        mb = 50
+    return int(max(1, min(500, mb)) * 1024 * 1024)
+
+
 class BodyLimit:
     """Refuse a request body above HAVEN_MAX_BODY_MB (default 12 MB) before it is read, so nobody can fill the disk or memory
     with huge uploads (files themselves are limited to 10 MB further on)."""
@@ -83,8 +92,12 @@ class BodyLimit:
     async def __call__(self, scope, receive, send):
         if scope['type'] != 'http':
             return await self.inner(scope, receive, send)
+        limit = self.limit
+        path = scope.get('path', '')
+        if path == '/api/tenant/repairs' or (path.startswith('/api/tenant/requests/') and path.endswith('/video')):
+            limit = video_limit() + 12 * 1024 * 1024   # a tenant's video (and a photo) on a repair or request
         length = dict(scope.get('headers') or []).get(b'content-length')
-        if length is not None and (not length.isdigit() or int(length) > self.limit):
+        if length is not None and (not length.isdigit() or int(length) > limit):
             return await JSONResponse({'detail': 'This upload is too large.'}, status_code=413)(scope, receive, send)
         seen = 0
 
@@ -93,7 +106,7 @@ class BodyLimit:
             message = await receive()
             if message['type'] == 'http.request':
                 seen += len(message.get('body', b''))
-                if seen > self.limit:
+                if seen > limit:
                     raise HTTPException(413, 'This upload is too large.')
             return message
         await self.inner(scope, limited, send)
@@ -118,7 +131,7 @@ async def security_headers(request, call_next):
     response.headers['Cache-Control'] = 'no-store'
     if os.environ.get('HAVEN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    if response.headers.get('content-type', '').startswith(('application/pdf', 'image/png', 'image/jpeg')):
+    if response.headers.get('content-type', '').startswith(('application/pdf', 'image/png', 'image/jpeg', 'video/')):
         # only Haven's own pages may show a PDF or a receipt photo inside the portal viewer
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
         response.headers['Content-Security-Policy'] = response.headers['Content-Security-Policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'")
@@ -1049,6 +1062,26 @@ async def read_upload(file):
     else:
         raise HTTPException(422, 'Only PDF, PNG, and JPEG files are accepted.')
     filename = Path((file.filename or 'document').replace('\\', '/')).name[:180]
+    return content, mime, ext, filename
+
+
+async def read_video(file):
+    """An MP4, MOV or WebM video up to HAVEN_MAX_VIDEO_MB. The type is read from the file itself, not from its name."""
+    limit = video_limit()
+    content = await file.read(limit + 1)
+    await file.close()
+    if not content:
+        raise HTTPException(422, 'The video is empty.')
+    if len(content) > limit:
+        raise HTTPException(422, f'The video is larger than {limit // (1024 * 1024)} MB. Record a shorter video or send it in parts.')
+    if content[4:8] == b'ftyp':
+        brand = content[8:12]
+        mime, ext = ('video/quicktime', '.mov') if brand == b'qt  ' else ('video/mp4', '.mp4')
+    elif content.startswith(b'\x1a\x45\xdf\xa3'):
+        mime, ext = 'video/webm', '.webm'
+    else:
+        raise HTTPException(422, 'Upload the video as MP4, MOV or WebM (the usual format of a phone camera).')
+    filename = Path((file.filename or 'video').replace('\\', '/')).name[:180]
     return content, mime, ext, filename
 
 

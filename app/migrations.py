@@ -510,6 +510,12 @@ ALTER TABLE thread_states ADD COLUMN priority TEXT NOT NULL DEFAULT 'Routine' CH
 '''
 
 
+# V31: a tenant's video with a written request or complaint
+V31 = '''
+ALTER TABLE requests ADD COLUMN video_document_id INTEGER REFERENCES documents(id);
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -749,6 +755,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (30, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=31').fetchone():
+            statement = ''
+            for line in V31.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (31, now()))
         conn.commit()
     except Exception:
         conn.rollback()

@@ -130,7 +130,8 @@ def tenant_data(user=Depends(current_user)):
         contracts=[dict(r) for r in conn.execute('SELECT c.*,p.name property_name,p.address,p.city,p.postcode,p.area,p.rooms,p.energy_label,co.name company_name,co.payment_instructions FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id AND a.company_id=c.company_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE a.user_id=? AND a.enabled=1 ORDER BY c.start_date DESC',(user['id'],))]
         ids=[c['id'] for c in contracts]
         company_ids=sorted({a['company_id'] for a in accounts})
-        result={'accounts':accounts,'contracts':contracts,'today':local_today().isoformat()}
+        from .main import video_limit
+        result={'accounts':accounts,'contracts':contracts,'today':local_today().isoformat(),'video_limit_mb':video_limit()//(1024*1024)}
         tmarks=','.join('?' for _ in accounts)
         result['bank_accounts']=[dict(r) for r in conn.execute(f'SELECT id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE tenant_id IN ({tmarks}) GROUP BY iban ORDER BY id',tuple(a['id'] for a in accounts))]
         from .lease_offers import tenant_offers
@@ -152,7 +153,7 @@ def tenant_data(user=Depends(current_user)):
             ('ledger','ledger','id,contract_id,invoice_id,kind,amount_cents,created_at'),
             ('deposit_events','deposits','id,contract_id,kind,amount_cents,status,reason,created_at'),
             ('repairs','repairs','id,contract_id,title,category,urgency,description,status,reported_on,due_date,written,completed_at'),
-            ('requests','requests','id,contract_id,kind,subject,body,requested_date,status,response,created_at,responded_at,priority'),
+            ('requests','requests','id,contract_id,kind,subject,body,requested_date,status,response,created_at,responded_at,priority,video_document_id'),
             ('inspections','inspections','id,contract_id,kind,inspected_on,findings,status,document_id'),
             ('payment_plans','payment_plans','id,contract_id,title,total_cents,instalment_cents,first_due,interval_days,status')]:
             clause=' AND status="final"' if table=='inspections' else ' AND status<>"pending"' if table=='payment_plans' else ' AND released_at IS NOT NULL' if table=='invoices' else ' AND (invoice_id IS NULL OR invoice_id IN (SELECT id FROM invoices WHERE released_at IS NOT NULL))' if table=='ledger' else ''
@@ -213,7 +214,7 @@ def tenant_document(document_id:int,download:int=0,user=Depends(current_user)):
 
 
 @router.post('/api/tenant/repairs')
-async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),description:str=Form(...),category:str=Form('General'),urgency:str=Form('Routine'),file:UploadFile|None=File(None),user=Depends(current_user)):
+async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),description:str=Form(...),category:str=Form('General'),urgency:str=Form('Routine'),file:UploadFile|None=File(None),video:UploadFile|None=File(None),user=Depends(current_user)):
     data={'title':title,'description':description,'category':category,'urgency':urgency}
     title=text_field(data,'title',maximum=180)
     description=text_field(data,'description')
@@ -224,6 +225,8 @@ async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),descriptio
         if c['end_date'] and c['end_date']<local_today().isoformat():
             raise HTTPException(409,'This tenancy has ended. Use Messages to contact your manager.')
     upload=await read_upload(file) if file and file.filename else None
+    from .main import read_video
+    clip=await read_video(video) if video and video.filename else None
     with transaction() as conn:
         c=tenant_contract(conn,user,contract_id)
         stamped=sla.stamp(conn,c['company_id'],urgency,local_today().isoformat())
@@ -232,6 +235,10 @@ async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),descriptio
         if doc_id:
             share_document(conn,c['company_id'],contract_id,doc_id,user['id'])
         insert(conn,'repair_updates',{'company_id':c['company_id'],'repair_id':rid,'user_id':user['id'],'message':'Tenant reported: '+description,'document_id':doc_id,'tenant_visible':1,'created_at':now()})
+        if clip:   # the tenant's video, kept with the repair and visible to staff and the tenant
+            vid=save_document(conn,c['company_id'],contract_id,user['id'],'Repair video',clip)
+            share_document(conn,c['company_id'],contract_id,vid,user['id'])
+            insert(conn,'repair_updates',{'company_id':c['company_id'],'repair_id':rid,'user_id':user['id'],'message':'Video from the tenant','document_id':vid,'tenant_visible':1,'created_at':now()})
         task(conn,c['company_id'],contract_id,f'Triage tenant repair #{rid}: {title}',local_today().isoformat(),'Emergency' if urgency=='Emergency' else 'Repair')
         task(conn,c['company_id'],contract_id,f'Review day-35 repair #{rid}',(local_today()+timedelta(days=35)).isoformat(),'Repair')
         notify_staff(conn,c['company_id'],'New tenant repair',title,'repairs',contract_id=c['id'])
@@ -328,3 +335,21 @@ def tenant_request_document(request_id:int,user=Depends(current_user)):
     with connect() as conn:
         req=tenant_record(conn,user,'requests',request_id)
         return {'request_id':req['id'],'status':req['status'],'response':req['response'],'requested_date':req['requested_date'],'responded_at':req['responded_at']}
+
+
+@router.post('/api/tenant/requests/{request_id}/video')
+async def tenant_request_video(request_id:int,video:UploadFile=File(...),user=Depends(current_user)):
+    """An optional video with a written request or complaint (for example noise or a leak), stored with the request."""
+    from .main import read_video
+    with connect() as conn:
+        tenant_record(conn,user,'requests',request_id)
+    clip=await read_video(video)
+    with transaction() as conn:
+        req=tenant_record(conn,user,'requests',request_id)
+        if req.get('video_document_id'):
+            raise HTTPException(409,'A video is already attached to this request.')
+        vid=save_document(conn,req['company_id'],req['contract_id'],user['id'],'Request video',clip)
+        share_document(conn,req['company_id'],req['contract_id'],vid,user['id'])
+        conn.execute('UPDATE requests SET video_document_id=? WHERE id=?',(vid,request_id))
+        audit(conn,user['id'],req['company_id'],'video_added','request',request_id,{'document_id':vid})
+    return {'document_id':vid}

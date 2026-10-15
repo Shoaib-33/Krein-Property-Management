@@ -108,7 +108,7 @@
     }
     for (const r of inbox ? [] : reqs) {
       const tenant = tenantFor(r.contract_id);
-      const msgsR = [{mine: false, name: tenant.name, body: `${r.kind}${r.requested_date ? ` (requested date ${dateLabel(r.requested_date)})` : ''}\n${r.body}`, at: r.created_at}];
+      const msgsR = [{mine: false, name: tenant.name, body: `${r.kind}${r.requested_date ? ` (requested date ${dateLabel(r.requested_date)})` : ''}\n${r.body}`, at: r.created_at, doc: r.video_document_id || null}];
       const uid = tenantUser(tenant.id);
       // every answer the team gave is kept as its own message; the single r.response field only holds the latest one
       const answers = [...hidden].filter(([, rq]) => rq.id === r.id).map(([id]) => msgs.find(m => m.id === id)).filter(Boolean);
