@@ -527,7 +527,7 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
     company_id = integer(data, 'company_id')
     with transaction() as conn:
         allowed_roles = ('inspector','property','finance','manager') if kind == 'inspections' else FINANCE if kind in ('cost_lines', 'rent_proposals', 'rules', 'valuations') else ('property', 'finance', 'manager') if kind in ('tasks', 'communications') else OPERATIONS
-        if kind in ('properties', 'tenants', 'contracts', 'repairs', 'tasks', 'communications', 'inspections'):
+        if kind in ('tenants', 'contracts', 'repairs', 'tasks', 'communications', 'inspections'):   # a landlord does not add properties: his administrator assigns them to his portfolio
             allowed_roles = tuple(allowed_roles) + ('landlord',)
         role = authorize(conn, user, company_id, allowed_roles)
         scope = getattr(conn, 'scope', None) if role == 'landlord' else None
@@ -541,11 +541,6 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
                     raise ValueError()
             except (ValueError, TypeError):
                 raise HTTPException(422, 'Enter a valid area and room count.')
-            if scope is not None:   # a property a landlord adds belongs to his own portfolio
-                if not scope.portfolios:
-                    raise HTTPException(422, 'Your manager has to create a portfolio for you first.')
-                wanted = int(data.get('portfolio_id') or 0)
-                values['portfolio_id'] = wanted if wanted in scope.portfolios else sorted(scope.portfolios)[0]
         elif kind == 'tenants':
             values.update({'name': text_field(data, 'name', maximum=120), 'email': text_field(data, 'email', maximum=254), 'phone': str(data.get('phone', ''))[:50], 'language': choice(data, 'language', ('nl','en'), 'nl')})
             if '@' not in values['email']:

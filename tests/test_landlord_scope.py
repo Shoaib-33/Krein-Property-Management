@@ -210,9 +210,12 @@ class LandlordScopeTests(unittest.TestCase):
         mine = self.mine('a')
         prop = sorted(mine['props'])[0]
         self.assertEqual(self.a.patch(f'/api/properties/{prop}', json={'name': 'Renamed by landlord', 'energy_label': 'A'}).status_code, 200)
-        # a property he adds goes into his own portfolio; a tenant he adds is his
-        made = self.a.post('/api/records/properties', json={'company_id': 1, 'name': 'New Villa', 'address': 'Villastraat 1', 'city': 'Utrecht', 'postcode': '3500 AA', 'kind': 'House', 'energy_label': 'B', 'area': 120, 'rooms': 5})
-        self.assertEqual(made.status_code, 200, made.text)
+        # he cannot add a property himself; his administrator adds it and assigns it to his portfolio
+        villa = dict(company_id=1, name='New Villa', address='Villastraat 1', city='Utrecht', postcode='3500 AA', kind='House', energy_label='B', area=120, rooms=5)
+        self.assertEqual(self.a.post('/api/records/properties', json=villa).status_code, 403)
+        new_prop = self.manager.post('/api/records/properties', json=villa).json()['id']
+        portfolio = self.a.get('/api/data?company_id=1').json()['portfolios'][0]['id']
+        self.assertEqual(self.manager.patch(f'/api/portfolios/{portfolio}', json={'name': 'Portfolio A', 'owner_id': self.owner_a, 'fee_percent': 5, 'property_ids': self.a_props + [new_prop]}).status_code, 200)
         tenant = self.a.post('/api/records/tenants', json={'company_id': 1, 'name': 'New Tenant', 'email': 'new.tenant@example.com', 'phone': '', 'language': 'en'})
         self.assertEqual(tenant.status_code, 200, tenant.text)
         again = self.a.get('/api/data?company_id=1').json()
@@ -220,9 +223,7 @@ class LandlordScopeTests(unittest.TestCase):
         self.assertIn('New Tenant', [t['name'] for t in again['tenants']])
         self.assertNotIn('New Villa', json.dumps(self.b.get('/api/data?company_id=1').json()))
         self.assertNotIn('New Tenant', json.dumps(self.b.get('/api/data?company_id=1').json()))
-        self.assertIn('New Villa', json.dumps(self.manager.get('/api/data?company_id=1').json()))     # the company's own staff see it
         # he can contract his own tenant for his own property
-        new_prop = next(p['id'] for p in again['properties'] if p['name'] == 'New Villa')
         new_tenant = next(t['id'] for t in again['tenants'] if t['name'] == 'New Tenant')
         contract = self.a.post('/api/records/contracts', json={'company_id': 1, 'property_id': new_prop, 'tenant_id': new_tenant, 'signed_on': '2026-10-01', 'start_date': '2026-10-01', 'basic_rent': 1500, 'service_charge': 100, 'deposit': 3000})
         self.assertEqual(contract.status_code, 200, contract.text)
