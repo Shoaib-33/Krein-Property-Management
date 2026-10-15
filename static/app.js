@@ -400,7 +400,7 @@ function showSearch(query){
 async function createInvitation(kind,id){
  const r=await api('/api/accounts/invite',{method:'POST',body:{kind,target_id:id}});
  const url=location.origin+r.path;
- modal('Invitation ready to share',`<p class="modal-note">Send this private link to <strong>${e(r.email)}</strong> using your approved secure channel. Haven does not send email. The one-use link expires in ${r.expires_in_days} days.</p><div class="link-output">${e(url)}</div><div class="modal-footer">${button('Copy invite link','copy-link',`data-url="${e(url)}"`,'primary')}</div>`);
+ modal('Invitation ready to share',`<p class="modal-note">Send this private link to <strong>${e(r.email)}</strong> using your approved secure channel. Haven does not send email. The one-use link expires in ${r.expires_in_days} days.</p>${r.existing?`<div class="notice"><span><strong>This person already has a Haven login with this email</strong> (for example as staff, or as tenant of another unit). When they open the link they sign in with their current password, and this is added to the same login.</span></div>`:''}<div class="link-output">${e(url)}</div><div class="modal-footer">${button('Copy invite link','copy-link',`data-url="${e(url)}"`,'primary')}</div>`);
  await refresh();
 }
 function editCompany(){formModal('Edit company',[['name','Company name','text',{value:company().name}],['kvk','KvK number','text',{value:company().kvk,required:false}],['address','Registered address','text',{wide:true,value:company().address}],['payment_instructions','Invoice payment instructions','textarea',{wide:true,value:company().payment_instructions}]],data=>api(`/api/companies/${state.company}`,{method:'PATCH',body:data}),{success:'Company profile updated.'});}

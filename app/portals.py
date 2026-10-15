@@ -1,5 +1,6 @@
 import json
 import secrets
+import time as _time
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -41,8 +42,9 @@ def invite_account(data: dict, user=Depends(current_user)):
             from .scope import require_own_tenant
             require_own_tenant(conn, target['id'])
         email = target['email'].strip().lower()
-        if conn.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone():
-            raise HTTPException(409, 'An account with this email already exists. Use the existing account access controls; invitations cannot replace existing credentials.')
+        existing = conn.execute('SELECT id,active FROM users WHERE email=?', (email,)).fetchone()
+        # A person who already has a Haven login (staff elsewhere, a tenant of another unit, an owner...) gets an invitation too;
+        # opening it they confirm with their OWN password, so an invitation can never take over somebody else's login.
         account_table, target_key = {'tenant': ('portal_accounts', 'tenant_id'), 'contractor': ('contractor_accounts', 'contractor_id'), 'owner': ('owner_accounts', 'owner_id')}[kind]
         if conn.execute(f'SELECT 1 FROM {account_table} WHERE {target_key}=?', (target['id'],)).fetchone():
             raise HTTPException(409, 'This record already has a portal account. Enable its access instead.')
@@ -50,7 +52,7 @@ def invite_account(data: dict, user=Depends(current_user)):
         token = secrets.token_urlsafe(32)
         iid = insert(conn,'account_invitations',{'company_id':target['company_id'],'email':email,'name':target['name'],'kind':kind,'target_id':target['id'],'token_hash':token_hash(token),'expires_at':expiry(7),'created_by':user['id'],'created_at':now()})
         audit(conn,user['id'],target['company_id'],'invited',kind,target['id'],{'invitation_id':iid})
-    return {'path':'/activate/'+token,'email':email,'expires_in_days':7}
+    return {'path':'/activate/'+token,'email':email,'expires_in_days':7,'existing':bool(existing and existing['active'])}
 
 
 def invitation(conn, token):
@@ -64,22 +66,45 @@ def invitation(conn, token):
 def invitation_details(token: str):
     with connect() as conn:
         i=invitation(conn,token)
-        return {'name':i['name'],'email':i['email'],'kind':i['kind'],'company':conn.execute('SELECT name FROM companies WHERE id=?',(i['company_id'],)).fetchone()[0]}
+        u=conn.execute('SELECT active FROM users WHERE email=?',(i['email'],)).fetchone()
+        return {'name':i['name'],'email':i['email'],'kind':i['kind'],'company':conn.execute('SELECT name FROM companies WHERE id=?',(i['company_id'],)).fetchone()[0],'existing':bool(u and u['active'])}
 
 
 @router.post('/api/invitations/{token}')
 def accept_invitation(token: str,data: dict):
     password=text_field(data,'password',maximum=128)
-    if len(password)<12:
+    with connect() as conn:
+        i=invitation(conn,token)
+        has_login=conn.execute('SELECT password_hash FROM users WHERE email=? AND active=1',(i['email'],)).fetchone()
+        key_=token_hash('invite|'+token)
+        tries=conn.execute('SELECT attempts FROM login_attempts WHERE key=?',(key_,)).fetchone()
+    if len(password)<12 and not has_login:
         raise HTTPException(422,'Use a password of at least 12 characters.')
+    if has_login:
+        # an existing login: the person proves it is theirs with their current password (8 tries per invitation)
+        if tries and tries['attempts']>=8:
+            raise HTTPException(429,'Too many attempts. Use Forgot password on the sign-in page, then open this link again.')
+        if not verify_password(password,has_login['password_hash']):
+            with transaction() as conn:   # stored on its own, so the refusal below does not undo it
+                conn.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)',(key_,(tries['attempts'] if tries else 0)+1,_time.time()+3600))
+            raise HTTPException(401,'This is not the password of your existing Haven login. Use Forgot password on the sign-in page if you do not remember it.')
     with transaction() as conn:
         i=invitation(conn,token)
-        if conn.execute('SELECT 1 FROM users WHERE email=?',(i['email'],)).fetchone():
-            raise HTTPException(409,'An account already uses this email. Contact your property manager.')
         table, key = {'tenant': ('portal_accounts','tenant_id'), 'contractor': ('contractor_accounts','contractor_id'), 'owner': ('owner_accounts','owner_id')}[i['kind']]
         if conn.execute(f'SELECT 1 FROM {table} WHERE {key}=?',(i['target_id'],)).fetchone():
             raise HTTPException(409,'This record is already linked to an account.')
-        uid=insert(conn,'users',{'name':i['name'],'email':i['email'],'password_hash':password_hash(password)})
+        user=conn.execute('SELECT * FROM users WHERE email=?',(i['email'],)).fetchone()
+        if user and user['active']:
+            if not has_login or not verify_password(password,user['password_hash']):   # checked above; the login changed in between
+                raise HTTPException(409,'Open the invitation link again.')
+            uid=user['id']
+        elif user:
+            # a closed login (someone who was removed earlier): opened again with the new password
+            conn.execute('UPDATE users SET active=1,name=?,password_hash=? WHERE id=?',(i['name'],password_hash(password),user['id']))
+            conn.execute('DELETE FROM sessions WHERE user_id=?',(user['id'],))
+            uid=user['id']
+        else:
+            uid=insert(conn,'users',{'name':i['name'],'email':i['email'],'password_hash':password_hash(password)})
         insert(conn,table,{'user_id':uid,key:i['target_id'],'company_id':i['company_id'],'created_at':now()})
         conn.execute('UPDATE account_invitations SET used_at=? WHERE id=?',(now(),i['id']))
         audit(conn,uid,i['company_id'],'activated',i['kind'],i['target_id'],{})
