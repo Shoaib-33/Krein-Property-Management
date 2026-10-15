@@ -36,7 +36,7 @@ def invite_account(data: dict, user=Depends(current_user)):
     kind = choice(data, 'kind', ('tenant','contractor','owner'))
     table = {'tenant': 'tenants', 'contractor': 'contractors', 'owner': 'owners'}[kind]
     with transaction() as conn:
-        target = record(conn, table, integer(data,'target_id'), user, ('manager','property'))
+        target = record(conn, table, integer(data,'target_id'), user, ('manager','property') + (('landlord',) if kind == 'tenant' else ()))
         email = target['email'].strip().lower()
         if conn.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone():
             raise HTTPException(409, 'An account with this email already exists. Use the existing account access controls; invitations cannot replace existing credentials.')
@@ -91,7 +91,7 @@ def account_access(data: dict,user=Depends(current_user)):
     if not isinstance(data.get('enabled'),bool):
         raise HTTPException(422,'Choose whether access is enabled.')
     with transaction() as conn:
-        target=record(conn,target_table,integer(data,'target_id'),user,('manager',))
+        target=record(conn,target_table,integer(data,'target_id'),user,('manager',) + (('landlord',) if kind == 'tenant' else ()))
         row=conn.execute(f'SELECT * FROM {table} WHERE {key}=?',(target['id'],)).fetchone()
         if not row:
             raise HTTPException(404,'This record has no portal account.')

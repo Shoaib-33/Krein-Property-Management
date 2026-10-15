@@ -16,7 +16,7 @@ router=APIRouter()
 @router.post('/api/credit-notes')
 def propose_credit(data:dict,user=Depends(current_user)):
     with transaction() as conn:
-        inv=record(conn,'invoices',integer(data,'invoice_id'),user,('finance','manager'))
+        inv=record(conn,'invoices',integer(data,'invoice_id'),user,('finance','manager','landlord'))
         amount=money(data,'amount')
         if amount>invoice_balance(conn,inv['id']):
             raise HTTPException(409,'A credit note cannot exceed the outstanding balance.')
@@ -30,7 +30,7 @@ def review_credit(credit_id:int,data:dict,user=Depends(current_user)):
     decision=choice(data,'decision',('approved','rejected'))
     note=text_field(data,'note')
     with transaction() as conn:
-        credit=record(conn,'credit_notes',credit_id,user,('manager',))
+        credit=record(conn,'credit_notes',credit_id,user,('manager','landlord'))
         if credit['status']!='pending':
             raise HTTPException(409,'This credit note was already reviewed.')
         if credit['created_by']==user['id']:
@@ -49,7 +49,7 @@ def review_credit(credit_id:int,data:dict,user=Depends(current_user)):
 @router.post('/api/payment-plans')
 def propose_plan(data:dict,user=Depends(current_user)):
     with transaction() as conn:
-        c=record(conn,'contracts',integer(data,'contract_id'),user,('finance','manager'))
+        c=record(conn,'contracts',integer(data,'contract_id'),user,('finance','manager','landlord'))
         first=data.get('first_due','')
         try:
             due=date.fromisoformat(first)
@@ -78,7 +78,7 @@ def review_plan(plan_id:int,data:dict,user=Depends(current_user)):
     decision=choice(data,'decision',('approved','rejected'))
     note=text_field(data,'note')
     with transaction() as conn:
-        p=record(conn,'payment_plans',plan_id,user,('manager',))
+        p=record(conn,'payment_plans',plan_id,user,('manager','landlord'))
         if p['status']!='pending': raise HTTPException(409,'This plan was already reviewed.')
         if p['created_by']==user['id']: raise HTTPException(403,'A different person must approve the payment plan.')
         if decision=='approved':
@@ -101,7 +101,7 @@ def apply_proof(plan_id:int,data:dict,user=Depends(current_user)):
     installment_id=integer(data,'instalment_id')
     note=text_field(data,'note')
     with transaction() as conn:
-        plan=record(conn,'payment_plans',plan_id,user,('finance','manager'))
+        plan=record(conn,'payment_plans',plan_id,user,('finance','manager','landlord'))
         if plan['status']!='approved':raise HTTPException(409,'The payment plan must be approved first.')
         item=conn.execute('SELECT * FROM plan_instalments WHERE id=? AND plan_id=? AND company_id=?',(installment_id,plan_id,plan['company_id'])).fetchone()
         if not item or item['status']!='open':raise HTTPException(409,'This instalment is not open.')

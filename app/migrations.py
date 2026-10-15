@@ -422,6 +422,18 @@ ALTER TABLE portfolios ADD COLUMN archived_at TEXT;
 '''
 
 
+V25 = '''
+ALTER TABLE memberships RENAME TO memberships_v24;
+CREATE TABLE memberships (
+ user_id INTEGER REFERENCES users(id), company_id INTEGER REFERENCES companies(id),
+ role TEXT NOT NULL CHECK(role IN ('admin','manager','finance','property','inspector','landlord')), PRIMARY KEY(user_id,company_id)
+);
+INSERT INTO memberships SELECT user_id,company_id,role FROM memberships_v24;
+DROP TABLE memberships_v24;
+ALTER TABLE tenants ADD COLUMN scope_owner_id INTEGER REFERENCES owners(id);
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -613,6 +625,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (24, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=25').fetchone():
+            statement = ''
+            for line in V25.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (25, now()))
         conn.commit()
     except Exception:
         conn.rollback()

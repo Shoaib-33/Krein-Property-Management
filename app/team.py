@@ -117,7 +117,7 @@ def group_overview(user=Depends(current_user)):
         if user['global_admin']:
             companies = [dict(r, role='admin') for r in conn.execute('SELECT id,name,kvk FROM companies ORDER BY name')]
         else:
-            companies = [dict(r) for r in conn.execute('SELECT c.id,c.name,c.kvk,m.role FROM companies c JOIN memberships m ON m.company_id=c.id WHERE m.user_id=? ORDER BY c.name', (user['id'],))]
+            companies = [dict(r) for r in conn.execute('SELECT c.id,c.name,c.kvk,m.role FROM companies c JOIN memberships m ON m.company_id=c.id WHERE m.user_id=? AND m.role<>"landlord" ORDER BY c.name', (user['id'],))]
         out = []
         for c in companies:
             cid = c['id']

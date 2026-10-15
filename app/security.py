@@ -72,13 +72,22 @@ def current_user(request: Request):
     return dict(row)
 
 
-def authorize(conn, user, company_id, roles=None):
+def authorize(conn, user, company_id, roles=None, scoped=False):
+    """roles=None means every staff role. The property-limited 'landlord' role is different: it passes only where an endpoint names it
+    ('landlord' in roles) or says scoped=True, and from then on conn.scope limits every record he can reach."""
+    conn.scope = None
     row = conn.execute('SELECT role FROM memberships WHERE user_id=? AND company_id=?', (user['id'], company_id)).fetchone()
     if not row and user.get('global_admin') and conn.execute('SELECT 1 FROM companies WHERE id=?', (company_id,)).fetchone():
         return 'admin'   # the platform administrator can open any company; it is recorded in the audit log like any other action
     if not row:
         raise HTTPException(403, 'You do not have access to this company.')
     role = row['role']
+    if role == 'landlord':
+        if not ((roles and 'landlord' in roles) or (scoped and not roles)):
+            raise HTTPException(403, 'Your role cannot perform this action.')
+        from .scope import landlord_scope
+        conn.scope = landlord_scope(conn, user['id'], company_id)
+        return role
     if roles and role not in roles and role != 'admin':
         raise HTTPException(403, 'Your role cannot perform this action.')
     return role
@@ -98,6 +107,9 @@ def record(conn, table, record_id, user, roles=None):
         raise HTTPException(404, 'Record not found.')
     row=dict(row)
     role=authorize(conn, user, row['company_id'], roles)
+    if role=='landlord':
+        from .scope import require
+        require(conn, table, row)
     if role=='inspector':
         property_id=row.get('property_id')
         contract_id=row.get('contract_id')
@@ -114,4 +126,7 @@ def linked(conn, table, record_id, company_id):
     row = conn.execute(f'SELECT * FROM {table} WHERE id=? AND company_id=?', (record_id, company_id)).fetchone()
     if not row:
         raise HTTPException(400, 'The linked record does not belong to this company.')
-    return dict(row)
+    row = dict(row)
+    from .scope import require
+    require(conn, table, row)      # a landlord can only link to his own properties, tenants and contracts
+    return row

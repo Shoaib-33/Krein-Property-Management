@@ -49,10 +49,10 @@
     const ownerRows = owners.map(o => {
       const acc = accountOf(o.id);
       const full = staffOf(o);
-      const access = (acc ? (acc.enabled ? badge('Portal active', 'green') : badge('Access paused', 'amber')) : badge('Not invited', 'gray')) + (full ? ' ' + badge('Full access', 'blue') : '');
+      const access = (acc ? (acc.enabled ? badge('Portal active', 'green') : badge('Access paused', 'amber')) : badge('Not invited', 'gray')) + (full ? ' ' + badge('Manages own units', 'blue') : '');
       const actions = [own('Edit', 'edit-owner', o.id)];
       if (canManage()) actions.push(acc ? own(acc.enabled ? 'Pause access' : 'Restore access', acc.enabled ? 'pause-owner' : 'restore-owner', o.id) : own('Invite', 'invite-owner', o.id, 'small primary'));
-      if (isAdmin()) actions.push(full ? own('Remove full access', 'full-access-off', o.id) : acc && acc.enabled ? own('Give full access', 'full-access-on', o.id, 'small primary') : acc ? '' : own('Invite as administrator', 'invite-admin', o.id));
+      if (isAdmin()) actions.push(full ? own('Remove management access', 'full-access-off', o.id) : acc && acc.enabled ? own('Give management access', 'full-access-on', o.id, 'small primary') : '');
       if (canManage()) actions.push(own('Remove', 'remove-owner', o.id, 'small danger'));
       return [`<strong>${e(o.name)}</strong><small>${e(o.email)}${o.phone ? ' · ' + e(o.phone) : ''}</small>`, String(activePortfolios().filter(p => p.owner_id === o.id).length), access, `<div class="actions">${actions.join('')}</div>`];
     });
@@ -117,23 +117,14 @@
     'edit-owner': id => { const o = ownerOf(id); formModal('Edit owner', ownerFields(o), d => api(`/api/owners/${id}`, {method: 'PATCH', body: d}), {submit: 'Save changes'}); },
     'invite-owner': id => createInvitation('owner', Number(id)),
     'full-access-on': id => {
-      const o = ownerOf(id), own_ = activePortfolios().filter(p => p.owner_id === o.id).flatMap(p => unitsOf(p.id).map(u => u.id)), others = rows('properties').filter(p => !own_.includes(p.id)).length;
-      const warn = others ? `\n\nNote: ${company().name} has ${others} other unit${others === 1 ? '' : 's'} that are not in ${o.name}'s portfolios. With full access he can see and manage ALL units of this company, not only his own.` : '';
-      if (!confirm(`Give ${o.name} full access to ${company().name}? He gets the same options as an administrator: dashboard, properties, tenants, contracts, invoices, team and settings. He still cannot open any other company.${warn}`)) return;
-      return api(`/api/owners/${id}/full-access`, {method: 'POST', body: {enabled: true}}).then(refresh).then(() => toast(`${o.name} now has full access. He signs in at the main address with the same email and password.`));
+      const o = ownerOf(id), n = activePortfolios().filter(p => p.owner_id === o.id).flatMap(p => unitsOf(p.id)).length;
+      if (!confirm(`Give ${o.name} management access? He can then run his own ${n} unit${n === 1 ? '' : 's'} of ${company().name}: dashboard, tenants, contracts, invoices, payments, repairs and documents. He sees nothing of the other units, owners or settings of the company.`)) return;
+      return api(`/api/owners/${id}/full-access`, {method: 'POST', body: {enabled: true}}).then(refresh).then(() => toast(`${o.name} can now manage his own units. He signs in at the main address with the same email and password.`));
     },
     'full-access-off': id => {
       const o = ownerOf(id);
-      if (!confirm(`Take full access away from ${o.name}? His owner portal (units, statements, documents) stays.`)) return;
-      return api(`/api/owners/${id}/full-access`, {method: 'POST', body: {enabled: false}}).then(refresh).then(() => toast('Full access removed. The owner portal stays.'));
-    },
-    'invite-admin': id => {
-      const o = ownerOf(id);
-      return api('/api/staff/invite', {method: 'POST', body: {company_id: state.company, name: o.name, email: o.email, role: 'admin'}}).then(r => {
-        modal('Invitation ready', `<p><strong>${e(o.name)}</strong> (${e(r.email)}) is invited as administrator of ${e(company().name)}. They choose their own password and sign in at the main address.</p>
-          <div class="tm-link"><label for="tm-url">Setup link</label><div class="tm-linkrow"><input id="tm-url" type="text" readonly value="${e(location.origin + r.path)}"><button type="button" class="button primary" data-tm="copy">Copy link</button></div><p class="subtitle">Valid for 7 days. You send it yourself.</p></div>
-          <div class="modal-footer"><button type="button" class="button primary" data-action="close-modal">Done</button></div>`);
-      });
+      if (!confirm(`Take management access away from ${o.name}? His owner portal (units, statements, documents) stays.`)) return;
+      return api(`/api/owners/${id}/full-access`, {method: 'POST', body: {enabled: false}}).then(refresh).then(() => toast('Management access removed. The owner portal stays.'));
     },
     'remove-owner': id => {
       const o = ownerOf(id);

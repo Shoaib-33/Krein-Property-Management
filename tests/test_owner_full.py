@@ -47,7 +47,7 @@ class OwnerFullAccessTests(unittest.TestCase):
         self.assertEqual(TestClient(app).post(f'/api/invitations/{token}', json={'password': 'OwnerStrongPass-2026'}).status_code, 200)
         return owner
 
-    def test_an_owner_with_a_login_can_be_given_full_access_to_that_company_only(self):
+    def test_an_owner_with_a_login_can_be_given_management_of_his_own_properties_only(self):
         owner = self.owner_with_login()
         view = self.login('protyoy@example.com', 'OwnerStrongPass-2026', 'owner')
         self.assertEqual(view.get('/api/me').json()['companies'], [])                          # before: owner portal only
@@ -56,7 +56,7 @@ class OwnerFullAccessTests(unittest.TestCase):
         self.assertEqual(given.status_code, 200, given.text)
         full = self.login('protyoy@example.com', 'OwnerStrongPass-2026')                       # the main app, same password
         me = full.get('/api/me').json()
-        self.assertEqual([(c['id'], c['role']) for c in me['companies']], [(1, 'admin')])
+        self.assertEqual([(c['id'], c['role']) for c in me['companies']], [(1, 'landlord')])   # limited to his own properties
         self.assertEqual(full.get('/api/data?company_id=1').status_code, 200)
         self.assertEqual(full.get('/api/data?company_id=2').status_code, 403)                  # not the other company
         self.assertEqual(full.post('/api/companies', json={'name': 'Another BV'}).status_code, 403)

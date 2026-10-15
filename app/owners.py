@@ -86,8 +86,8 @@ def _property_ids(data):
 
 @router.post('/api/owners/{owner_id}/full-access')
 def owner_full_access(owner_id: int, data: dict, user=Depends(current_user)):
-    """Give an owner who already has a portal login the full management access of a company administrator, or take it away again.
-    It applies to this company only; the owner still cannot open any other company."""
+    """Let an owner who already has a portal login manage HIS OWN properties in this company (the 'landlord' role): dashboard, properties,
+    tenants, contracts, invoices, payments, repairs and documents of the units in his portfolios, and nothing else. Only a company administrator can give it."""
     enabled = data.get('enabled') is True
     with transaction() as conn:
         owner = record(conn, 'owners', owner_id, user, ('admin',))
@@ -95,18 +95,16 @@ def owner_full_access(owner_id: int, data: dict, user=Depends(current_user)):
             raise HTTPException(409, 'This owner was removed. Restore the owner first.')
         account = conn.execute('SELECT user_id,enabled FROM owner_accounts WHERE owner_id=?', (owner_id,)).fetchone()
         if not account or not account['enabled']:
-            raise HTTPException(409, 'The owner needs an active portal login first. Press Invite, or use "Invite as administrator" to send a setup link.')
+            raise HTTPException(409, 'The owner needs an active portal login first. Press Invite and let him choose his password.')
         member = conn.execute('SELECT role FROM memberships WHERE user_id=? AND company_id=?', (account['user_id'], owner['company_id'])).fetchone()
         if enabled:
+            if member and member['role'] != 'landlord':
+                raise HTTPException(409, f"This person already has the company-wide role {member['role']}. Change it under Settings if you want him limited to his own properties.")
             if not member:
-                conn.execute('INSERT INTO memberships VALUES(?,?,?)', (account['user_id'], owner['company_id'], 'admin'))
-            elif member['role'] != 'admin':
-                conn.execute("UPDATE memberships SET role='admin' WHERE user_id=? AND company_id=?", (account['user_id'], owner['company_id']))
-        elif member:
-            if member['role'] == 'admin' and conn.execute("SELECT COUNT(*) FROM memberships WHERE company_id=? AND role='admin'", (owner['company_id'],)).fetchone()[0] <= 1:
-                raise HTTPException(409, 'Keep at least one administrator for the company.')
+                conn.execute('INSERT INTO memberships VALUES(?,?,?)', (account['user_id'], owner['company_id'], 'landlord'))
+        elif member and member['role'] == 'landlord':
             conn.execute('DELETE FROM memberships WHERE user_id=? AND company_id=?', (account['user_id'], owner['company_id']))
-        audit(conn, user['id'], owner['company_id'], 'full_access_on' if enabled else 'full_access_off', 'owner', owner_id, {'name': owner['name']})
+        audit(conn, user['id'], owner['company_id'], 'management_access_on' if enabled else 'management_access_off', 'owner', owner_id, {'name': owner['name']})
     return {'full_access': enabled}
 
 
@@ -378,7 +376,7 @@ def statement_pdf_bytes(s, snap):
 @router.get('/api/owner-statements/{statement_id}/pdf')
 def staff_statement_pdf(statement_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        s = record(conn, 'owner_statements', statement_id, user, FINANCE)
+        s = record(conn, 'owner_statements', statement_id, user, FINANCE + ('landlord',))
         audit(conn, user['id'], s['company_id'], 'downloaded', 'owner_statement', statement_id, {})
     return Response(statement_pdf_bytes(s, json.loads(s['snapshot'])), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="statement-{s["period"]}-{s["portfolio_id"]}.pdf"'})
 

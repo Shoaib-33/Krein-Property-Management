@@ -48,33 +48,37 @@ def records_for(conn, invoice_ids):
     return ledger, proofs
 
 
-def apply_window(conn, company_id, result):
+def apply_window(conn, company_id, result, only_contracts=None):
     """Fill result with the recent invoice window and all-time monthly totals (finance roles only)."""
     cut = month_back(local_today(), WINDOW_MONTHS - 1)
+    limit = json.dumps(sorted(only_contracts)) if only_contracts is not None else None
     ids = [r[0] for r in conn.execute(
         f'''SELECT i.id FROM invoices i WHERE i.company_id=? AND (i.period>=? OR {BALANCE}>0
             OR i.id IN (SELECT invoice_id FROM credit_notes WHERE company_id=?)
-            OR i.id IN (SELECT invoice_id FROM payment_proofs WHERE company_id=? AND status='pending'))''', (company_id, cut, company_id, company_id))]
+            OR i.id IN (SELECT invoice_id FROM payment_proofs WHERE company_id=? AND status='pending'))
+            AND (? IS NULL OR i.contract_id IN (SELECT value FROM json_each(?)))''', (company_id, cut, company_id, company_id, limit, limit))]
     blob = json.dumps(ids)
     result['invoices'] = rows_for(conn, f'SELECT {INVOICE_COLUMNS} FROM invoices i WHERE i.id IN (SELECT value FROM json_each(?)) ORDER BY i.id DESC', (blob,))
     result['ledger'] = rows_for(conn, 'SELECT * FROM ledger WHERE company_id=? AND (invoice_id IS NULL OR invoice_id IN (SELECT value FROM json_each(?))) ORDER BY id DESC', (company_id, blob))
     result['payment_proofs'] = rows_for(conn, 'SELECT * FROM payment_proofs WHERE company_id=? AND invoice_id IN (SELECT value FROM json_each(?)) ORDER BY id DESC', (company_id, blob))
     if 'credit_notes' in result:
         result['credit_notes'] = [c for c in result['credit_notes'] if c['invoice_id'] in set(ids)]
-    total = conn.execute('SELECT COUNT(*) FROM invoices WHERE company_id=?', (company_id,)).fetchone()[0]
+    total = conn.execute('SELECT COUNT(*) FROM invoices WHERE company_id=? AND (? IS NULL OR contract_id IN (SELECT value FROM json_each(?)))', (company_id, limit, limit)).fetchone()[0]
     result['invoice_window'] = {'from': cut, 'loaded': len(ids), 'total': total}
     result['monthly_stats'] = rows_for(conn, f'''
         WITH b AS (SELECT i.period, i.total_cents,
                           {BALANCE} AS bal,
                           (SELECT COALESCE(SUM(l.amount_cents),0) FROM ledger l WHERE l.invoice_id=i.id AND l.kind='credit_note') AS credit,
                           (SELECT COALESCE(SUM(l.amount_cents),0) FROM ledger l WHERE l.invoice_id=i.id AND l.kind IN ('payment','reversal')) AS paid_in
-                   FROM invoices i WHERE i.company_id=?)
+                   FROM invoices i WHERE i.company_id=? AND (? IS NULL OR i.contract_id IN (SELECT value FROM json_each(?))))
         SELECT period, COUNT(*) AS invoices, SUM(total_cents+credit) AS billed, -SUM(paid_in) AS collected, SUM(CASE WHEN bal<=0 THEN 1 ELSE 0 END) AS paid
-        FROM b GROUP BY period ORDER BY period''', (company_id,))
+        FROM b GROUP BY period ORDER BY period''', (company_id, limit, limit))
 
 
 def finance_company(conn, user, company_id):
-    authorize(conn, user, company_id, FINANCE)
+    authorize(conn, user, company_id, FINANCE + ('landlord',))
+    scope = getattr(conn, 'scope', None)
+    return json.dumps(sorted(scope.contracts)) if scope is not None else None   # the landlord's own contracts, or None for everyone else
 
 
 @router.get('/api/invoices')
@@ -82,8 +86,11 @@ def list_invoices(company_id: int, q: str = '', status: str = 'All', period: str
     page, page_size, offset = page_args(page, page_size)
     status = status if status in ('Paid', 'Partially paid', 'Overdue', 'Unpaid') else ''
     with connect() as conn:
-        finance_company(conn, user, company_id)
+        only = finance_company(conn, user, company_id)
         where, params = ['i.company_id=?'], [company_id]
+        if only is not None:
+            where.append('i.contract_id IN (SELECT value FROM json_each(?))')
+            params.append(only)
         if period:
             where.append('i.period=?')
             params.append(period[:7])
@@ -119,8 +126,8 @@ def period_records(period: str, company_id: int, user=Depends(current_user)):
     if len(period) != 7 or period[4] != '-':
         raise HTTPException(422, 'Use a month like 2026-03.')
     with connect() as conn:
-        finance_company(conn, user, company_id)
-        invoices = rows_for(conn, f'SELECT {INVOICE_COLUMNS} FROM invoices i WHERE i.company_id=? AND i.period=? ORDER BY i.id DESC', (company_id, period))
+        only = finance_company(conn, user, company_id)
+        invoices = rows_for(conn, f'SELECT {INVOICE_COLUMNS} FROM invoices i WHERE i.company_id=? AND i.period=? AND (? IS NULL OR i.contract_id IN (SELECT value FROM json_each(?))) ORDER BY i.id DESC', (company_id, period, only, only))
         ledger, proofs = records_for(conn, [i['id'] for i in invoices])
     return {'invoices': invoices, 'ledger': ledger, 'payment_proofs': proofs}
 
@@ -129,8 +136,11 @@ def period_records(period: str, company_id: int, user=Depends(current_user)):
 def list_ledger(company_id: int, q: str = '', kind: str = 'All', page: int = 1, page_size: int = 50, user=Depends(current_user)):
     page, page_size, offset = page_args(page, page_size)
     with connect() as conn:
-        finance_company(conn, user, company_id)
+        only = finance_company(conn, user, company_id)
         where, params = ['l.company_id=?'], [company_id]
+        if only is not None:
+            where.append('l.contract_id IN (SELECT value FROM json_each(?))')
+            params.append(only)
         if kind != 'All':
             where.append('l.kind=?')
             params.append(kind[:40])

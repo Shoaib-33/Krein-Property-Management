@@ -27,7 +27,7 @@ from .agreement_pdf import agreement_pdf_bytes
 from .templates_docs import PLACEHOLDER, pdf_bytes, render
 
 router = APIRouter()
-STAFF_SEND = ('property', 'manager')
+STAFF_SEND = ('property', 'manager', 'landlord')
 OPEN = ('sent', 'signed', 'returned')
 MAX_SIGNATURE = 300 * 1024
 MODES = ('draw', 'type', 'upload')
@@ -373,7 +373,7 @@ def send_file(conn, offer, download=False):
 @router.get('/api/lease-offers/{offer_id}/file')
 def staff_file(offer_id: int, download: int = 0, user=Depends(current_user)):
     with transaction() as conn:
-        offer = staff_offer(conn, offer_id, user, None)
+        offer = staff_offer(conn, offer_id, user, ('manager', 'property', 'finance', 'inspector', 'landlord'))
         audit(conn, user['id'], offer['company_id'], 'downloaded' if download else 'viewed', 'lease_offer', offer_id, {})
         return send_file(conn, offer, bool(download))
 
@@ -464,7 +464,7 @@ def decline(offer_id: int, data: dict, user=Depends(current_user)):
 @router.get('/api/companies/{company_id}/signature')
 def get_signature(company_id: int, user=Depends(current_user)):
     with db.connect() as conn:
-        authorize(conn, user, company_id, STAFF_SEND)
+        authorize(conn, user, company_id, ('property', 'manager'))
         row = conn.execute('SELECT * FROM company_signatures WHERE company_id=?', (company_id,)).fetchone()
     if not row:
         return {'set': False}

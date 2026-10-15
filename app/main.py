@@ -159,7 +159,7 @@ def rent_at(conn, contract_id, when):
     return conn.execute('SELECT * FROM rent_versions WHERE contract_id=? AND effective_from<=? ORDER BY effective_from DESC LIMIT 1', (contract_id, when)).fetchone()
 
 
-def issue_month(conn, company_id, period, user_id):
+def issue_month(conn, company_id, period, user_id, only_contracts=None):
     try:
         first = date.fromisoformat(period + '-01')
         last = date(first.year, first.month, calendar.monthrange(first.year, first.month)[1])
@@ -169,6 +169,8 @@ def issue_month(conn, company_id, period, user_id):
     contracts = conn.execute('SELECT c.*,t.name tenant_name,t.email tenant_email,p.address,p.name property_name,co.name company_name,co.address company_address,co.payment_instructions FROM contracts c JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE c.company_id=? AND c.status IN ("active","notice given") AND c.start_date<=? AND (c.end_date IS NULL OR c.end_date>=?)', (company_id, last.isoformat(), first.isoformat())).fetchall()
     count = 0
     for c in contracts:
+        if only_contracts is not None and c['id'] not in only_contracts:
+            continue
         if conn.execute('SELECT id FROM invoices WHERE contract_id=? AND period=?', (c['id'], period)).fetchone():
             continue
         start = max(first, date.fromisoformat(c['start_date']))
@@ -383,7 +385,11 @@ def me(user=Depends(current_user)):
 @app.get('/api/data')
 def all_data(company_id: int, user=Depends(current_user)):
     with connect() as conn:
-        role = authorize(conn, user, company_id)
+        role = authorize(conn, user, company_id, scoped=True)
+        scope = getattr(conn, 'scope', None)
+        landlord = role == 'landlord'
+        if landlord:
+            role = 'manager'   # built like a manager's view and then cut down to his own records (app/scope.py)
         result = {'role': role, 'today': local_today().isoformat()}
         operational = ['properties', 'tenants', 'contracts', 'repairs', 'tasks', 'communications', 'inspections']
         financial = ['rent_versions', 'deposit_events', 'cost_lines', 'settlements', 'rent_proposals', 'valuations', 'rules']
@@ -425,8 +431,12 @@ def all_data(company_id: int, user=Depends(current_user)):
             result['payment_schedules'] = [payment_schedule(conn, c) for c in result.get('contracts', []) if c['status'] in ('active', 'notice given')]
         if role in ('admin', 'manager', 'finance'):
             from .paging import apply_window
-            apply_window(conn, company_id, result)
-    db.audit_view(user['id'], company_id, 'workspace', company_id, {'role': role})
+            apply_window(conn, company_id, result, sorted(scope.contracts) if landlord else None)
+        if landlord:
+            from .scope import filter_payload
+            result = filter_payload(conn, result, scope)
+            result['role'] = 'landlord'
+    db.audit_view(user['id'], company_id, 'workspace', company_id, {'role': 'landlord' if landlord else role})
     return result
 
 
@@ -434,7 +444,7 @@ def all_data(company_id: int, user=Depends(current_user)):
 def archive_tenant(tenant_id: int, data: dict, user=Depends(current_user)):
     company_id = integer(data, 'company_id')
     with transaction() as conn:
-        authorize(conn, user, company_id, OPERATIONS)
+        authorize(conn, user, company_id, OPERATIONS + ('landlord',))
         tenant = linked(conn, 'tenants', tenant_id, company_id)
         active = conn.execute("SELECT 1 FROM contracts WHERE company_id=? AND tenant_id=? AND status IN ('active','notice given') AND start_date<=? AND (end_date IS NULL OR end_date>=?)", (company_id, tenant_id, local_today().isoformat(), local_today().isoformat())).fetchone()
         if active:
@@ -461,7 +471,7 @@ def archive_tenant(tenant_id: int, data: dict, user=Depends(current_user)):
 def restore_tenant(tenant_id: int, data: dict, user=Depends(current_user)):
     company_id = integer(data, 'company_id')
     with transaction() as conn:
-        authorize(conn, user, company_id, OPERATIONS)
+        authorize(conn, user, company_id, OPERATIONS + ('landlord',))
         tenant = linked(conn, 'tenants', tenant_id, company_id)
         if not tenant['archived_at']:
             return {'archived': False}
@@ -515,7 +525,10 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
     company_id = integer(data, 'company_id')
     with transaction() as conn:
         allowed_roles = ('inspector','property','finance','manager') if kind == 'inspections' else FINANCE if kind in ('cost_lines', 'rent_proposals', 'rules', 'valuations') else ('property', 'finance', 'manager') if kind in ('tasks', 'communications') else OPERATIONS
+        if kind in ('properties', 'tenants', 'contracts', 'repairs', 'tasks', 'communications', 'inspections'):
+            allowed_roles = tuple(allowed_roles) + ('landlord',)
         role = authorize(conn, user, company_id, allowed_roles)
+        scope = getattr(conn, 'scope', None) if role == 'landlord' else None
         values = {'company_id': company_id, 'created_at': now()}
         if kind == 'properties':
             values.update({k: text_field(data, k, maximum=200) for k in ('name', 'address', 'city')})
@@ -526,10 +539,17 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
                     raise ValueError()
             except (ValueError, TypeError):
                 raise HTTPException(422, 'Enter a valid area and room count.')
+            if scope is not None:   # a property a landlord adds belongs to his own portfolio
+                if not scope.portfolios:
+                    raise HTTPException(422, 'Your manager has to create a portfolio for you first.')
+                wanted = int(data.get('portfolio_id') or 0)
+                values['portfolio_id'] = wanted if wanted in scope.portfolios else sorted(scope.portfolios)[0]
         elif kind == 'tenants':
             values.update({'name': text_field(data, 'name', maximum=120), 'email': text_field(data, 'email', maximum=254), 'phone': str(data.get('phone', ''))[:50], 'language': choice(data, 'language', ('nl','en'), 'nl')})
             if '@' not in values['email']:
                 raise HTTPException(422, 'Enter a valid tenant email.')
+            if scope is not None:   # a tenant a landlord adds is his own until a contract links the tenant to a property
+                values['scope_owner_id'] = sorted(scope.owners)[0]
         elif kind == 'contracts':
             prop = linked(conn, 'properties', integer(data, 'property_id'), company_id)
             tenant = linked(conn, 'tenants', integer(data, 'tenant_id'), company_id)
@@ -842,15 +862,16 @@ async def import_service_charge_costs(company_id: int = Form(...), file: UploadF
 def invoice_run(data: dict, user=Depends(current_user)):
     company = integer(data, 'company_id')
     with transaction() as conn:
-        authorize(conn, user, company, FINANCE)
+        authorize(conn, user, company, FINANCE + ('landlord',))
+        scope = getattr(conn, 'scope', None)
         period = text_field(data, 'period', maximum=7)
-        count = issue_month(conn, company, period, user['id'])
+        count = issue_month(conn, company, period, user['id'], scope.contracts if scope is not None else None)
         why = None
         if not count:
             # say why nothing was created, so an empty run is not a mystery
             first = date.fromisoformat(period + '-01')
             last = date(first.year, first.month, calendar.monthrange(first.year, first.month)[1])
-            rows_ = conn.execute('SELECT id,start_date,end_date,status FROM contracts WHERE company_id=?', (company,)).fetchall()
+            rows_ = [r for r in conn.execute('SELECT id,start_date,end_date,status FROM contracts WHERE company_id=?', (company,)).fetchall() if scope is None or r['id'] in scope.contracts]
             live = [r for r in rows_ if r['status'] in ('active', 'notice given')]
             covering = [r for r in live if r['start_date'] <= last.isoformat() and (not r['end_date'] or r['end_date'] >= first.isoformat())]
             done = [r for r in covering if conn.execute('SELECT 1 FROM invoices WHERE contract_id=? AND period=?', (r['id'], period)).fetchone()]
@@ -871,7 +892,7 @@ def invoice_run(data: dict, user=Depends(current_user)):
 @app.post('/api/invoices/{invoice_id}/link')
 def create_upload_link(invoice_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         conn.execute('UPDATE upload_links SET revoked=1 WHERE invoice_id=?', (invoice_id,))
         token = secrets.token_urlsafe(32)
         conn.execute('INSERT INTO upload_links(invoice_id,token_hash,expires_at,created_by) VALUES(?,?,?,?)', (invoice_id, token_hash(token), expiry(30), user['id']))
@@ -882,7 +903,7 @@ def create_upload_link(invoice_id: int, user=Depends(current_user)):
 @app.post('/api/invoices/{invoice_id}/revoke-link')
 def revoke_link(invoice_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         conn.execute('UPDATE upload_links SET revoked=1 WHERE invoice_id=?', (invoice_id,))
         audit(conn, user['id'], inv['company_id'], 'link_revoked', 'invoice', invoice_id, {})
     return {'ok': True}
@@ -934,7 +955,7 @@ def save_document(conn, company, contract_id, user_id, kind, upload):
 async def upload_document(company_id: int = Form(...), kind: str = Form('General'), contract_id: str = Form(''), file: UploadFile = File(...), user=Depends(current_user)):
     # Authorize before reading the attachment body into memory.
     with connect() as conn:
-        authorize(conn, user, company_id, ('property', 'finance', 'manager'))
+        authorize(conn, user, company_id, ('property', 'finance', 'manager', 'landlord'))
         cid = integer({'contract_id': contract_id}, 'contract_id') if contract_id else None
         if cid:
             linked(conn, 'contracts', cid, company_id)
@@ -948,7 +969,7 @@ async def upload_document(company_id: int = Form(...), kind: str = Form('General
 @app.get('/api/documents/{document_id}/file')
 def get_document(document_id: int, download: int = 0, user=Depends(current_user)):
     with transaction() as conn:
-        doc = record(conn, 'documents', document_id, user, ('inspector','property','finance','manager'))
+        doc = record(conn, 'documents', document_id, user, ('inspector','property','finance','manager','landlord'))
         role = authorize(conn, user, doc['company_id'])
         if role == 'property' and doc['kind'] in ('payment proof','supplier invoice','deposit evidence'):
             raise HTTPException(403, 'Financial document access is restricted.')
@@ -961,7 +982,7 @@ def get_document(document_id: int, download: int = 0, user=Depends(current_user)
 @app.delete('/api/documents/{document_id}')
 def delete_document(document_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        doc = record(conn, 'documents', document_id, user, ('property', 'manager'))
+        doc = record(conn, 'documents', document_id, user, ('property', 'manager', 'landlord'))
         # Sharing is access metadata and is removed with the file. Evidence used by
         # financial, maintenance, inspection or compliance records stays immutable.
         references = []
@@ -987,7 +1008,7 @@ def delete_document(document_id: int, user=Depends(current_user)):
 @app.post('/api/documents/{document_id}/share')
 def share_document_with_tenant(document_id: int, data: dict, user=Depends(current_user)):
     with transaction() as conn:
-        doc = record(conn, 'documents', document_id, user, ('property', 'manager'))
+        doc = record(conn, 'documents', document_id, user, ('property', 'manager', 'landlord'))
         if doc['kind'] in ('payment proof', 'supplier invoice', 'deposit evidence', 'Contractor agreement'):
             raise HTTPException(422, 'This document category cannot be shared with tenants.')
         contract_id = integer(data, 'contract_id')
@@ -1004,7 +1025,7 @@ def share_document_with_tenant(document_id: int, data: dict, user=Depends(curren
 @app.post('/api/documents/{document_id}/revoke-sharing')
 def revoke_document_sharing(document_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        doc = record(conn, 'documents', document_id, user, ('property', 'manager'))
+        doc = record(conn, 'documents', document_id, user, ('property', 'manager', 'landlord'))
         links = conn.execute('SELECT contract_id FROM shared_documents WHERE document_id=? AND company_id=? AND revoked=0', (document_id, doc['company_id'])).fetchall()
         if not links:
             raise HTTPException(409, 'This document is not currently shared with a tenant.')
@@ -1028,7 +1049,7 @@ def create_manually_signed_contract(data: dict, user=Depends(current_user)):
     if end and end < start:
         raise HTTPException(422, 'End date must be on or after the tenancy start date.')
     with transaction() as conn:
-        authorize(conn, user, company_id, ('property', 'manager'))
+        authorize(conn, user, company_id, ('property', 'manager', 'landlord'))
         prop = linked(conn, 'properties', prop_id, company_id)
         tenant = linked(conn, 'tenants', tenant_id, company_id)
         doc = linked(conn, 'documents', integer(data, 'document_id'), company_id)
@@ -1096,10 +1117,10 @@ async def public_proof(token: str, amount: str = Form(...), paid_on: str = Form(
 @app.post('/api/invoices/{invoice_id}/proof')
 async def staff_proof(invoice_id: int, amount: str = Form(...), paid_on: str = Form(...), method: str = Form(...), reference: str = Form(''), note: str = Form(''), file: UploadFile = File(...), user=Depends(current_user)):
     with connect() as conn:
-        record(conn, 'invoices', invoice_id, user, FINANCE)
+        record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
     upload = await read_upload(file)
     with transaction() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         return submit_proof(conn, inv, {'amount': amount, 'paid_on': paid_on, 'method': method, 'reference': reference, 'note': note}, upload, user['id'])
 
 
@@ -1108,7 +1129,7 @@ def review_proof(proof_id: int, data: dict, user=Depends(current_user)):
     decision = choice(data, 'decision', ('approved', 'rejected'))
     note = text_field(data, 'note', maximum=2000)
     with transaction() as conn:
-        proof = record(conn, 'payment_proofs', proof_id, user, FINANCE)
+        proof = record(conn, 'payment_proofs', proof_id, user, FINANCE + ('landlord',))
         if proof['status'] != 'pending':
             raise HTTPException(409, 'This submission has already been reviewed.')
         if proof['submitted_by'] == user['id']:
@@ -1148,7 +1169,7 @@ def reverse_payment(proof_id: int, data: dict, user=Depends(current_user)):
 def task_status(task_id: int, data: dict, user=Depends(current_user)):
     status = choice(data, 'status', ('open', 'done'))
     with transaction() as conn:
-        row = record(conn, 'tasks', task_id, user, ('property','finance','manager'))
+        row = record(conn, 'tasks', task_id, user, ('property','finance','manager','landlord'))
         conn.execute('UPDATE tasks SET status=? WHERE id=?', (status, task_id))
         audit(conn, user['id'], row['company_id'], status, 'task', task_id, {})
     return {'ok': True}
@@ -1158,7 +1179,7 @@ def task_status(task_id: int, data: dict, user=Depends(current_user)):
 def repair_status(repair_id: int, data: dict, user=Depends(current_user)):
     status = choice(data, 'status', ('received','triaged','planned','in progress','waiting','done','closed','reopened'))
     with transaction() as conn:
-        row = record(conn, 'repairs', repair_id, user, OPERATIONS)
+        row = record(conn, 'repairs', repair_id, user, OPERATIONS + ('landlord',))
         doc_id, note = None, None
         if status in ('done', 'closed'):
             doc_id = integer(data, 'document_id')
@@ -1184,7 +1205,7 @@ def end_contract(contract_id: int, data: dict, user=Depends(current_user)):
     end = date_field(data, 'end_date')
     reason = text_field(data, 'reason')
     with transaction() as conn:
-        c = record(conn, 'contracts', contract_id, user, OPERATIONS)
+        c = record(conn, 'contracts', contract_id, user, OPERATIONS + ('landlord',))
         if c['status'] == 'ended':
             raise HTTPException(409, 'This tenancy has already ended.')
         if end < c['start_date']:
@@ -1206,7 +1227,7 @@ def deposit_event(data: dict, user=Depends(current_user)):
     amount = money(data, 'amount')
     reason = text_field(data, 'reason')
     with transaction() as conn:
-        c = record(conn, 'contracts', integer(data, 'contract_id'), user, FINANCE)
+        c = record(conn, 'contracts', integer(data, 'contract_id'), user, FINANCE + ('landlord',))
         doc_id = integer(data, 'document_id')
         linked(conn, 'documents', doc_id, c['company_id'])
         held = deposit_balance(conn, c['id'])
@@ -1252,7 +1273,7 @@ def deposit_review(event_id: int, data: dict, user=Depends(current_user)):
 def finalize_inspection(inspection_id: int, data: dict, user=Depends(current_user)):
     name = text_field(data, 'signature_name', maximum=200)
     with transaction() as conn:
-        row = record(conn, 'inspections', inspection_id, user, ('inspector','property','finance','manager'))
+        row = record(conn, 'inspections', inspection_id, user, ('inspector','property','finance','manager','landlord'))
         if row['status'] != 'draft':
             raise HTTPException(409, 'This inspection is already frozen.')
         if not row['document_id']:
@@ -1525,7 +1546,7 @@ def arrears_run(data: dict, user=Depends(current_user)):
 @app.post('/api/email-reminders/{job_id}/retry')
 def retry_email_reminder(job_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        job = record(conn, 'outbound_email_jobs', job_id, user, FINANCE)
+        job = record(conn, 'outbound_email_jobs', job_id, user, FINANCE + ('landlord',))
         company_id = job['company_id']
         authorize(conn, user, company_id, FINANCE)
         if job['status'] != 'failed':
@@ -1552,7 +1573,7 @@ def arrears_case_step(case_id:int,data:dict,user=Depends(current_user)):
     if step=='municipality_reported' and (data.get('municipality_process_confirmed') is not True or data.get('municipality_consent_confirmed') is not True):
         raise HTTPException(422,'Confirm the municipality reporting arrangement and the tenant’s written permission before recording a referral.')
     with transaction() as conn:
-        case=record(conn,'arrears_cases',case_id,user,FINANCE)
+        case=record(conn,'arrears_cases',case_id,user,FINANCE + ('landlord',))
         role=authorize(conn,user,case['company_id'],FINANCE)
         if step in ('court_review_decision','bailiff_handover') and role!='manager':
             raise HTTPException(403,'A manager must make this escalation decision.')
@@ -1641,7 +1662,7 @@ def euros(cents):
 @app.get('/api/invoices/{invoice_id}/pdf')
 def invoice_pdf(invoice_id: int, download: int = 0, user=Depends(current_user)):
     with transaction() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         snap = json.loads(inv['snapshot'])
         audit(conn, user['id'], inv['company_id'], 'downloaded', 'invoice', invoice_id, {})
     return Response(invoice_pdf_bytes(inv, snap), media_type='application/pdf', headers={'Content-Disposition': f'{"attachment" if download else "inline"}; filename="{inv["number"]}.pdf"'})

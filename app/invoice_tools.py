@@ -40,7 +40,7 @@ def logo_bytes(company_id):
 @router.get('/api/companies/{company_id}/logo')
 def get_logo(company_id: int, user=Depends(current_user)):
     with connect() as conn:
-        authorize(conn, user, company_id)
+        authorize(conn, user, company_id, scoped=True)
         row = conn.execute('SELECT mime,data FROM company_logos WHERE company_id=?', (company_id,)).fetchone()
     if not row:
         raise HTTPException(404, 'No logo uploaded.')
@@ -90,7 +90,7 @@ def edit_block(conn, invoice_id):
 @router.get('/api/invoices/{invoice_id}/detail')
 def invoice_detail(invoice_id: int, user=Depends(current_user)):
     with connect() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         snap = json.loads(inv['snapshot'])
         revisions = [dict(r) for r in conn.execute('SELECT r.revision,r.reason,r.created_at,r.before_json,r.after_json,u.name editor FROM invoice_revisions r JOIN users u ON u.id=r.edited_by WHERE r.invoice_id=? ORDER BY r.revision DESC', (invoice_id,))]
         block = edit_block(conn, invoice_id)
@@ -149,7 +149,7 @@ def edit_invoice(invoice_id: int, data: dict, user=Depends(current_user)):
     if total <= 0:
         raise HTTPException(422, 'The invoice total must stay above zero. To cancel the whole invoice, propose a credit note.')
     with transaction() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         block = edit_block(conn, invoice_id)
         if block:
             raise HTTPException(409, block)
@@ -185,7 +185,7 @@ def email_invoice(invoice_id: int, user=Depends(current_user)):
     if not smtp_settings():
         raise HTTPException(409, 'Email delivery is not set up on this server. Add the SMTP settings first.')
     with transaction() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         tenant = conn.execute('SELECT t.email FROM contracts c JOIN tenants t ON t.id=c.tenant_id WHERE c.id=?', (inv['contract_id'],)).fetchone()
         job = conn.execute("SELECT * FROM outbound_email_jobs WHERE invoice_id=? AND kind='invoice_issued'", (invoice_id,)).fetchone()
         if job:
@@ -216,7 +216,7 @@ def release_one(conn, inv, user):
 @router.post('/api/invoices/{invoice_id}/release')
 def release_invoice(invoice_id: int, user=Depends(current_user)):
     with transaction() as conn:
-        inv = record(conn, 'invoices', invoice_id, user, FINANCE)
+        inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         if inv['released_at']:
             raise HTTPException(409, 'This invoice was already sent to the tenant.')
         release_one(conn, inv, user)
@@ -230,12 +230,15 @@ def release_many(data: dict, user=Depends(current_user)):
     company_id = int(data.get('company_id') or 0)
     period = str(data.get('period') or '')[:7]
     with transaction() as conn:
-        authorize(conn, user, company_id, FINANCE)
+        authorize(conn, user, company_id, FINANCE + ('landlord',))
+        scope = getattr(conn, 'scope', None)
         drafts = conn.execute('SELECT * FROM invoices WHERE company_id=? AND released_at IS NULL' + (' AND period=?' if period else '') + ' ORDER BY id', (company_id, *([period] if period else []))).fetchall()
         for row in drafts:
+            if scope is not None and row['contract_id'] not in scope.contracts:
+                continue   # a landlord only releases his own invoices
             release_one(conn, dict(row), user)
     from .email_delivery import deliver_pending_emails
-    return {'released': len(drafts), 'email': deliver_pending_emails(company_id=company_id)}
+    return {'released': len([d for d in drafts if scope is None or d['contract_id'] in scope.contracts]), 'email': deliver_pending_emails(company_id=company_id)}
 
 
 @router.post('/api/companies/{company_id}/invoice-review')

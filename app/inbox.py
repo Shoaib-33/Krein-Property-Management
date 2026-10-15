@@ -22,7 +22,7 @@ STARTER_REPLIES = [
 def set_state(thread_id: int, data: dict, user=Depends(current_user)):
     status = choice(data, 'status', ('open', 'resolved'))
     with transaction() as conn:
-        root = record(conn, 'portal_messages', thread_id, user, STAFF)
+        root = record(conn, 'portal_messages', thread_id, user, STAFF + ('landlord',))
         if root['thread_id'] not in (None, thread_id):
             raise HTTPException(422, 'Choose the first message of a conversation.')
         assignee = None

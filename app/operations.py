@@ -87,7 +87,7 @@ def edit_company(company_id:int,data:dict,user=Depends(current_user)):
 @router.patch('/api/tenants/{tenant_id}')
 def edit_tenant(tenant_id:int,data:dict,user=Depends(current_user)):
     with transaction() as conn:
-        t=record(conn,'tenants',tenant_id,user,OPS)
+        t=record(conn,'tenants',tenant_id,user,OPS+('landlord',))
         email=text_field(data,'email',maximum=254)
         if '@' not in email:
             raise HTTPException(422,'Enter a valid email address.')
@@ -100,7 +100,7 @@ def edit_tenant(tenant_id:int,data:dict,user=Depends(current_user)):
 @router.patch('/api/properties/{property_id}')
 def edit_property(property_id:int,data:dict,user=Depends(current_user)):
     with transaction() as conn:
-        p=record(conn,'properties',property_id,user,OPS)
+        p=record(conn,'properties',property_id,user,OPS+('landlord',))
         label=choice(data,'energy_label',('Unknown','A++++','A+++','A++','A+','A','B','C','D','E','F','G'))
         name=text_field(data,'name',maximum=200)
         conn.execute('UPDATE properties SET name=?,energy_label=? WHERE id=?',(name,label,property_id))
@@ -140,7 +140,7 @@ def update_role(staff_id:int,data:dict,user=Depends(current_user)):
 @router.post('/api/portal/messages')
 def staff_message(data:dict,user=Depends(current_user)):
     with transaction() as conn:
-        c=record(conn,'contracts',integer(data,'contract_id'),user,('property','finance','manager'))
+        c=record(conn,'contracts',integer(data,'contract_id'),user,('property','finance','manager','landlord'))
         thread_id=integer(data,'thread_id') if data.get('thread_id') else None
         thread=None
         if thread_id:
@@ -165,7 +165,7 @@ def respond_request(request_id:int,data:dict,user=Depends(current_user)):
     response=text_field(data,'response')
     status=choice(data,'status',('in progress','resolved','declined'))
     with transaction() as conn:
-        r=record(conn,'requests',request_id,user,('manager',))
+        r=record(conn,'requests',request_id,user,('manager','landlord'))
         conn.execute('UPDATE requests SET response=?,status=?,responded_by=?,responded_at=? WHERE id=?',(response,status,user['id'],now(),request_id))
         insert(conn,'portal_messages',{'company_id':r['company_id'],'contract_id':r['contract_id'],'sender_id':user['id'],'subject':'Response: '+r['subject'],'body':response,'created_at':now()})
         notify_tenant(conn,r['contract_id'],'Your request has an update',r['subject'],'requests')
@@ -177,7 +177,7 @@ def respond_request(request_id:int,data:dict,user=Depends(current_user)):
 def request_status(request_id:int,data:dict,user=Depends(current_user)):
     status=choice(data,'status',('open','in progress','resolved','declined'))
     with transaction() as conn:
-        r=record(conn,'requests',request_id,user,('manager',))
+        r=record(conn,'requests',request_id,user,('manager','landlord'))
         conn.execute('UPDATE requests SET status=?,responded_by=?,responded_at=? WHERE id=?',(status,user['id'],now(),request_id))
         notify_tenant(conn,r['contract_id'],'Your request has an update',r['subject'],'requests')
         audit(conn,user['id'],r['company_id'],'request_'+status.replace(' ','_'),'request',request_id,{'status':status})
@@ -188,7 +188,7 @@ def request_status(request_id:int,data:dict,user=Depends(current_user)):
 def repair_update(repair_id:int,data:dict,user=Depends(current_user)):
     message=text_field(data,'message')
     with transaction() as conn:
-        r=record(conn,'repairs',repair_id,user,OPS)
+        r=record(conn,'repairs',repair_id,user,OPS+('landlord',))
         visible=data.get('tenant_visible') is True
         doc_id=integer(data,'document_id') if data.get('document_id') else None
         if doc_id:
