@@ -6,7 +6,7 @@
   const baseRender = renderPage;
   const canSend = () => ['admin', 'manager', 'property'].includes(company().role);
   const LABEL = {sent: ['Waiting for tenant', 'amber'], signed: ['Signed: needs your approval', 'blue'], returned: ['Returned to tenant', 'amber'], approved: ['Active tenancy', 'green'], declined: ['Declined by tenant', 'red'], withdrawn: ['Withdrawn', 'gray']};
-  const offers = () => rows('lease_offers').filter(o => o.status !== 'withdrawn');
+  const offers = () => rows('lease_offers').filter(o => !['withdrawn', 'approved'].includes(o.status));   // an approved contract is a tenancy now: it is listed under Rental contracts
   const lease = (label, action, id = '', cls = 'small') => `<button type="button" class="button ${cls}" data-lease="${action}" data-id="${id}">${e(label)}</button>`;
 
   renderPage = () => {
