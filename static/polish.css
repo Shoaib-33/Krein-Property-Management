@@ -246,3 +246,4 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .tf-two{display:grid;grid-template-columns:1fr 1fr;gap:22px}
 @media (max-width:900px){.tf-two{grid-template-columns:1fr}}
 .summary-grid.tf-stats{grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}
+.tf-removed{margin-top:22px}

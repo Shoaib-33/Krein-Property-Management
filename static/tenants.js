@@ -17,8 +17,16 @@
     if (state.page === 'tenants' && state.tenantView === ui.id) render();
   }
 
+  // Settings: removed tenant contacts, with Restore (kept out of the Tenants list)
+  function removedPanel() {
+    const archived = rows('tenants').filter(x => x.archived_at).sort((a, b) => String(b.archived_at).localeCompare(String(a.archived_at)));
+    if (!archived.length) return '';
+    return `<div class="section-stack tf-removed">${panel('Removed tenant contacts', `${archived.length} removed. They keep their contracts and financial history. Restore one to return it to Tenants.`,
+      table(['Name', 'Email', 'Removed', ''], archived.map(x => [`<button type="button" class="tenant-link" data-tenant="${x.id}">${e(x.name)}</button>`, e(x.email), dateLabel(x.archived_at), actionBtn('Restore', 'tenant-restore', x.id, 'small')])))}</div>`;
+  }
   const baseRender = renderPage;
   renderPage = () => {
+    if (state.page === 'settings') return baseRender() + removedPanel();
     if (state.page !== 'tenants' || !state.tenantView) return baseRender();
     if (ui.id !== state.tenantView) { ui.id = state.tenantView; ui.file = null; setTimeout(load); }
     return filePage();
