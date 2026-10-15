@@ -261,3 +261,10 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .bank-mode small{display:block;color:var(--muted);font-size:11px;line-height:1.5;margin-top:3px}
 .bank-approve-all{display:flex;justify-content:space-between;align-items:center;gap:12px}
 @media (max-width:800px){.bank-modes{grid-template-columns:1fr}}
+
+/* ticket priority (static/inbox.js) */
+.ib-order{display:flex;gap:8px;padding:0 0 12px}
+.ib-order select{flex:1;min-width:0;border:1px solid var(--line);border-radius:7px;padding:7px 8px;font-size:11px;background:#fff;color:var(--ink)}
+.ib-prio{display:inline-flex;flex-direction:column;gap:2px;font-size:9px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}
+.ib-prio select{border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:11px;text-transform:none;letter-spacing:0;color:var(--ink);background:#fff}
+.ib-tag.prio-low{background:#f1f3f2;color:#78857e}

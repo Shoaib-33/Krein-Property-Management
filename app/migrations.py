@@ -502,6 +502,14 @@ ALTER TABLE bank_lines ADD COLUMN certain INTEGER NOT NULL DEFAULT 0;
 '''
 
 
+# V30: every ticket has a priority. Repairs keep theirs in repairs.urgency; requests and conversations get one here.
+# Values for all tickets: Emergency, Urgent, Routine (shown as Normal) and Low.
+V30 = '''
+ALTER TABLE requests ADD COLUMN priority TEXT NOT NULL DEFAULT 'Routine' CHECK(priority IN ('Emergency','Urgent','Routine','Low'));
+ALTER TABLE thread_states ADD COLUMN priority TEXT NOT NULL DEFAULT 'Routine' CHECK(priority IN ('Emergency','Urgent','Routine','Low'));
+'''
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.
@@ -733,6 +741,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (29, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=30').fetchone():
+            statement = ''
+            for line in V30.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (30, now()))
         conn.commit()
     except Exception:
         conn.rollback()

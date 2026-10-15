@@ -42,8 +42,13 @@
   const prevAllowed = allowedPage;
   allowedPage = page => PAGES.includes(page) ? ['admin', 'manager', 'property'].includes(company().role) : prevAllowed(page);
 
-  const ui = {selected: null, filter: 'open', type: 'all', q: '', limit: 40, mode: 'tickets'};
+  const ui = {selected: null, filter: 'open', type: 'all', q: '', limit: 40, mode: 'tickets', prio: 'all', sort: 'attention'};
   const isManager = () => ['admin', 'manager'].includes(company().role);
+  // one priority scale for every ticket (repairs store it as their urgency); Routine is shown as Normal
+  const PRIO = ['Emergency', 'Urgent', 'Routine', 'Low'];
+  const PRIO_LABEL = {Emergency: 'Emergency', Urgent: 'Urgent', Routine: 'Normal', Low: 'Low'};
+  const PRIO_WEIGHT = {Emergency: 3, Urgent: 2, Routine: 1, Low: 0};
+  const prioTag = p => p === 'Routine' ? '' : `<span class="ib-tag prio-${p.toLowerCase()} ${p === 'Emergency' ? 'bad' : p === 'Urgent' ? 'warn' : ''}">${e(PRIO_LABEL[p])}</span>`;
   const REPAIR_STATUS = ['received', 'triaged', 'planned', 'in progress', 'waiting', 'reopened'];
   const TICKET_TYPES = ['Repair', 'Request', 'Complaint', 'Payment plan', 'Move-out'];
   const typeOf = it => it.type === 'repair' ? 'Repair' : it.type === 'thread' ? 'Message' : ({'Complaint': 'Complaint', 'Payment plan': 'Payment plan', 'Termination notice': 'Move-out'}[it.kind] || 'Request');
@@ -99,7 +104,7 @@
       const st = rows('thread_states').find(t => t.thread_id === id);
       items.push({key: `t:${id}`, type: 'thread', id, contract_id: root.contract_id, subject: String(root.subject).replace(/^Response:\s*/i, ''), tenant, last: last.created_at,
         messages: list.map(m => ({mine: uid === undefined ? true : m.sender_id !== uid, name: m.sender_name, body: m.body, at: m.created_at, doc: m.document_id})),
-        needsReply: uid !== undefined && last.sender_id === uid && !(st && st.status === 'resolved'), resolved: !!(st && st.status === 'resolved'), assignee: st ? st.assignee_id : null});
+        needsReply: uid !== undefined && last.sender_id === uid && !(st && st.status === 'resolved'), resolved: !!(st && st.status === 'resolved'), assignee: st ? st.assignee_id : null, priority: (st && st.priority) || 'Routine'});
     }
     for (const r of inbox ? [] : reqs) {
       const tenant = tenantFor(r.contract_id);
@@ -112,7 +117,7 @@
       for (const m of talk) msgsR.push({mine: uid === undefined ? true : m.sender_id !== uid, name: m.sender_name, body: m.body, at: m.created_at, doc: m.document_id});
       const lastTalk = talk[talk.length - 1];
       const tenantLast = !!lastTalk && uid !== undefined && lastTalk.sender_id === uid && Date.parse(lastTalk.created_at) > Date.parse(r.responded_at || r.created_at);
-      items.push({key: `r:${r.id}`, type: 'request', id: r.id, contract_id: r.contract_id, subject: r.subject, kind: r.kind, tenant, last: lastTalk && Date.parse(lastTalk.created_at) > Date.parse(r.responded_at || 0) ? lastTalk.created_at : r.responded_at || r.created_at, messages: msgsR, needsReply: r.status === 'open' || tenantLast, resolved: ['resolved', 'declined'].includes(r.status) && !tenantLast, status: r.status});
+      items.push({priority: r.priority || 'Routine', key: `r:${r.id}`, type: 'request', id: r.id, contract_id: r.contract_id, subject: r.subject, kind: r.kind, tenant, last: lastTalk && Date.parse(lastTalk.created_at) > Date.parse(r.responded_at || 0) ? lastTalk.created_at : r.responded_at || r.created_at, messages: msgsR, needsReply: r.status === 'open' || tenantLast, resolved: ['resolved', 'declined'].includes(r.status) && !tenantLast, status: r.status});
     }
     for (const r of inbox ? [] : rows('repairs')) {
       const tenant = tenantFor(r.contract_id), uid = tenantUser(tenant.id);
@@ -120,21 +125,24 @@
       const log = [{mine: false, name: tenant.name, body: r.description, at: r.created_at, doc: null}];
       for (const u of updates) {
         const fromTenant = uid !== undefined && u.user_id === uid;
-        const isStatus = String(u.message).startsWith('Status: ');
+        const isStatus = String(u.message).startsWith('Status: ') || String(u.message).startsWith('Priority: ');
         const staff = staffName(u.user_id);
         log.push({mine: !fromTenant, name: fromTenant ? tenant.name : (staff || (String(u.message).startsWith('Contractor update') ? 'Contractor' : 'Property team')), body: u.message, at: u.created_at, doc: u.document_id, system: isStatus, internal: !u.tenant_visible});
       }
       const lastTalk = log.filter(m => !m.system).pop();
       const done = ['done', 'closed'].includes(r.status);
       const sla = repairSla(r);
-      items.push({key: `p:${r.id}`, type: 'repair', id: r.id, contract_id: r.contract_id, subject: r.title, kind: r.category, tenant, last: log[log.length - 1].at, messages: log, urgency: r.urgency, status: r.status, repair: r, sla,
+      items.push({key: `p:${r.id}`, type: 'repair', id: r.id, contract_id: r.contract_id, subject: r.title, kind: r.category, tenant, last: log[log.length - 1].at, messages: log, urgency: r.urgency, priority: r.urgency || 'Routine', status: r.status, repair: r, sla,
         needsReply: !done && !lastTalk.mine, resolved: done});
     }
-    const rank = it => (it.needsReply ? 4 : 0) + (it.sla && (it.sla.late || it.sla.overdue) ? 2 : 0) + (it.urgency === 'Emergency' ? 1 : 0);
-    return items.sort((a, b) => (rank(b) - rank(a)) || Date.parse(b.last) - Date.parse(a.last));
+    const rank = it => (it.needsReply ? 8 : 0) + (it.sla && (it.sla.late || it.sla.overdue) ? 4 : 0) + PRIO_WEIGHT[it.priority] ;
+    const newest = (a, b) => Date.parse(b.last) - Date.parse(a.last);
+    const order = {attention: (a, b) => (rank(b) - rank(a)) || newest(a, b), priority: (a, b) => (PRIO_WEIGHT[b.priority] - PRIO_WEIGHT[a.priority]) || (b.needsReply - a.needsReply) || newest(a, b),
+                   newest, oldest: (a, b) => -newest(a, b)}[ui.sort] || newest;
+    return items.sort(order);
   }
 
-  const matches = (it, f) => (ui.type === 'all' || typeOf(it) === ui.type) && (f === 'all' || (f === 'open' && !it.resolved) || (f === 'reply' && it.needsReply) || (f === 'late' && it.sla && (it.sla.late || it.sla.overdue) && !it.resolved) || (f === 'resolved' && it.resolved));
+  const matches = (it, f) => (ui.prio === 'all' || it.priority === ui.prio) && (ui.type === 'all' || typeOf(it) === ui.type) && (f === 'all' || (f === 'open' && !it.resolved) || (f === 'reply' && it.needsReply) || (f === 'late' && it.sla && (it.sla.late || it.sla.overdue) && !it.resolved) || (f === 'resolved' && it.resolved));
   const initialsOf = n => initials(n || '?');
 
   function listHtml(items) {
@@ -143,12 +151,12 @@
     const shown = ui.q.trim() ? filtered : filtered.slice(0, ui.limit);
     const more = shown.length < filtered.length ? `<li class="ib-more"><button type="button" class="button small" data-in="more">Show ${Math.min(40, filtered.length - shown.length)} more <span>(${filtered.length - shown.length} older)</span></button></li>` : '';
     return filtered.length ? shown.map(it => {
-      const lastMsg = it.messages[it.messages.length - 1];
+      const lastMsg = it.messages.filter(m => !m.system).pop() || it.messages[it.messages.length - 1];   // priority/status notes are not a message
       return `<li><button type="button" class="ib-item ${ui.selected === it.key ? 'active' : ''} ${it.needsReply ? 'unread' : ''}" data-in="select" data-key="${it.key}" data-search="${e((it.tenant.name || '') + ' ' + it.subject + ' ' + lastMsg.body).toLowerCase()}">
         <span class="avatar">${e(initialsOf(it.tenant.name))}</span>
         <span class="ib-main"><span class="ib-top"><strong>${e(it.tenant.name || 'Unknown')}</strong><time>${e(ago(it.last))}</time></span>
           <span class="ib-subject"><em class="ib-num">${e(number(it))}</em> ${e(it.subject)}</span><span class="ib-preview">${e((lastMsg.mine ? 'You: ' : '') + lastMsg.body.replace(/\s+/g, ' ').slice(0, 90))}</span>
-          <span class="ib-tags"><span class="ib-tag type-${e(typeOf(it).replace(/\W/g, '').toLowerCase())}">${e(typeOf(it))}</span>${it.urgency && it.urgency !== 'Routine' && !it.resolved ? `<span class="ib-tag ${it.urgency === 'Emergency' ? 'bad' : 'warn'}">${e(it.urgency)}</span>` : ''}${it.sla && (it.sla.late || it.sla.overdue) && !it.resolved ? '<span class="ib-tag bad">SLA breached</span>' : ''}${it.needsReply ? '<span class="ib-tag warn">Needs reply</span>' : ''}${it.resolved ? '<span class="ib-tag ok">Resolved</span>' : ''}${it.assignee ? `<span class="ib-tag">${e(initialsOf(staffName(it.assignee)))}</span>` : ''}</span></span></button></li>`;
+          <span class="ib-tags"><span class="ib-tag type-${e(typeOf(it).replace(/\W/g, '').toLowerCase())}">${e(typeOf(it))}</span>${!it.resolved ? prioTag(it.priority) : ''}${it.sla && (it.sla.late || it.sla.overdue) && !it.resolved ? '<span class="ib-tag bad">SLA breached</span>' : ''}${it.needsReply ? '<span class="ib-tag warn">Needs reply</span>' : ''}${it.resolved ? '<span class="ib-tag ok">Resolved</span>' : ''}${it.assignee ? `<span class="ib-tag">${e(initialsOf(staffName(it.assignee)))}</span>` : ''}</span></span></button></li>`;
     }).join('') + more : `<li class="ib-none">${ui.filter === 'reply' ? 'Nothing waiting. Everyone has an answer.' : mode() === 'inbox' ? 'No conversations here.' : 'No tickets here.'}</li>`;
   }
 
@@ -164,7 +172,11 @@
       <h4>Tenancy</h4><p><small>${e(dateLabel(c.start_date))} → ${c.end_date ? e(dateLabel(c.end_date)) : 'open-ended'}</small></p></aside>`;
   }
 
+  const prioPicker = it => `<label class="ib-prio"><span>Priority</span><select data-in-priority aria-label="Priority">${PRIO.map(p => `<option value="${p}" ${p === it.priority ? 'selected' : ''}>${PRIO_LABEL[p]}</option>`).join('')}</select></label>`;
   function headActions(it, staff) {
+    return prioPicker(it) + headActionsBase(it, staff);
+  }
+  function headActionsBase(it, staff) {
     if (it.type === 'thread') {
       return `<select data-in-assign aria-label="Assign to"><option value="">Unassigned</option>${staff.map(s => `<option value="${s.id}" ${s.id === it.assignee ? 'selected' : ''}>${e(s.name)}</option>`).join('')}</select>${button(it.resolved ? 'Reopen' : 'Mark resolved', 'noop', 'data-in="toggle-resolved"', it.resolved ? '' : 'primary')}`;
     }
@@ -211,6 +223,8 @@
     return top
       + `<div class="inbox ${sel ? 'has-sel' : ''}" id="inbox-root"><aside class="inbox-list"><div class="ib-tools"><label class="ib-search">${icon('search')}<input type="search" id="ib-search" placeholder="${inbox ? 'Search tenants and messages' : 'Search tickets and tenants'}" value="${e(ui.q)}" autocomplete="off"></label>
         ${types.length ? `<div class="ib-types"><button type="button" class="ib-type ${ui.type === 'all' ? 'active' : ''}" data-in="type" data-key="all">All types</button>${types.map(([t, n]) => `<button type="button" class="ib-type ${ui.type === t ? 'active' : ''}" data-in="type" data-key="${e(t)}">${e(t)} <span>${n}</span></button>`).join('')}</div>` : ''}<div class="ib-filters">${chips.map(([k, l, n]) => `<button type="button" class="ib-filter ${ui.filter === k ? 'active' : ''}" data-in="filter" data-key="${k}">${l}<span>${n}</span></button>`).join('')}</div></div>
+        <div class="ib-order"><select data-in-prio-filter aria-label="Filter by priority"><option value="all">All priorities</option>${PRIO.map(p => `<option value="${p}" ${ui.prio === p ? 'selected' : ''}>${PRIO_LABEL[p]} (${items.filter(i => i.priority === p && !i.resolved).length})</option>`).join('')}</select>
+          <select data-in-sort aria-label="Sort tickets">${[['attention', 'Needs attention first'], ['priority', 'Highest priority first'], ['newest', 'Newest first'], ['oldest', 'Oldest first']].map(([v, l]) => `<option value="${v}" ${ui.sort === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
         <ul class="ib-items" id="ib-items">${listHtml(items)}</ul></aside><section class="inbox-detail" id="ib-detail">${detailHtml(sel)}</section></div>`;
   }
 
@@ -315,6 +329,16 @@
     if (!onPage()) return;
     if (ev.target.id === 'ib-file') $('#ib-filename').textContent = ev.target.files[0] ? ev.target.files[0].name : '';
     if (ev.target.matches('[data-in-repair-status]')) { const it = current(); api(`/api/repairs/${it.id}/status`, {method: 'POST', body: {status: ev.target.value}}).then(() => api(`/api/data?company_id=${state.company}`)).then(d => { state.data = d; redraw(); toast('Status updated. The tenant was notified.'); }).catch(err => { toast(err.message); redraw(); }); }
+    if (ev.target.matches('[data-in-prio-filter]')) { ui.prio = ev.target.value; ui.limit = 40; redraw(); return; }
+    if (ev.target.matches('[data-in-sort]')) { ui.sort = ev.target.value; redraw(); return; }
+    if (ev.target.matches('[data-in-priority]')) {
+      const it = current(), to = ev.target.value, kind = it.type;
+      const ask = to !== it.priority && (PRIO_WEIGHT[to] < PRIO_WEIGHT[it.priority]) ? prompt(`Lower the priority to ${PRIO_LABEL[to]}. Reason (optional, the tenant sees it for a repair):`, '') : '';
+      if (ask === null) { ev.target.value = it.priority; return; }
+      api(`/api/tickets/${kind}/${it.id}/priority`, {method: 'POST', body: {priority: to, reason: ask || ''}}).then(() => api(`/api/data?company_id=${state.company}`))
+        .then(d => { state.data = d; redraw(); toast(`Priority set to ${PRIO_LABEL[to]}.${kind === 'thread' ? '' : ' The tenant was notified.'}`); }).catch(err => { ev.target.value = it.priority; toast(err.message); });
+      return;
+    }
     if (ev.target.matches('[data-in-assign]')) { const it = current(); setState(it, {assignee_id: ev.target.value ? Number(ev.target.value) : null}).then(() => toast(ev.target.value ? 'Assigned.' : 'Unassigned.')).catch(err => toast(err.message)); }
   });
   document.addEventListener('submit', ev => { if (ev.target.id === 'ib-form') { ev.preventDefault(); send(ev.target); } });

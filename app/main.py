@@ -671,7 +671,7 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
             reported = date_field(data, 'reported_on', local_today().isoformat())
             if reported > local_today().isoformat():
                 raise HTTPException(422, 'A report cannot be dated in the future.')
-            urgency_value = choice(data, 'urgency', ('Routine','Urgent','Emergency'))
+            urgency_value = choice(data, 'urgency', ('Routine','Urgent','Emergency','Low'))
             stamped = sla.stamp(conn, company_id, urgency_value, reported)
             due = stamped['due_date']
             values.update({'contract_id': integer(data, 'contract_id'), 'title': text_field(data, 'title', maximum=180), 'category': choice(data, 'category', ('Plumbing','Heating','Electrical','Damp / mould','Appliance','General')), 'urgency': choice(data, 'urgency', ('Routine','Urgent','Emergency')), 'description': text_field(data, 'description'), 'reported_on': reported, 'written': 1 if data.get('written', True) else 0, 'due_date': due, 'response_due_at': stamped['response_due_at'], 'assigned_to': str(data.get('assigned_to',''))[:120]})
