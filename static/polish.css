@@ -326,7 +326,7 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .co-fields{grid-column:1/-1;border:1px solid var(--line);border-radius:10px;padding:10px 14px}
 .co-fields .lf-h{margin-top:0}
 .lf-warn{display:flex;gap:10px;align-items:flex-start;background:#fdf1ef;border:1px solid #f0c5bd;color:#8a2f22;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;margin-top:-6px}
-.lf-warn[hidden]{display:none}
+.lf-warn[hidden],.field.lf-warn[hidden]{display:none!important}
 .lf-warn .icon{flex:none;width:18px;height:18px;margin-top:1px}
 .lf-form select.bad{border-color:#d9705f;box-shadow:0 0 0 3px #f7d9d3}
 .lf-warn.shake{animation:lf-shake .35s}
