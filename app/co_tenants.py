@@ -200,3 +200,57 @@ def make_main(contract_id: int, tenant_id: int, user=Depends(current_user)):
                      (c['company_id'], contract_id, old, row['share_cents'], user['id'], now()))
         audit(conn, user['id'], c['company_id'], 'main_tenant_changed', 'contract', contract_id, {'from': old, 'to': tenant_id})
     return {'ok': True}
+
+
+# ---------------------------------------------------------------- household partners (before there is a contract)
+def create_partner(conn, company_id, main_id, data, main_values):
+    """Add tenant: the partner or spouse who rents together with this tenant becomes their own tenant record (own login later),
+    linked as household partner (tenants.co_of). Contracts for the tenant then include them as co-tenant."""
+    from .main import insert, text_field
+    name, email = text_field(data, 'co_name', maximum=120), text_field(data, 'co_email', maximum=254).lower()
+    if '@' not in email:
+        raise HTTPException(422, 'Enter a valid email address for the co-tenant.')
+    if email == str(main_values.get('email', '')).strip().lower():
+        raise HTTPException(422, 'The co-tenant needs an own email address: each of them gets an own login.')
+    values = {'company_id': company_id, 'name': name, 'email': email, 'phone': str(data.get('co_phone') or '')[:50],
+              'language': data.get('co_language') if data.get('co_language') in ('nl', 'en') else main_values.get('language', 'nl'), 'created_at': now(), 'co_of': main_id}
+    if main_values.get('scope_owner_id'):
+        values['scope_owner_id'] = main_values['scope_owner_id']
+    return insert(conn, 'tenants', values)
+
+
+def attach_co_tenants(conn, company_id, contract_id, data, tenant, user_id):
+    """A new contract (recorded or approved): the co-tenants chosen in the form join it with the agreed split."""
+    from .lease_offers import co_inputs
+    co, mode, shares, _ = co_inputs(conn, data, company_id, tenant)
+    for t in co:
+        conn.execute('INSERT INTO contract_tenants(company_id,contract_id,tenant_id,share_cents,added_by,added_at) VALUES(?,?,?,?,?,?)', (company_id, contract_id, t['id'], shares[t['id']], user_id, now()))
+    if co and mode:
+        conn.execute('UPDATE contracts SET split_mode=? WHERE id=?', (mode, contract_id))
+    return [t['id'] for t in co]
+
+
+@router.post('/api/tenants/{tenant_id}/partner')
+def add_partner(tenant_id: int, data: dict, user=Depends(current_user)):
+    """From the tenant file: add the partner or spouse who rents together with this tenant."""
+    from .scope import require_own_tenant
+    with transaction() as conn:
+        t = record(conn, 'tenants', tenant_id, user, ROLES)
+        require_own_tenant(conn, tenant_id)
+        if t['co_of']:
+            raise HTTPException(409, 'This person is already the co-tenant of someone else. Add the partner to the main tenant instead.')
+        pid = create_partner(conn, t['company_id'], tenant_id, data, dict(t))
+        audit(conn, user['id'], t['company_id'], 'partner_added', 'tenant', tenant_id, {'partner_id': pid})
+    return {'id': pid}
+
+
+@router.post('/api/tenants/{tenant_id}/partner/unlink')
+def unlink_partner(tenant_id: int, user=Depends(current_user)):
+    """The two no longer rent together: the link is removed (a running contract is changed on the contract itself)."""
+    with transaction() as conn:
+        t = record(conn, 'tenants', tenant_id, user, ROLES)
+        if not t['co_of']:
+            raise HTTPException(409, 'This tenant is not linked as co-tenant.')
+        conn.execute('UPDATE tenants SET co_of=NULL WHERE id=?', (tenant_id,))
+        audit(conn, user['id'], t['company_id'], 'partner_unlinked', 'tenant', tenant_id, {'was_co_of': t['co_of']})
+    return {'ok': True}

@@ -14,6 +14,87 @@
   window.coNames = cid => active(cid).map(x => byId('tenants', x.tenant_id).name).filter(Boolean);
 
   const MODES = {'': 'Not split: one rent, anyone may pay it', equal: 'Equal parts', fixed: 'Fixed amount for each co-tenant, the main tenant pays the rest'};
+
+  // ---------- households: a co-tenant is listed right under the tenant they rent with
+  const liveContract = c => c && c.id && c.status !== 'ended' && !(c.end_date && c.end_date < today());
+  window.householdMain = t => {
+    if (t.co_of && byId('tenants', t.co_of).id && !byId('tenants', t.co_of).archived_at) return t.co_of;
+    const link = rows('co_tenants').find(x => x.tenant_id === t.id && !x.removed_at && liveContract(contract(x.contract_id)));
+    return link ? contract(link.contract_id).tenant_id : null;
+  };
+  window.orderHouseholds = list => {
+    const ids = new Set(list.map(t => t.id)), out = [];
+    const mains = list.filter(t => { const m = householdMain(t); return !m || !ids.has(m); });
+    for (const m of mains) { out.push(m); for (const x of list) if (x !== m && householdMain(x) === m.id && !out.includes(x)) out.push(x); }
+    return out.concat(list.filter(t => !out.includes(t)));
+  };
+  const partnersOf = mainId => rows('tenants').filter(t => !t.archived_at && t.co_of === mainId).map(t => t.id);
+
+  // ---------- the co-tenant picker used by both contract forms (send for signature, record a signed contract)
+  // Who rents with the tenant (their household partner is ticked already), how the rent is split, and what each person pays.
+  window.coPicker = (mainId, chosen = null, mode = '', shares = {}) => {
+    const partners = partnersOf(Number(mainId)), pick = new Set((chosen || partners).map(Number));
+    const people = rows('tenants').filter(t => !t.archived_at && t.id !== Number(mainId)).sort((a, b) => (partners.includes(b.id) - partners.includes(a.id)) || a.name.localeCompare(b.name));
+    const login = id => rows('portal_accounts').some(a => a.tenant_id === id && a.enabled);
+    const list = people.map(t => `<div class="lf-co"><input type="checkbox" id="co-${t.id}" name="co-${t.id}" ${pick.has(t.id) ? 'checked' : ''}><label for="co-${t.id}">${e(t.name)}${partners.includes(t.id) ? ' <span class="badge blue">partner</span>' : ''}${login(t.id) ? '' : ' <small>(no portal login yet)</small>'}</label>`
+      + `<input type="number" class="co-amt" name="coshare-${t.id}" step="0.01" min="0" placeholder="€ / month" aria-label="Amount ${e(t.name)} pays a month" value="${e(shares[t.id] || '')}"></div>`).join('');
+    return `<div class="co-picker" data-main="${Number(mainId) || ''}"><div class="lf-colist">${list || '<p class="muted">No other tenants yet. Add the partner first (Add tenant).</p>'}</div>
+      <div class="form-grid"><div class="field wide"><label>How do they split the rent?</label><select name="split_mode" class="co-split">${Object.entries(MODES).map(([v, l]) => `<option value="${v}" ${mode === v ? 'selected' : ''}>${e(l)}</option>`).join('')}</select></div></div>
+      <div class="co-sum" aria-live="polite"></div></div>`;
+  };
+  window.coPayload = form => {
+    if (!form || !form.querySelector('.co-picker')) return {};
+    const main = Number((form.elements.tenant_id || {}).value);
+    const ids = rows('tenants').filter(t => t.id !== main && form.elements['co-' + t.id] && form.elements['co-' + t.id].checked).map(t => t.id);
+    return {co_tenant_ids: ids, co_shares: Object.fromEntries(ids.map(id => [id, form.elements['coshare-' + id].value])), split_mode: ids.length ? form.querySelector('.co-split').value : ''};
+  };
+  const cents = v => Math.round((parseFloat(String(v || '0').replace(',', '.')) || 0) * 100);
+  function coRefresh(form) {   // the amount boxes show for fixed amounts only; the line underneath says what everyone pays
+    const pick = form.querySelector('.co-picker'); if (!pick) return;
+    const p = coPayload(form), mode = p.split_mode, main = byId('tenants', Number((form.elements.tenant_id || {}).value));
+    pick.querySelectorAll('.lf-co').forEach(row => { const box = row.querySelector('input[type=checkbox]'); row.querySelector('.co-amt').hidden = !(mode === 'fixed' && box.checked); row.classList.toggle('on', box.checked); });
+    const total = cents((form.elements.basic_rent || {}).value) + cents((form.elements.service_charge || {}).value), sum = pick.querySelector('.co-sum');
+    if (!p.co_tenant_ids.length) { sum.textContent = 'Only the tenant signs and pays.'; return; }
+    if (!mode) { sum.textContent = `Together they pay ${money(total)} a month; any of them may pay it.`; return; }
+    const people = [main, ...p.co_tenant_ids.map(id => byId('tenants', id))];
+    let parts;
+    if (mode === 'equal') { const each = Math.floor(total / people.length); parts = people.map((t, i) => [t, each + (i === 0 ? total - each * people.length : 0)]); }
+    else { const co = p.co_tenant_ids.map(id => [byId('tenants', id), cents(p.co_shares[id])]); parts = [[main, total - co.reduce((s, x) => s + x[1], 0)], ...co]; }
+    const bad = parts.some(x => x[1] < 0);
+    sum.innerHTML = `${bad ? '<strong class="late-text">The fixed amounts are more than the rent.</strong> ' : ''}${parts.map(([t, c]) => `<span><strong>${e(t.name || 'Tenant')}</strong> pays ${money(Math.max(0, c))}</span>`).join(' · ')} <small>(of ${money(total)} a month)</small>`;
+  }
+  window.coRefresh = coRefresh;
+  ['input', 'change'].forEach(type => document.addEventListener(type, ev => {
+    const form = ev.target.closest && ev.target.closest('form'); if (!form || !form.querySelector('.co-picker')) return;
+    if (ev.target.name === 'tenant_id' && type === 'change') {   // another tenant: their own partner is ticked
+      const old = form.querySelector('.co-picker'), mode = old.querySelector('.co-split').value;
+      old.outerHTML = coPicker(ev.target.value, null, partnersOf(Number(ev.target.value)).length ? (mode || 'equal') : mode);
+    }
+    coRefresh(form);
+  }));
+
+  // ---------- Add tenant: optionally the partner / spouse who rents together with them
+  const baseOpen = openRecordForm;
+  openRecordForm = kind => {
+    baseOpen(kind);
+    if (kind !== 'tenants') return;
+    const grid = document.querySelector('#record-form .form-grid'); if (!grid) return;
+    grid.insertAdjacentHTML('beforeend', `<div class="field checkbox wide co-toggle"><input type="checkbox" id="f-has_co"><label for="f-has_co">Rents together with a partner or spouse (co-tenant). Both get their own login and see the same home.</label></div>
+      <div class="co-fields wide" hidden><h3 class="lf-h">Co-tenant</h3><div class="form-grid">${field(['co_name', 'Co-tenant full name', 'text', {required: false}])}${field(['co_email', 'Co-tenant email (their own)', 'email', {required: false}])}${field(['co_phone', 'Co-tenant phone', 'tel', {required: false}])}${field(selectField('co_language', 'Co-tenant language', [['nl', 'Dutch'], ['en', 'English']], {required: false}))}</div></div>`);
+    const box = document.getElementById('f-has_co'), wrap = grid.querySelector('.co-fields');
+    const sync = () => { wrap.hidden = !box.checked; wrap.querySelectorAll('input,select').forEach(x => { x.disabled = !box.checked; x.required = box.checked && ['co_name', 'co_email'].includes(x.name); }); };
+    box.addEventListener('change', sync); sync();
+  };
+  // Record a signed contract: the same picker under the rent fields
+  const baseManual = manualContractForm;
+  manualContractForm = () => {
+    baseManual();
+    const form = document.getElementById('record-form'), grid = form && form.querySelector('.form-grid');
+    if (!grid || !form.elements.tenant_id) return;
+    const main = Number(form.elements.tenant_id.value);
+    grid.insertAdjacentHTML('beforeend', `<div class="field wide"><h3 class="lf-h">Co-tenants on this contract (partner, spouse)</h3><p class="modal-note">Everyone ticked is on the tenancy, gets the home in their own portal and is liable for the full rent.</p>${coPicker(main, null, partnersOf(main).length ? 'equal' : '')}</div>`);
+    coRefresh(form);
+  };
   function parts(c, total) {   // same rule as split() in app/co_tenants.py
     const ps = peopleOf(c.id);
     if (!['equal', 'fixed'].includes(c.split_mode) || ps.length < 2 || total <= 0) return null;

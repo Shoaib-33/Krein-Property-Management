@@ -768,6 +768,10 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
         else:
             raise HTTPException(404, 'Unknown record type.')
         record_id = insert(conn, kind, values)
+        if kind == 'tenants' and str(data.get('co_name') or '').strip():   # a partner / spouse who rents together with this tenant
+            from .co_tenants import create_partner
+            co_id = create_partner(conn, company_id, record_id, data, values)
+            audit(conn, user['id'], company_id, 'created', kind, co_id, {'co_of': record_id})
         if kind == 'repairs':
             task(conn, company_id, values['contract_id'], f'Review repair #{record_id}: {values["title"]}', (date.fromisoformat(reported)+timedelta(days=35)).isoformat() if values['written'] else reported, 'Repair', values['assigned_to'] or 'Property team')
             if values['urgency'] == 'Emergency':
@@ -1255,8 +1259,10 @@ def create_manually_signed_contract(data: dict, user=Depends(current_user)):
         share_document(conn, company_id, contract_id, doc['id'], user['id'])
         task(conn, company_id, contract_id, 'Verify signed contract, WWS report and letting documents', start, 'Contract')
         task(conn, company_id, contract_id, 'Complete move-in inspection', start, 'Inspection')
+        from .co_tenants import attach_co_tenants
+        co = attach_co_tenants(conn, company_id, contract_id, data, tenant, user['id'])
         notify_tenant(conn, contract_id, 'Signed rental agreement available', 'Your signed rental agreement is available in Documents.', 'documents')
-        audit(conn, user['id'], company_id, 'created', 'manually_signed_contract', contract_id, {'property_id': prop_id, 'tenant_id': tenant_id, 'document_id': doc['id'], 'signed_on': signed_on})
+        audit(conn, user['id'], company_id, 'created', 'manually_signed_contract', contract_id, {'property_id': prop_id, 'tenant_id': tenant_id, 'document_id': doc['id'], 'signed_on': signed_on, 'co_tenants': co})
     return {'id': contract_id, 'status': 'active', 'document_id': doc['id']}
 
 

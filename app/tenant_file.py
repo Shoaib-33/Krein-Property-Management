@@ -47,6 +47,9 @@ def tenant_file(tenant_id: int, user=Depends(current_user)):
             'repairs': rows(conn, f'SELECT id,contract_id,title,urgency,status,reported_on,completed_at FROM repairs WHERE contract_id IN ({marks}) ORDER BY id DESC LIMIT 20', ids),
             'documents': rows(conn, f'SELECT id,contract_id,name,kind,created_at FROM documents WHERE contract_id IN ({marks}) AND file_key<>"" ' + ('' if money else 'AND kind NOT IN ("payment proof","supplier invoice","deposit evidence") ') + 'ORDER BY id DESC LIMIT 40', ids),
             'money': money,
+            # the partner / spouse this tenant rents together with (Add tenant > co-tenant)
+            'household': rows(conn, 'SELECT id,name,email,co_of FROM tenants WHERE archived_at IS NULL AND company_id=? AND (co_of=? OR id=?) AND id<>? ORDER BY id',
+                              (tenant['company_id'], tenant_id, tenant['co_of'] or 0, tenant_id)),
         }
         if not money:
             return out

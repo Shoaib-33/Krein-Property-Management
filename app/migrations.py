@@ -582,6 +582,12 @@ CREATE TABLE lease_offer_signers (
 ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
 '''
 
+# V36: a partner or spouse added together with the tenant (before there is a contract): the household they rent as
+V36 = '''
+ALTER TABLE tenants ADD COLUMN co_of INTEGER REFERENCES tenants(id);
+CREATE INDEX tenants_co_of ON tenants(co_of);
+'''
+
 
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
@@ -862,6 +868,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (35, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=36').fetchone():
+            statement = ''
+            for line in V36.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (36, now()))
         conn.commit()
     except Exception:
         conn.rollback()

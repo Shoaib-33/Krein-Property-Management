@@ -317,3 +317,11 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .lf-co{display:grid;grid-template-columns:auto 1fr 120px;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
 .lf-co input[type=number]{width:100%;padding:5px 6px;font-size:12px}
 .lf-cosig{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}
+.co-row{padding-left:22px;position:relative}
+.co-row::before{content:"";position:absolute;left:6px;top:-6px;width:10px;height:22px;border-left:2px solid var(--line);border-bottom:2px solid var(--line);border-bottom-left-radius:6px}
+.lf-co.on{border-color:#9cc9b2;background:#f3faf6}
+.lf-co .co-amt[hidden]{display:none}
+.co-sum{font-size:12.5px;margin:6px 0 2px;color:var(--ink)}
+.co-sum span{white-space:nowrap}
+.co-fields{grid-column:1/-1;border:1px solid var(--line);border-radius:10px;padding:10px 14px}
+.co-fields .lf-h{margin-top:0}

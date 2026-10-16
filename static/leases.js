@@ -54,25 +54,20 @@
       <h3 class="lf-h">Details the tenant fills in before signing</h3><p class="modal-note">Always asked: the IBAN and account holder of the account the rent will be paid from, so bank payments are recognised automatically.</p><div class="lf-fields">${ask}</div>
       <div class="form-grid"><div class="field"><label for="ls-c1">Your own question (optional)</label><input id="ls-c1" name="custom1" type="text" maxlength="80" value="${e(d.custom1 || '')}" placeholder="e.g. Licence plate number"></div><div class="field"><label for="ls-c2">Another question (optional)</label><input id="ls-c2" name="custom2" type="text" maxlength="80" value="${e(d.custom2 || '')}"></div></div>
       <p class="form-error" id="ls-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="submit" class="button primary">Next: read and edit the contract</button></div></form>`);
+    coRefresh(document.getElementById('ls-form'));
   }
   // co-tenants (a partner or spouse) sign the same contract in their own portal; the household may split the rent
   function coSection(d, tenants) {
-    const chosen = new Set((d.co_tenant_ids || []).map(Number)), shares = d.co_shares || {};
-    const list = tenants.map(t => `<div class="lf-co"><input type="checkbox" id="co-${t.id}" name="co-${t.id}" ${chosen.has(t.id) ? 'checked' : ''}><label for="co-${t.id}">${e(t.name)}${hasLogin(t.id) ? '' : ' <small>(no portal login yet)</small>'}</label>`
-      + `<input type="number" name="coshare-${t.id}" step="0.01" min="0" placeholder="€ fixed / month" aria-label="Fixed amount ${e(t.name)} pays a month" value="${e(shares[t.id] || '')}"></div>`).join('');
-    const modes = [['', 'Not split: one rent, anyone may pay it'], ['equal', 'Equal parts'], ['fixed', 'Fixed amount for each co-tenant, the main tenant pays the rest']];
-    return `<details class="lf-cobox" ${chosen.size ? 'open' : ''}><summary>Co-tenants who sign too (partner, spouse)${chosen.size ? ` · ${chosen.size} chosen` : ''}</summary>
-      <p class="modal-note">Tick the people who rent the home together with the tenant. Each signs in their own portal; the contract counts as signed when everyone has signed. All of them are liable for the full rent.</p>
-      <div class="lf-colist">${list}</div>
-      <div class="form-grid"><div class="field wide"><label for="ls-split">How do they split the rent?</label><select id="ls-split" name="split_mode">${modes.map(([v, l]) => `<option value="${v}" ${(d.split_mode || '') === v ? 'selected' : ''}>${e(l)}</option>`).join('')}</select></div></div></details>`;
+    const main = d.tenant_id || (tenants[0] || {}).id, chosen = d.co_tenant_ids || null;
+    return `<details class="lf-cobox" open><summary>Co-tenants who sign too (partner, spouse)</summary>
+      <p class="modal-note">The tenant's partner is ticked already. Each person signs in their own portal; the contract counts as signed when everyone has signed. All of them are liable for the full rent.</p>
+      ${coPicker(main, chosen, d.split_mode ?? '', d.co_shares || {})}</details>`;
   }
   function collectDraft(f) {
     const d = {tenant_id: Number(val(f, 'tenant_id')), property_id: Number(val(f, 'property_id')), template_id: Number(val(f, 'template_id')), start_date: val(f, 'start_date'), end_date: val(f, 'end_date') || null,
       basic_rent: val(f, 'basic_rent'), service_charge: val(f, 'service_charge') || '0', deposit: val(f, 'deposit') || '0', custom1: val(f, 'custom1').trim(), custom2: val(f, 'custom2').trim(), asks: {}};
     for (const [key] of ASK) if (f.elements['ask-' + key]?.checked) d.asks[key] = {required: val(f, 'req-' + key) !== '0'};
-    d.co_tenant_ids = rows('tenants').filter(t => f.elements['co-' + t.id]?.checked && t.id !== d.tenant_id).map(t => t.id);
-    d.co_shares = Object.fromEntries(d.co_tenant_ids.map(id => [id, val(f, 'coshare-' + id)]));
-    d.split_mode = d.co_tenant_ids.length ? val(f, 'split_mode') : '';
+    Object.assign(d, coPayload(f));
     return d;
   }
   const formFieldsOf = d => [...Object.entries(d.asks).map(([key, v]) => ({key, required: v.required})), ...[d.custom1, d.custom2].filter(Boolean).map(label => ({label, required: true}))];

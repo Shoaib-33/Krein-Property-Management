@@ -168,6 +168,31 @@ class CoTenantTests(unittest.TestCase):
         self.assertEqual(self.manager.post(f'/api/contracts/{self.contract}/co-tenants', json={'tenant_id': 99999}).status_code in (400, 404), True)
         self.assertEqual(self.manager.post(f'/api/contracts/{self.contract}/split', json={'mode': 'weird'}).status_code, 422)
 
+    def test_add_tenant_with_a_partner_and_record_a_contract_for_both(self):
+        same = self.manager.post('/api/records/tenants', json={'company_id': 1, 'name': 'Sara Smit', 'email': 'sara@example.com', 'language': 'nl', 'co_name': 'Tom Smit', 'co_email': 'SARA@example.com'})
+        self.assertEqual(same.status_code, 422)   # each of them needs an own email (own login)
+        r = self.manager.post('/api/records/tenants', json={'company_id': 1, 'name': 'Sara Smit', 'email': 'sara@example.com', 'language': 'nl', 'co_name': 'Tom Smit', 'co_email': 'tom@example.com'})
+        self.assertEqual(r.status_code, 200, r.text)
+        sara = r.json()['id']
+        data = self.manager.get('/api/data?company_id=1').json()
+        tom = next(t for t in data['tenants'] if t['email'] == 'tom@example.com')
+        self.assertEqual(tom['co_of'], sara)
+        self.assertEqual([p['name'] for p in self.manager.get(f'/api/tenants/{sara}/file').json()['household']], ['Tom Smit'])
+        # the signed contract is recorded for both, Tom pays a fixed 700 a month
+        occupied = {c['property_id'] for c in data['contracts']}
+        prop = next(p for p in data['properties'] if p['id'] not in occupied)
+        doc = self.manager.post('/api/documents', data={'company_id': '1', 'kind': 'Contract'}, files={'file': ('signed.pdf', b'%PDF-1.4\nSigned', 'application/pdf')}).json()['id']
+        body = {'company_id': 1, 'property_id': prop['id'], 'tenant_id': sara, 'signed_on': date.today().isoformat(), 'start_date': date.today().isoformat(), 'basic_rent': '1500', 'service_charge': '100',
+                'deposit': '0', 'document_id': doc, 'confirm_signed': True, 'co_tenant_ids': [tom['id']], 'split_mode': 'fixed', 'co_shares': {str(tom['id']): '700'}}
+        made = self.manager.post('/api/contracts/manual', json=body)
+        self.assertEqual(made.status_code, 200, made.text)
+        data = self.manager.get('/api/data?company_id=1').json()
+        self.assertEqual([(c['tenant_id'], c['share_cents']) for c in data['co_tenants'] if c['contract_id'] == made.json()['id']], [(tom['id'], 70000)])
+        self.assertEqual(next(c for c in data['contracts'] if c['id'] == made.json()['id'])['split_mode'], 'fixed')
+        # the link can be undone; adding a partner from the tenant file works too
+        self.assertEqual(self.manager.post(f"/api/tenants/{tom['id']}/partner/unlink", json={}).status_code, 200)
+        self.assertEqual(self.manager.post(f'/api/tenants/{sara}/partner', json={'co_name': 'Kim Smit', 'co_email': 'kim@example.com'}).status_code, 200)
+
     def test_portal_access_is_refused_to_people_not_on_the_contract(self):
         tid, partner = self.add_partner()
         other = self.manager.get('/api/data?company_id=1').json()

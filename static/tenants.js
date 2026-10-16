@@ -41,6 +41,8 @@
       const status = !inv.length ? 'Not invoiced' : open <= 0 ? 'Paid' : late ? 'Overdue' : open < billed ? 'Partly paid' : 'Open';
       return {t, cs, inv, billed, open, pays, status, movedIn: cs.some(c => inPeriod(key, c.start_date)), movingOut: cs.some(c => c.end_date && inPeriod(key, c.end_date))};
     }).filter(Boolean).filter(x => !q || `${x.t.name} ${x.t.email} ${x.t.phone}`.toLowerCase().includes(q));
+    const order = orderHouseholds(people.map(x => x.t));
+    people.sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t));
     const f = state.tenantPeriodFilter || 'all';
     const chips = [['all', 'All', people.length], ['paid', 'Paid', people.filter(x => x.status === 'Paid').length], ['unpaid', 'Not paid', people.filter(x => ['Open', 'Partly paid', 'Overdue'].includes(x.status)).length],
       ['overdue', 'Overdue', people.filter(x => x.status === 'Overdue').length], ['in', 'Moved in', people.filter(x => x.movedIn).length], ['out', 'Moving out', people.filter(x => x.movingOut).length]];
@@ -48,7 +50,8 @@
     const tone = {Paid: 'green', Overdue: 'red', 'Partly paid': 'amber', Open: 'blue', 'Not invoiced': 'gray'};
     const body = shown.map(x => {
       const c = x.cs[0], last = x.pays[0];
-      return [`<button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>`,
+      const main = householdMain(x.t);
+      return [`<div class="${main ? 'co-row' : ''}"><button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>${main ? `<small class="co-with">Co-tenant · with ${e(byId('tenants', main).name)}</small>` : ''}</div>`,
         `<strong>${e(x.cs.map(c => propertyFor(c.id).name).join(', '))}</strong><small>${x.movedIn ? 'moved in ' + e(dateLabel(x.cs.find(c => inPeriod(key, c.start_date)).start_date)) : ''}${x.movingOut ? (x.movedIn ? ' · ' : '') + 'leaves ' + e(dateLabel(x.cs.find(c => c.end_date && inPeriod(key, c.end_date)).end_date)) : ''}</small>`,
         ...(money_ ? [x.inv.length ? `<span class="amount">${money(x.billed)}</span><small>${x.inv.map(i => e(i.number)).join(', ')}</small>` : '<span class="muted">—</span>',
           badge(x.status, tone[x.status]), x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>',
@@ -165,8 +168,33 @@
       ...f.repairs.map(r => [e(dateLabel(r.reported_on)), 'repair', e(r.title), badge(r.status)])], 'No requests or repairs.'));
     const docs = panel('Documents', '', table(['Document', 'Type', 'Added', ''], f.documents.map(d => [e(d.name), e(d.kind), e(dateLabel(d.created_at.slice(0, 10))),
       `<a class="button small" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">View</a>`]), 'No documents.'));
-    return head + stats + `<div class="section-stack">${contracts}${money_}${banks}<div class="tf-two">${requests}${docs}</div></div>`;
+    return head + stats + `<div class="section-stack">${householdPanel(f)}${contracts}${money_}${banks}<div class="tf-two">${requests}${docs}</div></div>`;
   }
+  // the partner / spouse this tenant rents with (added with the tenant, before or without a contract)
+  function householdPanel(f) {
+    const t = f.tenant, list = f.household || [];
+    if (!list.length && t.co_of) return '';
+    const body = list.map(p => [`<button type="button" class="tenant-link" data-tenant="${p.id}">${e(p.name)}</button><small>${e(p.email)}</small>`,
+      p.id === t.co_of ? badge('Main tenant', 'blue') : badge('Co-tenant', 'gray'),
+      `<button type="button" class="button small" data-tf-unlink="${p.id === t.co_of ? t.id : p.id}">Unlink</button>`]);
+    return panel('Rents together with', 'A partner or spouse who rents the home with this tenant. Contracts for this tenant include them as co-tenant; both have their own login.',
+      (list.length ? table(['Name', 'Role', ''], body) : '') + (t.co_of ? '' : `<div class="panel-body"><button type="button" class="button small primary" data-tf-partner="${t.id}">Add partner / co-tenant</button></div>`));
+  }
+  document.addEventListener('click', async ev => {
+    const add = ev.target.closest('[data-tf-partner]'), un = ev.target.closest('[data-tf-unlink]');
+    if (add) {
+      ev.preventDefault();
+      formModal('Add partner / co-tenant', [['co_name', 'Full name'], ['co_email', 'Email address (their own)', 'email'], ['co_phone', 'Phone number', 'tel', {required: false}],
+        selectField('co_language', 'Preferred language', [['nl', 'Dutch'], ['en', 'English']])],
+      d => api(`/api/tenants/${add.dataset.tfPartner}/partner`, {method: 'POST', body: d}).then(() => { ui.file = null; load(); }),
+      {submit: 'Add co-tenant', success: 'Co-tenant added. Invite them to the portal; new contracts for this tenant include them.', intro: 'They get their own tenant record and login. A contract that is already running is changed on the contract itself (Open file > Add co-tenant).'});
+    }
+    if (un) {
+      ev.preventDefault();
+      if (!confirm('Unlink these two? A running contract keeps its co-tenants; change those on the contract.')) return;
+      try { await api(`/api/tenants/${un.dataset.tfUnlink}/partner/unlink`, {method: 'POST', body: {}}); await refresh(); toast('Unlinked.'); } catch (err) { toast(err.message); }
+    }
+  });
   // where the money came from: the payer's bank account, and the tenant's receipt when there is one
   function fromCell(p) {
     const receipt = (ui.file.invoices || []).flatMap(i => i.receipts).find(r => r.id === p.proof_id);
