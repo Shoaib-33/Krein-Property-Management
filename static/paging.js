@@ -12,8 +12,8 @@
       title: 'Rental invoices', sub: 'Issued invoices retain the original rent and tenant details. Search all of them, any month.', endpoint: '/api/invoices', merge: true,
       placeholder: 'Search invoice number, tenant or property', filters: [['status', 'Status', ['All', 'Unpaid', 'Partially paid', 'Overdue', 'Paid']], ['email', 'Email', ['All', 'Drafts', 'Sent', 'Queued', 'Failed', 'Not emailed']], ['period', 'Month', 'month']],
       head: ['Invoice', 'Tenant / property', 'Amount', 'Outstanding', 'Due', 'Status', 'Email', ''],
-      row: i => [`<strong>${e(i.number)}</strong><small>${e(i.period)}</small>`, `<strong>${e(i.tenant_name)}</strong><small>${e(i.property_name)}</small>`, `<span class="amount">${money(i.total_cents)}</span>`,
-        money(i.balance_cents), dateLabel(i.due_date), badge(i.status), emailCell(i), `<div class="actions"><a class="button small" href="/api/invoices/${i.id}/pdf">View PDF</a>${actionBtn('Manage', 'invoice-detail', i.id)}</div>`],
+      row: i => [`<strong>${e(i.number)}</strong><small>${e(i.period)}</small>`, peopleCell(i), `<span class="amount">${money(i.total_cents)}</span>`,
+        money(i.balance_cents) + partsCell(i), dateLabel(i.due_date), badge(i.status), emailCell(i), `<div class="actions"><a class="button small" href="/api/invoices/${i.id}/pdf">View PDF</a>${actionBtn('Manage', 'invoice-detail', i.id)}</div>`],
       replace: ['Rental invoices', 'Invoice credit adjustments']
     },
     ledger: {
@@ -29,8 +29,21 @@
       replace: ['Audit trail', null]
     }
   };
+  // a shared home: everyone on the contract in one row, each person's own part, and the email each of them got
+  const peopleCell = i => (i.people || []).length > 1
+    ? `${i.people.map(n => `<strong class="pg-person">${e(n)}</strong>`).join('')}<small>${e(i.property_name)} · shared bill</small>`
+    : `<strong>${e(i.tenant_name)}</strong><small>${e(i.property_name)}</small>`;
+  const partsCell = i => (i.shares || []).length ? `<div class="co-shares">${i.shares.map(s => `<small class="${s.paid_cents >= s.share_cents ? 'ok' : ''}">${e(s.name.split(' ')[0])}: ${s.paid_cents >= s.share_cents ? 'paid ✓' : money(s.share_cents - s.paid_cents) + ' open'}</small>`).join('')}</div>` : '';
+  const oneMail = m => {
+    const tag = m.status === 'sent' ? badge('Sent', 'green') : ['queued', 'sending'].includes(m.status) ? badge('Queued', 'amber') : m.status === 'failed' ? badge('Failed', 'red') : badge(m.status, 'gray');
+    return `<div class="pg-mail"><span>${e((m.name || m.recipient).split(' ')[0])}</span>${tag}<small title="${e(m.last_error || m.recipient)}">${m.status === 'sent' ? e(dateLabel(m.sent_at)) : m.status === 'failed' ? e((m.last_error || 'Could not send').slice(0, 30)) : 'sending soon'}</small></div>`;
+  };
   // Email column: what happened to the invoice email, with the action that fits
   const emailCell = i => {
+    if (i.released_at && (i.emails || []).length > 1) {   // one email per person on the contract
+      const busy = i.emails.every(m => ['queued', 'sending'].includes(m.status)), failed = i.emails.some(m => m.status === 'failed');
+      return `<div class="pg-email">${i.emails.map(oneMail).join('')}${busy ? '' : `<button type="button" class="button small" data-pg-email="${i.id}">${failed ? 'Retry' : 'Resend to all'}</button>`}</div>`;
+    }
     const st = i.email_status, act = (label, cls = 'small') => `<button type="button" class="button ${cls}" data-pg-email="${i.id}">${e(label)}</button>`;
     if (!i.released_at) return `<div class="pg-email">${badge('Draft', 'amber')}<small>Not sent to the tenant yet</small><button type="button" class="button small primary" data-pg-release="${i.id}">Send to tenant</button></div>`;
     if (st === 'sent') return `<div class="pg-email">${badge('Sent', 'green')}<small title="${e(i.email_to || '')}">${e(dateLabel(i.email_sent_at))}</small>${act('Resend')}</div>`;

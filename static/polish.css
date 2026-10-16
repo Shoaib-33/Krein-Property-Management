@@ -335,3 +335,7 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .sub-people{display:grid;gap:8px;min-width:230px}
 .sub-person{display:flex;justify-content:space-between;align-items:center;gap:10px;border-left:3px solid var(--line);padding-left:8px}
 .sub-person small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+
+.pg-person{display:block}
+.pg-mail{display:grid;grid-template-columns:auto auto 1fr;gap:6px;align-items:center;font-size:12px;margin-bottom:4px}
+.pg-mail small{color:var(--muted);font-size:11px}

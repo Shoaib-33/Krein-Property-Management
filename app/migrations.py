@@ -582,6 +582,29 @@ CREATE TABLE lease_offer_signers (
 ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
 '''
 
+# V37: invoice and reminder emails go to every person on the contract separately (one job per recipient), each with their own part
+V37 = '''
+ALTER TABLE outbound_email_jobs RENAME TO outbound_email_jobs_v36;
+CREATE TABLE outbound_email_jobs (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id),
+ contract_id INTEGER NOT NULL REFERENCES contracts(id), invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+ kind TEXT NOT NULL CHECK(kind IN ('invoice_issued','overdue_friendly','overdue_followup')),
+ recipient TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','sending','sent','failed','cancelled')),
+ attempts INTEGER NOT NULL DEFAULT 0, next_attempt_at TEXT NOT NULL, last_error TEXT,
+ created_at TEXT NOT NULL, sent_at TEXT, tenant_id INTEGER REFERENCES tenants(id), UNIQUE(invoice_id,kind,recipient)
+);
+INSERT INTO outbound_email_jobs(id,company_id,contract_id,invoice_id,kind,recipient,status,attempts,next_attempt_at,last_error,created_at,sent_at)
+ SELECT id,company_id,contract_id,invoice_id,kind,recipient,status,attempts,next_attempt_at,last_error,created_at,sent_at FROM outbound_email_jobs_v36;
+DROP TABLE outbound_email_jobs_v36;
+CREATE INDEX outbound_email_queue ON outbound_email_jobs(status,next_attempt_at,id);
+CREATE INDEX outbound_email_company ON outbound_email_jobs(company_id,invoice_id,id);
+UPDATE outbound_email_jobs SET tenant_id=(SELECT tenant_id FROM contracts WHERE id=outbound_email_jobs.contract_id);
+INSERT OR IGNORE INTO outbound_email_jobs(company_id,contract_id,invoice_id,kind,recipient,status,attempts,next_attempt_at,created_at,tenant_id)
+ SELECT j.company_id,j.contract_id,j.invoice_id,j.kind,t.email,'queued',0,j.next_attempt_at,j.created_at,t.id FROM outbound_email_jobs j
+ JOIN contract_tenants ct ON ct.contract_id=j.contract_id AND ct.removed_at IS NULL JOIN tenants t ON t.id=ct.tenant_id
+ WHERE j.status IN ('queued','sending') AND t.archived_at IS NULL AND t.email LIKE '%_@_%';
+'''
+
 # V36: a partner or spouse added together with the tenant (before there is a contract): the household they rent as
 V36 = '''
 ALTER TABLE tenants ADD COLUMN co_of INTEGER REFERENCES tenants(id);
@@ -876,6 +899,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (36, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=37').fetchone():
+            statement = ''
+            for line in V37.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (37, now()))
         conn.commit()
     except Exception:
         conn.rollback()

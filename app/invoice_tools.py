@@ -191,12 +191,13 @@ def email_invoice(invoice_id: int, user=Depends(current_user)):
     with transaction() as conn:
         inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))
         tenant = conn.execute('SELECT t.email FROM contracts c JOIN tenants t ON t.id=c.tenant_id WHERE c.id=?', (inv['contract_id'],)).fetchone()
-        job = conn.execute("SELECT * FROM outbound_email_jobs WHERE invoice_id=? AND kind='invoice_issued'", (invoice_id,)).fetchone()
-        if job:
-            if job['status'] in ('queued', 'sending'):
-                raise HTTPException(409, 'This email is already waiting to be sent.')
-            conn.execute('UPDATE outbound_email_jobs SET status="queued",attempts=0,next_attempt_at=?,last_error=NULL,sent_at=NULL WHERE id=?', (now(), job['id']))
-        elif not queue_invoice(conn, inv, (tenant['email'] if tenant else '') or ''):
+        jobs = conn.execute("SELECT * FROM outbound_email_jobs WHERE invoice_id=? AND kind='invoice_issued'", (invoice_id,)).fetchall()
+        job = jobs[0] if jobs else None
+        if jobs and all(j['status'] in ('queued', 'sending') for j in jobs):
+            raise HTTPException(409, 'This email is already waiting to be sent.')
+        # everyone on the contract gets it again (each their own email); a co-tenant added later is included
+        conn.execute("UPDATE outbound_email_jobs SET status='queued',attempts=0,next_attempt_at=?,last_error=NULL,sent_at=NULL WHERE invoice_id=? AND kind='invoice_issued' AND status NOT IN ('queued','sending')", (now(), invoice_id))
+        if not queue_invoice(conn, inv, (tenant['email'] if tenant else '') or '') and not jobs:
             raise HTTPException(422, 'The tenant has no valid email address.')
         audit(conn, user['id'], inv['company_id'], 'email_queued', 'invoice', invoice_id, {'resend': bool(job)})
     kick()

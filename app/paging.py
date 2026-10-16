@@ -112,6 +112,16 @@ def list_invoices(company_id: int, q: str = '', status: str = 'All', period: str
         ledger, proofs = records_for(conn, [i['id'] for i in items])
     from .email_delivery import smtp_settings
     configured = bool(smtp_settings())
+    if items:   # a shared home: everyone on the contract, their own part, and the email each of them got
+        from .co_tenants import invoice_shares
+        with connect() as conn:
+            marks = ','.join('?' for _ in items)
+            mails = rows_for(conn, f"SELECT j.invoice_id,j.id,j.recipient,j.status,j.sent_at,j.last_error,COALESCE(t.name,mt.name) name FROM outbound_email_jobs j JOIN contracts c ON c.id=j.contract_id "
+                                   f"JOIN tenants mt ON mt.id=c.tenant_id LEFT JOIN tenants t ON t.id=j.tenant_id WHERE j.kind='invoice_issued' AND j.invoice_id IN ({marks}) ORDER BY j.id", [i['id'] for i in items])
+            for i in items:
+                i['emails'] = [m for m in mails if m['invoice_id'] == i['id']]
+                i['shares'] = invoice_shares(conn, i)
+                i['people'] = [r[0] for r in conn.execute('SELECT t.name FROM contract_people cp JOIN tenants t ON t.id=cp.tenant_id WHERE cp.contract_id=? ORDER BY cp.main DESC', (i['contract_id'],))]
     for i in items:
         if i['released_at'] is None:
             i['email_note'] = 'Draft: not sent to the tenant yet'

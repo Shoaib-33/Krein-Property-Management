@@ -219,6 +219,30 @@ class CoTenantTests(unittest.TestCase):
         self.assertEqual([p['name'] for p in self.manager.get(f'/api/tenants/{sara}/file').json()['household']], ['Tom Smit'])
         self.assertEqual([p['name'] for p in self.manager.get(f'/api/tenants/{tom}/file').json()['household']], ['Sara Smit'])
 
+    def test_each_person_gets_their_own_invoice_email_with_their_own_part(self):
+        import os
+        from unittest.mock import patch
+        tid, partner = self.add_partner()
+        inv = self.oldest_open(partner)
+        env = {'HAVEN_SMTP_HOST': 'smtp.example.test', 'HAVEN_SMTP_PORT': '587', 'HAVEN_SMTP_FROM': 'haven@example.test', 'HAVEN_PUBLIC_URL': 'https://haven.example.test'}
+        with patch.dict(os.environ, env), patch('app.email_delivery.smtplib.SMTP') as smtp, patch('app.email_delivery.kick', lambda: None):
+            server = smtp.return_value
+            server.__enter__.return_value = server
+            from app.email_delivery import deliver_pending_emails
+            with db.transaction() as conn:
+                conn.execute("UPDATE outbound_email_jobs SET status='cancelled'")
+            self.assertEqual(self.finance.post(f"/api/invoices/{inv['id']}/email", json={}).status_code, 200)
+            deliver_pending_emails()
+            sent = {c.args[0]['To']: c.args[0] for c in server.send_message.call_args_list}
+        self.assertEqual(set(sent), {'emma@example.com', 'lucas@example.com'})   # two separate emails, no copy
+        for m in sent.values():
+            self.assertIsNone(m['Cc'])
+            self.assertRegex(m.get_body(('plain',)).get_content(), r'(Your part of this rent|Uw deel van deze huur): EUR')
+        self.assertIn('Lucas Bakker', sent['lucas@example.com'].get_body(('plain',)).get_content())
+        listed = self.finance.get(f"/api/invoices?company_id=1&q={inv['number']}").json()['items'][0]
+        self.assertEqual(len(listed['emails']), 2)
+        self.assertEqual(len(listed['people']), 2)
+
     def test_portal_access_is_refused_to_people_not_on_the_contract(self):
         tid, partner = self.add_partner()
         other = self.manager.get('/api/data?company_id=1').json()

@@ -42,31 +42,41 @@ def valid_recipient(recipient):
     return bool(recipient) and parseaddr(recipient)[1] == recipient and '@' in recipient
 
 
+def co_recipients(conn, contract_id, first):
+    """(email, tenant_id) for the co-tenants of the contract, after the main tenant's address; each gets their own email."""
+    seen, out = {str(first or '').lower()}, []
+    for email, tid in conn.execute('SELECT t.email,t.id FROM contract_tenants ct JOIN tenants t ON t.id=ct.tenant_id WHERE ct.contract_id=? AND ct.removed_at IS NULL AND t.archived_at IS NULL ORDER BY ct.id', (contract_id,)):
+        if valid_recipient(email) and email.lower() not in seen:
+            seen.add(email.lower())
+            out.append((email, tid))
+    return out
+
+
+def _queue(conn, invoice, kind, recipient):
+    main = conn.execute('SELECT tenant_id FROM contracts WHERE id=?', (invoice['contract_id'],)).fetchone()
+    queued = False
+    for email, tid in ([(recipient, main[0] if main else None)] if valid_recipient(recipient) else []) + co_recipients(conn, invoice['contract_id'], recipient):
+        conn.execute(
+            'INSERT OR IGNORE INTO outbound_email_jobs '
+            '(company_id,contract_id,invoice_id,kind,recipient,status,attempts,next_attempt_at,created_at,tenant_id) '
+            'VALUES(?,?,?,?,?,"queued",0,?,?,?)',
+            (invoice['company_id'], invoice['contract_id'], invoice['id'], kind, email, now(), now(), tid),
+        )
+        queued = True
+    return queued
+
+
 def queue_reminder(conn, invoice, kind, recipient):
     """Queue once. Reminders are only queued when email is set up: a reminder that arrives weeks later would be wrong."""
-    if not smtp_settings() or not valid_recipient(recipient):
+    if not smtp_settings():
         return False
-    conn.execute(
-        'INSERT OR IGNORE INTO outbound_email_jobs '
-        '(company_id,contract_id,invoice_id,kind,recipient,status,attempts,next_attempt_at,created_at) '
-        'VALUES(?,?,?,?,?,"queued",0,?,?)',
-        (invoice['company_id'], invoice['contract_id'], invoice['id'], kind, recipient, now(), now()),
-    )
-    return True
+    return _queue(conn, invoice, kind, recipient)
 
 
 def queue_invoice(conn, invoice, recipient):
     """Queue the newly issued invoice once. It is queued even while email is not set up yet, so nothing is lost:
     it goes out as soon as the SMTP settings are added (invoices older than STALE_DAYS are then skipped, see deliver_pending_emails)."""
-    if not valid_recipient(recipient):
-        return False
-    conn.execute(
-        'INSERT OR IGNORE INTO outbound_email_jobs '
-        '(company_id,contract_id,invoice_id,kind,recipient,status,attempts,next_attempt_at,created_at) '
-        'VALUES(?,?,?,"invoice_issued",?,"queued",0,?,?)',
-        (invoice['company_id'], invoice['contract_id'], invoice['id'], recipient, now(), now()),
-    )
-    return True
+    return _queue(conn, invoice, 'invoice_issued', recipient)   # co-tenants each get their own email (app/co_tenants.py)
 
 
 def _reminder_body(kind, invoice, tenant_name, language, balance_cents, public_url):
@@ -161,9 +171,10 @@ def send_plain(recipient, subject, body):
 def _deliver_one(job, settings):
     with db.connect() as conn:
         row = conn.execute(
-            'SELECT j.*,i.number,i.period,i.due_date,i.basic_cents,i.service_cents,i.total_cents,i.snapshot,c.tenant_id,t.name tenant_name,t.language,t.email '
+            'SELECT j.*,i.number,i.period,i.due_date,i.basic_cents,i.service_cents,i.total_cents,i.snapshot,i.contract_id,COALESCE(j.tenant_id,c.tenant_id) person_id,'
+            'COALESCE(jt.name,t.name) tenant_name,COALESCE(jt.language,t.language) language,t.email '
             'FROM outbound_email_jobs j JOIN invoices i ON i.id=j.invoice_id '
-            'JOIN contracts c ON c.id=i.contract_id JOIN tenants t ON t.id=c.tenant_id WHERE j.id=?',
+            'JOIN contracts c ON c.id=i.contract_id JOIN tenants t ON t.id=c.tenant_id LEFT JOIN tenants jt ON jt.id=j.tenant_id WHERE j.id=?',
             (job['id'],),
         ).fetchone()
         if not row:
@@ -175,6 +186,9 @@ def _deliver_one(job, settings):
         if row['kind'] != 'invoice_issued':
             from .main import invoice_balance
             balance = invoice_balance(conn, row['invoice_id'])
+        from .co_tenants import invoice_shares
+        shares = invoice_shares(conn, {'id': row['invoice_id'], 'contract_id': row['contract_id']})
+        own = next((s for s in shares if s['tenant_id'] == row['person_id']), None)
     if balance is not None and balance <= 0:
         with db.transaction() as conn:
             conn.execute('UPDATE outbound_email_jobs SET status="cancelled",last_error=NULL WHERE id=? AND status="sending"', (job['id'],))
@@ -184,14 +198,16 @@ def _deliver_one(job, settings):
         subject, body = _invoice_body(row, row['tenant_name'], row['language'], settings['public_url'], snapshot.get('payment_instructions', ''))
     else:
         subject, body = _reminder_body(row['kind'], row, row['tenant_name'], row['language'], balance, settings['public_url'])
+    if own:   # a split rent: this person's own part, and who they share it with
+        others = ', '.join(s['name'] for s in shares if s['tenant_id'] != row['person_id'])
+        due = max(0, own['share_cents'] - own['paid_cents'])
+        body += (f'\n\nUw deel van deze huur: EUR {own["share_cents"] / 100:,.2f} (nog te betalen: EUR {due / 100:,.2f}). U deelt de huur met {others}; '
+                 'ieder betaalt het eigen deel vanaf de eigen rekening. Samen blijft u aansprakelijk voor de volledige huur.' if row['language'] == 'nl' else
+                 f'\n\nYour part of this rent: EUR {own["share_cents"] / 100:,.2f} (still to pay: EUR {due / 100:,.2f}). You share the rent with {others}; '
+                 'each of you pays your own part from your own account. Together you remain liable for the full rent.')
     message = EmailMessage()
     message['From'] = settings['sender']
     message['To'] = row['recipient']
-    with db.connect() as conn:   # co-tenants (medehuurders) get the same bill in copy
-        copies = sorted({r[0] for r in conn.execute('SELECT t.email FROM contract_tenants ct JOIN tenants t ON t.id=ct.tenant_id JOIN invoices i ON i.contract_id=ct.contract_id '
-                                                    "WHERE i.id=? AND ct.removed_at IS NULL AND t.archived_at IS NULL AND t.email LIKE '%@%'", (row['invoice_id'],)) if r[0].lower() != str(row['recipient']).lower()})
-    if copies:
-        message['Cc'] = ', '.join(copies)
     message['Subject'] = subject
     message.set_content(body)
     if row['kind'] == 'invoice_issued':
