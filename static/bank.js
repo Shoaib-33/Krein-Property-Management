@@ -37,7 +37,7 @@
       if (!status || !inPeriod('payments', (n.invoice_period || n.paid_on) + '-01')) continue;
       const inv = byId('invoices', n.invoice_id).id ? byId('invoices', n.invoice_id) : {id: n.invoice_id, number: n.invoice_number, period: n.invoice_period, contract_id: n.contract_id};
       const late = Math.floor((Date.now() - new Date(n.paid_on + 'T12:00:00')) / 86400000) > 7;
-      out.push({inv, cid: n.contract_id, who: n.tenant_id ? byId('tenants', n.tenant_id) : tenantFor(n.contract_id), status, amount: n.amount_cents, when: n.created_at,
+      out.push({inv, cid: n.contract_id, who: noticeSender(n), status, amount: n.amount_cents, when: n.created_at,
         how: `Said paid · ${n.iban ? 'from ' + n.iban.replace(/(.{4})/g, '$1 ').trim() : 'no account given'}`, extra: n.note,
         note: n.status === 'confirmed' ? 'Confirmed by bank' : n.found_line ? 'In the bank statement · waiting for your approval' : late ? 'Not in the bank yet' : 'Waiting for bank statement',
         act: n.status === 'confirmed' && n.bank_line_id ? `<a class="button small" href="/api/bank/lines/${n.bank_line_id}/statement.pdf" data-pv-title="Bank statement">Bank statement</a>`
@@ -45,6 +45,13 @@
     }
     return out;
   }
+  // who sent an "I have paid": the person saved on the notice, else the person on the contract whose bank account it names
+  const noticeSender = n => {
+    if (n.tenant_id) return byId('tenants', n.tenant_id);
+    const ids = window.peopleOf ? peopleOf(n.contract_id).map(p => p.tenant.id) : [];
+    const acc = n.iban && rows('tenant_bank_accounts').find(b => b.iban === n.iban && ids.includes(b.tenant_id));
+    return acc ? byId('tenants', acc.tenant_id) : tenantFor(n.contract_id);
+  };
   const shared = cid => !!(window.coNames && coNames(cid).length);
   function submissions() {
     const f = state.filter || 'All', want = s => f === 'All' || s === f.toLowerCase();
@@ -65,8 +72,11 @@
       const lines = people.map(t => {
         const mine = list.filter(x => x.who.id === t.id).sort((a, b) => String(b.when).localeCompare(String(a.when))), last = mine[0];
         const part = parts && parts.find(p => p.tenant.id === t.id), paid = part ? part.paid >= part.share && part.share > 0 : last && last.status === 'approved';
-        const chip = paid ? badge('Paid', 'green') : last ? badge(last.status === 'pending' ? 'Pending' : last.status, last.status === 'pending' ? 'amber' : 'gray') : badge('Not reported', 'gray');
-        const sub = [part ? `${money(part.paid >= part.share ? part.share : part.paid)} of ${money(part.share)}` : last ? money(last.amount) : '', paid && last && last.note === 'Confirmed by bank' ? 'confirmed by bank' : last && !paid ? last.note.toLowerCase() : ''].filter(Boolean).join(' · ');
+        const pend = mine.find(x => x.status === 'pending');
+        const chip = paid ? badge('Paid', 'green') : pend ? badge('Pending', 'amber') : badge(mine.length ? 'Not paid' : 'Not reported', 'gray');
+        const said = pend ? pend.note.toLowerCase() : !paid && mine.length ? 'nothing received yet' : '';
+        const how = paid ? (mine.find(x => x.status === 'approved') || {}).note : '';
+        const sub = [part ? `${money(Math.min(part.paid, part.share))} of ${money(part.share)}` : last ? money(last.amount) : '', paid ? (how || '').toLowerCase() : said].filter(Boolean).join(' · ');
         return `<div class="sub-person"><div><strong>${e(t.name)}</strong><small>${e(sub)}</small></div>${chip}</div>`;
       }).join('');
       const paidCount = parts ? parts.filter(p => p.share > 0 && p.paid >= p.share).length : list.filter(x => x.status === 'approved').length;
