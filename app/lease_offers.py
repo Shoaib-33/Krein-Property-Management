@@ -426,7 +426,8 @@ def approve(offer_id: int, data: dict, user=Depends(current_user)):
         stamp = (f'\n\n## Elektronische ondertekening | Electronic signature record\nSigned by the tenant: {offer["signer_name"]} on {offer["signed_at"][:10]} at {offer["signed_at"][11:19]} UTC (IP {offer["signed_ip"]}).\n'
                  + ''.join(f'Signed by the co-tenant: {s["signer_name"]} on {s["signed_at"][:10]} at {s["signed_at"][11:19]} UTC (IP {s["signed_ip"]}), fingerprint {s["signed_hash"]}.\n' for s in co) + f'Signed for the landlord: {signed_for["landlord_signer_name"]} on {signed_for["landlord_signed_at"][:10]}. Accepted by {user["name"]} on {local_today().isoformat()}.\nDocument fingerprint (SHA-256 of the agreement text and the tenant details): {offer["signed_hash"]}')
         pdf = agreement_file(conn, signed_for, offer_id, stamp)
-        filename = re.sub(r'[^A-Za-z0-9._-]+', '-', f'Getekende-huurovereenkomst-{tenant["name"]}-{offer["start_date"]}').strip('-') + '.pdf'
+        names = ' en '.join([tenant['name']] + [s['name'] for s in co])
+        filename = re.sub(r'[^A-Za-z0-9._-]+', '-', f'Getekende-huurovereenkomst-{names}-{offer["start_date"]}').strip('-') + '.pdf'
         final_id = save_document(conn, offer['company_id'], contract_id, user['id'], 'Contract', (pdf, 'application/pdf', '.pdf', filename))
         share_document(conn, offer['company_id'], contract_id, final_id, user['id'])
         conn.execute("UPDATE lease_offers SET status='approved',reviewed_by=?,reviewed_at=?,contract_id=?,final_document_id=?,landlord_signature=?,landlord_signature_mode=?,landlord_signer_name=?,landlord_signer_title=?,landlord_signed_at=? WHERE id=?",
