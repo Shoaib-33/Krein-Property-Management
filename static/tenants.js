@@ -51,7 +51,7 @@
     const body = shown.map(x => {
       const c = x.cs[0], last = x.pays[0];
       const main = householdMain(x.t);
-      return [`<div class="${main ? 'co-row' : ''}"><button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>${main ? `<small class="co-with">Co-tenant · with ${e(byId('tenants', main).name)}</small>` : ''}</div>`,
+      return [`<div class="${main ? 'co-row' : ''}"><button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>${main ? `<small class="co-with">Co-tenant · with ${e(byId('tenants', main).name)}</small>` : householdNames(x.t).length ? `<small class="co-with">Rents with ${e(householdNames(x.t).join(', '))}</small>` : ''}</div>`,
         `<strong>${e(x.cs.map(c => propertyFor(c.id).name).join(', '))}</strong><small>${x.movedIn ? 'moved in ' + e(dateLabel(x.cs.find(c => inPeriod(key, c.start_date)).start_date)) : ''}${x.movingOut ? (x.movedIn ? ' · ' : '') + 'leaves ' + e(dateLabel(x.cs.find(c => c.end_date && inPeriod(key, c.end_date)).end_date)) : ''}</small>`,
         ...(money_ ? [x.inv.length ? `<span class="amount">${money(x.billed)}</span><small>${x.inv.map(i => e(i.number)).join(', ')}</small>` : '<span class="muted">—</span>',
           badge(x.status, tone[x.status]), x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>',
@@ -175,7 +175,7 @@
     const t = f.tenant, list = f.household || [];
     if (!list.length && t.co_of) return '';
     const body = list.map(p => [`<button type="button" class="tenant-link" data-tenant="${p.id}">${e(p.name)}</button><small>${e(p.email)}</small>`,
-      p.id === t.co_of ? badge('Main tenant', 'blue') : badge('Co-tenant', 'gray'),
+      badge('Partner', 'blue'),
       `<button type="button" class="button small" data-tf-unlink="${p.id === t.co_of ? t.id : p.id}">Unlink</button>`]);
     return panel('Rents together with', 'A partner or spouse who rents the home with this tenant. Contracts for this tenant include them as co-tenant; both have their own login.',
       (list.length ? table(['Name', 'Role', ''], body) : '') + (t.co_of ? '' : `<div class="panel-body"><button type="button" class="button small primary" data-tf-partner="${t.id}">Add partner / co-tenant</button></div>`));

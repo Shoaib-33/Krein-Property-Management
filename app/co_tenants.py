@@ -86,6 +86,20 @@ def tenant_of_user(conn, user_id, contract_id):
     return row[0] if row else None
 
 
+def busy_elsewhere(conn, tenant_id, start, end, ignore_contract=None):
+    """The home this person already rents (as main tenant or co-tenant) during start..end, or None. Parking and storage do not count."""
+    row = conn.execute("SELECT p.name FROM contract_people cp JOIN contracts c ON c.id=cp.contract_id JOIN properties p ON p.id=c.property_id "
+                       "WHERE cp.tenant_id=? AND c.id<>? AND p.kind IN ('Apartment','House','Room') AND c.status IN ('active','notice given','pending signature') AND c.start_date<=? AND (c.end_date IS NULL OR c.end_date>=?) LIMIT 1",
+                       (tenant_id, ignore_contract or 0, end or '9999-12-31', start)).fetchone()
+    return row[0] if row else None
+
+
+def check_free(conn, tenant_id, name, start, end, ignore_contract=None):
+    home = busy_elsewhere(conn, tenant_id, start, end, ignore_contract)
+    if home:
+        raise HTTPException(409, f'{name} already rents {home} in this period, so they cannot be a co-tenant here. End that tenancy first.')
+
+
 def check_fixed(conn, contract_id, mode):
     if mode == 'fixed' and any((p['share_cents'] or 0) <= 0 for p in people(conn, contract_id)[1:]):
         raise HTTPException(422, 'Enter the fixed monthly amount for every co-tenant (the main tenant pays the rest).')
@@ -123,6 +137,7 @@ def add_co_tenant(contract_id: int, data: dict, user=Depends(current_user)):
             tid = insert(conn, 'tenants', values)
         if tid == c['tenant_id']:
             raise HTTPException(409, 'This person is already the main tenant of this contract.')
+        check_free(conn, tid, conn.execute('SELECT name FROM tenants WHERE id=?', (tid,)).fetchone()[0], max(c['start_date'], now()[:10]), c['end_date'], contract_id)
         if conn.execute('SELECT 1 FROM contract_tenants WHERE contract_id=? AND tenant_id=? AND removed_at IS NULL', (contract_id, tid)).fetchone():
             raise HTTPException(409, 'This person is already a co-tenant of this contract.')
         share = money(data, 'share', True) if str(data.get('share') or '').strip() else None
@@ -222,7 +237,8 @@ def create_partner(conn, company_id, main_id, data, main_values):
 def attach_co_tenants(conn, company_id, contract_id, data, tenant, user_id):
     """A new contract (recorded or approved): the co-tenants chosen in the form join it with the agreed split."""
     from .lease_offers import co_inputs
-    co, mode, shares, _ = co_inputs(conn, data, company_id, tenant)
+    c = conn.execute('SELECT start_date,end_date FROM contracts WHERE id=?', (contract_id,)).fetchone()
+    co, mode, shares, _ = co_inputs(conn, data, company_id, tenant, c['start_date'], c['end_date'], contract_id)
     for t in co:
         conn.execute('INSERT INTO contract_tenants(company_id,contract_id,tenant_id,share_cents,added_by,added_at) VALUES(?,?,?,?,?,?)', (company_id, contract_id, t['id'], shares[t['id']], user_id, now()))
     if co and mode:

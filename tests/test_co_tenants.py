@@ -193,6 +193,25 @@ class CoTenantTests(unittest.TestCase):
         self.assertEqual(self.manager.post(f"/api/tenants/{tom['id']}/partner/unlink", json={}).status_code, 200)
         self.assertEqual(self.manager.post(f'/api/tenants/{sara}/partner', json={'co_name': 'Kim Smit', 'co_email': 'kim@example.com'}).status_code, 200)
 
+    def test_someone_who_rents_a_home_cannot_be_a_co_tenant_and_the_household_shows_both_ways(self):
+        data = self.manager.get('/api/data?company_id=1').json()
+        other = next(c for c in data['contracts'] if c['id'] != self.contract and c['status'] == 'active')   # this tenant rents an own home
+        r = self.manager.post(f'/api/contracts/{self.contract}/co-tenants', json={'tenant_id': other['tenant_id']})
+        self.assertEqual(r.status_code, 409, r.text)
+        self.assertIn('already rents', r.json()['detail'])
+        # the same check when a contract is sent for signature
+        self.manager.post('/api/templates/starters', json={'company_id': 1})
+        data = self.manager.get('/api/data?company_id=1').json()
+        template = next(t['id'] for t in data['doc_templates'] if t['kind'] == 'Lease')
+        free = next(p['id'] for p in data['properties'] if p['id'] not in {c['property_id'] for c in data['contracts']})
+        sara = self.manager.post('/api/records/tenants', json={'company_id': 1, 'name': 'Sara Smit', 'email': 'sara@example.com', 'language': 'nl', 'co_name': 'Tom Smit', 'co_email': 'tom@example.com'}).json()['id']
+        offer = {'company_id': 1, 'tenant_id': sara, 'property_id': free, 'template_id': template, 'start_date': date.today().isoformat(), 'basic_rent': '1000', 'service_charge': '0', 'deposit': '0', 'co_tenant_ids': [other['tenant_id']]}
+        self.assertEqual(self.manager.post('/api/lease-offers/preview', json=offer).status_code, 409)
+        # Tom is Sara's partner, and Sara is Tom's: each file shows the other
+        tom = next(t['id'] for t in self.manager.get('/api/data?company_id=1').json()['tenants'] if t['email'] == 'tom@example.com')
+        self.assertEqual([p['name'] for p in self.manager.get(f'/api/tenants/{sara}/file').json()['household']], ['Tom Smit'])
+        self.assertEqual([p['name'] for p in self.manager.get(f'/api/tenants/{tom}/file').json()['household']], ['Sara Smit'])
+
     def test_portal_access_is_refused_to_people_not_on_the_contract(self):
         tid, partner = self.add_partner()
         other = self.manager.get('/api/data?company_id=1').json()

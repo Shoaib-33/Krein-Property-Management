@@ -163,7 +163,7 @@ function tenantsPage(){
  const openOf=t=>{const mine=new Set((window.contractsOfTenant?contractsOfTenant(t.id):[]).map(c=>c.id));return rows('invoices').filter(i=>(mine.has(i.contract_id)||contract(i.contract_id).tenant_id===t.id)&&i.released_at&&balance(i)>0).reduce((s,i)=>s+balance(i),0);};
  const body=list.map(t=>{const c=homeOf(t),a=rows('portal_accounts').find(a=>a.tenant_id===t.id),banks=rows('tenant_bank_accounts').filter(b=>b.tenant_id===t.id),r=c?rentFor(c.id):{},open=openOf(t);
   const main=window.householdMain?householdMain(t):null;
-  return [`<div class="${main?'co-row':''}"><button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>${main?`<small class="co-with">Co-tenant · with ${e(byId('tenants',main).name)}</small>`:''}</div>`,c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)}${c.tenant_id!==t.id?' · co-tenant':''}</small>`:'<span class="muted">No tenancy</span>',
+  return [`<div class="${main?'co-row':''}"><button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>${main?`<small class="co-with">Co-tenant · with ${e(byId('tenants',main).name)}</small>`:(window.householdNames&&householdNames(t).length?`<small class="co-with">Rents with ${e(householdNames(t).join(', '))}</small>`:'')}</div>`,c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)}${c.tenant_id!==t.id?' · co-tenant':''}</small>`:'<span class="muted">No tenancy</span>',
    c?`<span class="amount">${money((r.basic_cents||0)+(r.service_cents||0))}</span>`:'—',c?nextCell(c.id):'—',...(money_?[open?`<strong class="late-text">${money(open)}</strong>`:'<span class="muted">Nothing open</span>']:[]),
    a?badge(a.enabled?'Portal active':'Paused',a.enabled?'green':'amber'):badge('No portal login','gray'),banks.length?badge(`${banks.length} bank account${banks.length===1?'':'s'}`,'blue'):'<span class="muted">No IBAN</span>',
    `<button type="button" class="button small" data-tenant="${t.id}">Open</button>`];});
@@ -351,7 +351,7 @@ function manualContractForm(){
  const propertyChoices=rows('properties').map(p=>[p.id,p.name]);
  const initialProperty=propertyChoices[0]?.[0];
  const tenantsForProperty=(propertyId,startDate)=>rows('tenants').filter(t=>!t.archived_at).filter(t=>{
-  const history=rows('contracts').filter(c=>c.tenant_id===t.id);
+  const history=window.contractsOfTenant?contractsOfTenant(t.id):rows('contracts').filter(c=>c.tenant_id===t.id);
   const overlapping=history.filter(c=>['active','notice given','pending signature'].includes(c.status)&&c.start_date<=startDate&&(!c.end_date||c.end_date>=startDate));
   if(overlapping.length)return overlapping.every(c=>c.property_id===Number(propertyId)&&c.tenant_id===t.id);
   const prior=history.filter(c=>c.start_date<=startDate).sort((a,b)=>b.start_date.localeCompare(a.start_date))[0];

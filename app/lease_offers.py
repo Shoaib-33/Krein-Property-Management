@@ -203,7 +203,7 @@ Deze overeenkomst wordt ook als huurder aangegaan door: {names}. Alle huurders z
 This agreement is also entered into as tenant by: {names}. All tenants are jointly and severally liable for this agreement, including the full rent.{split_en}'''
 
 
-def co_inputs(conn, data, company_id, tenant):
+def co_inputs(conn, data, company_id, tenant, start=None, end=None, ignore_contract=None):
     """The co-tenants chosen in the send form (tenants of the company), the split and the clause added to the contract text."""
     ids = []
     for raw in data.get('co_tenant_ids') or []:
@@ -211,6 +211,9 @@ def co_inputs(conn, data, company_id, tenant):
         if t['archived_at']:
             raise HTTPException(422, f'{t["name"]} has been removed.')
         if t['id'] != tenant['id'] and t['id'] not in [x['id'] for x in ids]:
+            if start:
+                from .co_tenants import check_free
+                check_free(conn, t['id'], t['name'], start, end, ignore_contract)
             ids.append(dict(t))
     if len(ids) > 3:
         raise HTTPException(422, 'A contract can have at most three co-tenants.')
@@ -303,7 +306,7 @@ def prepare(conn, user, data):
     if problem:
         raise HTTPException(409, problem)
     body, missing = render(template['body'], offer_context(conn, company_id, tenant, prop, user, start, end, basic, service, deposit))
-    co, mode, shares, clause = co_inputs(conn, data, company_id, tenant)
+    co, mode, shares, clause = co_inputs(conn, data, company_id, tenant, start, end)
     return {'company_id': company_id, 'start': start, 'end': end, 'basic': basic, 'service': service, 'deposit': deposit, 'tenant': tenant, 'prop': prop, 'template': template,
             'body': body.rstrip() + clause, 'missing': missing, 'co': co, 'split_mode': mode, 'shares': shares}
 

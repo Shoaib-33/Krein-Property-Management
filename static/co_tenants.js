@@ -17,10 +17,12 @@
 
   // ---------- households: a co-tenant is listed right under the tenant they rent with
   const liveContract = c => c && c.id && c.status !== 'ended' && !(c.end_date && c.end_date < today());
-  window.householdMain = t => {
-    if (t.co_of && byId('tenants', t.co_of).id && !byId('tenants', t.co_of).archived_at) return t.co_of;
+  window.householdMain = t => {   // a running contract decides first: its main tenant is "main", its co-tenants are listed under them
+    if (rows('contracts').some(c => c.tenant_id === t.id && liveContract(c))) return null;
     const link = rows('co_tenants').find(x => x.tenant_id === t.id && !x.removed_at && liveContract(contract(x.contract_id)));
-    return link ? contract(link.contract_id).tenant_id : null;
+    if (link) return contract(link.contract_id).tenant_id;
+    if (t.co_of && byId('tenants', t.co_of).id && !byId('tenants', t.co_of).archived_at) return t.co_of;
+    return null;
   };
   window.orderHouseholds = list => {
     const ids = new Set(list.map(t => t.id)), out = [];
@@ -28,17 +30,25 @@
     for (const m of mains) { out.push(m); for (const x of list) if (x !== m && householdMain(x) === m.id && !out.includes(x)) out.push(x); }
     return out.concat(list.filter(t => !out.includes(t)));
   };
-  const partnersOf = mainId => rows('tenants').filter(t => !t.archived_at && t.co_of === mainId).map(t => t.id);
+  const head = t => (t && t.co_of && byId('tenants', t.co_of).id && !byId('tenants', t.co_of).archived_at) ? t.co_of : (t && t.id);
+  const partnersOf = mainId => { const me = byId('tenants', Number(mainId)), h = head(me); return rows('tenants').filter(t => !t.archived_at && t.id !== Number(mainId) && (t.id === h || head(t) === h)).map(t => t.id); };
+  // who already rents a home now or later (as tenant or co-tenant): they cannot be a co-tenant somewhere else
+  const liveOrComing = c => ['active', 'notice given', 'pending signature'].includes(c.status) && !(c.end_date && c.end_date < today());
+  window.homeOf = (tid, ignoreContract) => rows('contracts').find(c => c.id !== ignoreContract && liveOrComing(c) && ['Apartment', 'House', 'Room'].includes(propertyFor(c.id).kind) && (c.tenant_id === tid || active(c.id).some(x => x.tenant_id === tid)));
+  const inOtherHousehold = (t, mainId) => { const h = head(t), mh = head(byId('tenants', Number(mainId))); return (t.co_of || rows('tenants').some(x => x.co_of === t.id && !x.archived_at)) && h !== mh; };
+  window.householdNames = t => rows('tenants').filter(x => !x.archived_at && x.id !== t.id && householdMain(x) === t.id).map(x => x.name);
 
   // ---------- the co-tenant picker used by both contract forms (send for signature, record a signed contract)
   // Who rents with the tenant (their household partner is ticked already), how the rent is split, and what each person pays.
   window.coPicker = (mainId, chosen = null, mode = '', shares = {}) => {
     const partners = partnersOf(Number(mainId)), pick = new Set((chosen || partners).map(Number));
-    const people = rows('tenants').filter(t => !t.archived_at && t.id !== Number(mainId)).sort((a, b) => (partners.includes(b.id) - partners.includes(a.id)) || a.name.localeCompare(b.name));
+    // offered: people without a home of their own and not in someone else's household; the tenant's own partner always shows
+    const people = rows('tenants').filter(t => !t.archived_at && t.id !== Number(mainId) && (partners.includes(t.id) || (!homeOf(t.id) && !inOtherHousehold(t, mainId))))
+      .sort((a, b) => (partners.includes(b.id) - partners.includes(a.id)) || a.name.localeCompare(b.name));
     const login = id => rows('portal_accounts').some(a => a.tenant_id === id && a.enabled);
-    const list = people.map(t => `<div class="lf-co"><input type="checkbox" id="co-${t.id}" name="co-${t.id}" ${pick.has(t.id) ? 'checked' : ''}><label for="co-${t.id}">${e(t.name)}${partners.includes(t.id) ? ' <span class="badge blue">partner</span>' : ''}${login(t.id) ? '' : ' <small>(no portal login yet)</small>'}</label>`
-      + `<input type="number" class="co-amt" name="coshare-${t.id}" step="0.01" min="0" placeholder="€ / month" aria-label="Amount ${e(t.name)} pays a month" value="${e(shares[t.id] || '')}"></div>`).join('');
-    return `<div class="co-picker" data-main="${Number(mainId) || ''}"><div class="lf-colist">${list || '<p class="muted">No other tenants yet. Add the partner first (Add tenant).</p>'}</div>
+    const list = people.map(t => { const home = homeOf(t.id); return `<div class="lf-co ${home ? 'off' : ''}"><input type="checkbox" id="co-${t.id}" name="co-${t.id}" ${pick.has(t.id) && !home ? 'checked' : ''} ${home ? 'disabled' : ''}><label for="co-${t.id}">${e(t.name)}${partners.includes(t.id) ? ' <span class="badge blue">partner</span>' : ''}${home ? ` <small>(already rents ${e(propertyFor(home.id).name)})</small>` : login(t.id) ? '' : ' <small>(no portal login yet)</small>'}</label>`
+      + `<input type="number" class="co-amt" name="coshare-${t.id}" step="0.01" min="0" placeholder="€ / month" aria-label="Amount ${e(t.name)} pays a month" value="${e(shares[t.id] || '')}"></div>`; }).join('');
+    return `<div class="co-picker" data-main="${Number(mainId) || ''}"><div class="lf-colist">${list || '<p class="muted">Nobody to add: everyone else already rents a home. Add the partner first (Add tenant, tick co-tenant).</p>'}</div>
       <div class="form-grid"><div class="field wide"><label>How do they split the rent?</label><select name="split_mode" class="co-split">${Object.entries(MODES).map(([v, l]) => `<option value="${v}" ${mode === v ? 'selected' : ''}>${e(l)}</option>`).join('')}</select></div></div>
       <div class="co-sum" aria-live="polite"></div></div>`;
   };
@@ -135,7 +145,8 @@
 
   function addForm(cid) {
     const c = contract(cid), on = new Set(peopleOf(cid).map(p => p.tenant.id));
-    const others = rows('tenants').filter(t => !t.archived_at && !on.has(t.id)).map(t => [t.id, `${t.name} · ${t.email}`]);
+    const mates = new Set(partnersOf(c.tenant_id));
+    const others = rows('tenants').filter(t => !t.archived_at && !on.has(t.id) && !homeOf(t.id, cid) && (mates.has(t.id) || !inOtherHousehold(t, c.tenant_id))).map(t => [t.id, `${t.name} · ${t.email}${mates.has(t.id) ? ' (partner)' : ''}`]);
     formModal('Add co-tenant', [
       ['tenant_id', 'Person', 'select', {options: [['', '— A new person —'], ...others], required: false, wide: true}],
       ['name', 'Full name (new person)', 'text', {required: false}], ['email', 'Email (new person)', 'email', {required: false}],
