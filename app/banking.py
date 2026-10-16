@@ -238,21 +238,24 @@ def balance(conn, invoice_id):
 
 
 def open_invoices(conn, company_id, tenant_ids=None, reach=None):
-    """Released invoices with something still to pay, oldest first."""
-    sql = ('SELECT i.id,i.number,i.period,i.due_date,i.total_cents,i.contract_id,c.tenant_id,t.name tenant_name,'
-           '(SELECT group_concat(cp.tenant_id) FROM contract_people cp WHERE cp.contract_id=c.id) people FROM invoices i JOIN contracts c ON c.id=i.contract_id '
-           'JOIN tenants t ON t.id=c.tenant_id WHERE i.company_id=? AND i.released_at IS NOT NULL')
-    rows = [dict(r) for r in conn.execute(sql + ' ORDER BY i.due_date, i.id', (company_id,))]
+    """Released invoices with something still to pay, oldest first. The balance is summed in the query (one pass over the
+    ledger), and a tenant filter only reads that person's contracts (as main tenant or co-tenant)."""
+    where, args = ['i.company_id=?', 'i.released_at IS NOT NULL'], [company_id]
+    if tenant_ids is not None:
+        ids = sorted(set(tenant_ids)) or [0]
+        where.append(f'i.contract_id IN (SELECT contract_id FROM contract_people WHERE tenant_id IN ({",".join("?" for _ in ids)}))')
+        args += ids
+    sql = ('SELECT * FROM (SELECT i.id,i.number,i.period,i.due_date,i.total_cents,i.contract_id,c.tenant_id,t.name tenant_name,'
+           '(SELECT group_concat(cp.tenant_id) FROM contract_people cp WHERE cp.contract_id=c.id) people,'
+           '(SELECT COALESCE(SUM(l.amount_cents),0) FROM ledger l WHERE l.invoice_id=i.id) balance_cents FROM invoices i JOIN contracts c ON c.id=i.contract_id '
+           f'JOIN tenants t ON t.id=c.tenant_id WHERE {" AND ".join(where)}) WHERE balance_cents>0 ORDER BY due_date, id')
     out = []
-    for r in rows:
+    for r in conn.execute(sql, args):
+        r = dict(r)
         r['people'] = {int(x) for x in str(r['people'] or r['tenant_id']).split(',')}   # main tenant and co-tenants
-        if tenant_ids is not None and not r['people'] & set(tenant_ids):
-            continue
         if reach is not None and not reach.ok(r['contract_id']):
             continue
-        r['balance_cents'] = balance(conn, r['id'])
-        if r['balance_cents'] > 0:
-            out.append(r)
+        out.append(r)
     return out
 
 
