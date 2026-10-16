@@ -332,3 +332,6 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .lf-warn.shake{animation:lf-shake .35s}
 @keyframes lf-shake{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 .field.lf-warn{display:flex;flex-direction:row;grid-column:1/-1}
+.sub-people{display:grid;gap:8px;min-width:230px}
+.sub-person{display:flex;justify-content:space-between;align-items:center;gap:10px;border-left:3px solid var(--line);padding-left:8px}
+.sub-person small{display:block;color:var(--muted);font-size:11px;margin-top:2px}

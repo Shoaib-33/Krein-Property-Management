@@ -21,31 +21,61 @@
     return acc ? byId('tenants', acc.tenant_id) : tenantFor(contractId);
   };
   const homeCell = cid => { const p = propertyFor(cid) || {}, co = window.coNames ? coNames(cid) : []; return `<strong>${e(p.name || '—')}</strong>${co.length ? `<small>shared: ${e([tenantFor(cid).name, ...co].join(' & '))}</small>` : ''}`; };
-  function submissions() {
-    const f = state.filter || 'All', want = s => f === 'All' || s === f.toLowerCase();
-    const items = [];
+  // every receipt and "I have paid" as an entry; a shared home's bill is ONE row listing each person with their own status
+  function entries() {
+    const out = [];
     for (const p of rows('payment_proofs')) {
       const inv = byId('invoices', p.invoice_id);
-      if (!inv.id || !want(p.status) || !inPeriod('payments', (inv.period ? inv.period + '-01' : p.paid_on))) continue;
+      if (!inv.id || !inPeriod('payments', (inv.period ? inv.period + '-01' : p.paid_on))) continue;
       const byBank = p.status === 'approved' && /bank statement/i.test(p.review_note || '');
-      items.push({when: p.created_at, row: [tenantCell(senderOf(p.submitted_by, inv.contract_id)), homeCell(inv.contract_id), `<strong>${e(inv.number)}</strong><small>${e(BILL(inv.period))} · ${e(p.method)}</small>`,
-        `<span class="amount">${money(p.amount_cents)}</span>`, dateLabel(p.created_at), badge(p.status) + (byBank ? '<small class="co-by">Confirmed by bank</small>' : ''),
-        actionBtn(p.status === 'pending' ? 'Review receipt' : 'View receipt', 'review-proof', p.id, p.status === 'pending' ? 'small primary' : 'small')]});
+      out.push({inv, cid: inv.contract_id, who: senderOf(p.submitted_by, inv.contract_id), status: p.status, amount: p.amount_cents, when: p.created_at, how: p.method,
+        note: byBank ? 'Confirmed by bank' : p.status === 'approved' ? 'Receipt approved' : p.status === 'pending' ? 'Receipt to review' : '',
+        act: actionBtn(p.status === 'pending' ? 'Review receipt' : 'View receipt', 'review-proof', p.id, p.status === 'pending' ? 'small primary' : 'small')});
     }
     for (const n of rows('payment_notices')) {
       const status = n.status === 'confirmed' ? 'approved' : n.status === 'waiting' ? 'pending' : null;
-      if (!status || !want(status) || !inPeriod('payments', (n.invoice_period || n.paid_on) + '-01')) continue;
-      const who = n.tenant_id ? byId('tenants', n.tenant_id) : tenantFor(n.contract_id), late = Math.floor((Date.now() - new Date(n.paid_on + 'T12:00:00')) / 86400000) > 7;
-      const how = `Said paid · ${n.iban ? 'from ' + n.iban.replace(/(.{4})/g, '$1 ').trim() : 'no account given'}`;
-      const state_ = n.status === 'confirmed' ? badge('approved') + '<small class="co-by">Confirmed by bank</small>'
-        : n.found_line ? badge('pending') + '<small class="co-by">In the bank statement · waiting for your approval</small>'
-        : badge('pending') + `<small class="co-by">${late ? 'Not in the bank yet' : 'Waiting for bank statement'}</small>`;
-      const act = n.status === 'confirmed' && n.bank_line_id ? `<a class="button small" href="/api/bank/lines/${n.bank_line_id}/statement.pdf" data-pv-title="Bank statement">Bank statement</a>`
-        : n.found_line ? `<button type="button" class="button small primary" data-action="navigate" data-page="bank">Approve in Bank statements</button>` : '';
-      items.push({when: n.created_at, row: [tenantCell(who), homeCell(n.contract_id), `<strong>${e(n.invoice_number)}</strong><small>${e(BILL(n.invoice_period))} · ${e(how)}</small>`,
-        `<span class="amount">${money(n.amount_cents)}</span>`, dateLabel(n.created_at), state_ + (n.note ? `<small>${e(n.note)}</small>` : ''), act]});
+      if (!status || !inPeriod('payments', (n.invoice_period || n.paid_on) + '-01')) continue;
+      const inv = byId('invoices', n.invoice_id).id ? byId('invoices', n.invoice_id) : {id: n.invoice_id, number: n.invoice_number, period: n.invoice_period, contract_id: n.contract_id};
+      const late = Math.floor((Date.now() - new Date(n.paid_on + 'T12:00:00')) / 86400000) > 7;
+      out.push({inv, cid: n.contract_id, who: n.tenant_id ? byId('tenants', n.tenant_id) : tenantFor(n.contract_id), status, amount: n.amount_cents, when: n.created_at,
+        how: `Said paid · ${n.iban ? 'from ' + n.iban.replace(/(.{4})/g, '$1 ').trim() : 'no account given'}`, extra: n.note,
+        note: n.status === 'confirmed' ? 'Confirmed by bank' : n.found_line ? 'In the bank statement · waiting for your approval' : late ? 'Not in the bank yet' : 'Waiting for bank statement',
+        act: n.status === 'confirmed' && n.bank_line_id ? `<a class="button small" href="/api/bank/lines/${n.bank_line_id}/statement.pdf" data-pv-title="Bank statement">Bank statement</a>`
+          : n.found_line ? `<button type="button" class="button small primary" data-action="navigate" data-page="bank">Approve in Bank statements</button>` : ''});
     }
-    return items.sort((a, b) => String(b.when).localeCompare(String(a.when))).map(x => x.row);
+    return out;
+  }
+  const shared = cid => !!(window.coNames && coNames(cid).length);
+  function submissions() {
+    const f = state.filter || 'All', want = s => f === 'All' || s === f.toLowerCase();
+    const all = entries(), rowsOut = [], groups = new Map();
+    for (const x of all) {
+      if (shared(x.cid)) { const k = x.inv.id; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); continue; }
+      if (!want(x.status)) continue;
+      rowsOut.push({when: x.when, row: [tenantCell(x.who), homeCell(x.cid), `<strong>${e(x.inv.number)}</strong><small>${e(BILL(x.inv.period))} · ${e(x.how)}</small>`,
+        `<span class="amount">${money(x.amount)}</span>`, dateLabel(x.when), badge(x.status) + (x.note ? `<small class="co-by">${e(x.note)}</small>` : '') + (x.extra ? `<small>${e(x.extra)}</small>` : ''), x.act]});
+    }
+    // a shared home: one row per bill with each person, their own part and what they did
+    for (const list of groups.values()) {
+      const inv = list[0].inv, full = byId('invoices', inv.id), cid = list[0].cid, total = full.id ? full.total_cents : list.reduce((s, x) => s + x.amount, 0);
+      const open = full.id ? Math.max(0, balance(full)) : null, parts = full.id && window.sharesOf ? sharesOf(full) : null;
+      const done = open !== null ? open <= 0 : list.every(x => x.status === 'approved');
+      if (!want(done ? 'approved' : list.some(x => x.status === 'pending') ? 'pending' : list[0].status)) continue;   // one row, in one tab: Pending until every part is paid
+      const people = window.peopleOf ? peopleOf(cid).map(p => p.tenant) : [...new Map(list.map(x => [x.who.id, x.who])).values()];
+      const lines = people.map(t => {
+        const mine = list.filter(x => x.who.id === t.id).sort((a, b) => String(b.when).localeCompare(String(a.when))), last = mine[0];
+        const part = parts && parts.find(p => p.tenant.id === t.id), paid = part ? part.paid >= part.share && part.share > 0 : last && last.status === 'approved';
+        const chip = paid ? badge('Paid', 'green') : last ? badge(last.status === 'pending' ? 'Pending' : last.status, last.status === 'pending' ? 'amber' : 'gray') : badge('Not reported', 'gray');
+        const sub = [part ? `${money(part.paid >= part.share ? part.share : part.paid)} of ${money(part.share)}` : last ? money(last.amount) : '', paid && last && last.note === 'Confirmed by bank' ? 'confirmed by bank' : last && !paid ? last.note.toLowerCase() : ''].filter(Boolean).join(' · ');
+        return `<div class="sub-person"><div><strong>${e(t.name)}</strong><small>${e(sub)}</small></div>${chip}</div>`;
+      }).join('');
+      const paidCount = parts ? parts.filter(p => p.share > 0 && p.paid >= p.share).length : list.filter(x => x.status === 'approved').length;
+      const acts = [...new Set(list.filter(x => x.act && (x.status === 'pending' || done)).map(x => x.act))].join('');
+      rowsOut.push({when: list.map(x => x.when).sort().pop(), row: [`<div class="sub-people">${lines}</div>`, homeCell(cid), `<strong>${e(inv.number)}</strong><small>${e(BILL(inv.period))} · shared bill</small>`,
+        `<span class="amount">${money(total)}</span><small>${open !== null ? `${money(total - open)} paid · ${money(open)} open` : ''}</small>`, dateLabel(list.map(x => x.when).sort().pop()),
+        badge(done ? 'approved' : 'pending') + `<small class="co-by">${done ? 'All parts paid' : `${paidCount} of ${people.length} paid`}</small>`, `<div class="actions">${acts}</div>`]});
+    }
+    return rowsOut.sort((a, b) => String(b.when).localeCompare(String(a.when))).map(x => x.row);
   }
   paymentsPage = () => {
     ensurePeriodInvoices('payments');
