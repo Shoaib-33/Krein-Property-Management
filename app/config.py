@@ -9,7 +9,8 @@ def load_local_env() -> None:
     """Load project-root .env values without overriding deployment environment.
     The test suite never reads .env, so tests can not send real email or use real API keys."""
     import sys
-    if os.path.basename(os.path.dirname(sys.argv[0] or '')) == 'unittest' or os.environ.get('HAVEN_SKIP_DOTENV') == '1':
+    # `python -m unittest` reports argv[0] as "python -m unittest"; a test runner script lives in a unittest folder
+    if 'unittest' in (sys.argv[0] or '') or 'unittest' in sys.modules and 'uvicorn' not in sys.modules or os.environ.get('HAVEN_SKIP_DOTENV') == '1':
         return
     env_file = Path(__file__).resolve().parent.parent / '.env'
     try:
