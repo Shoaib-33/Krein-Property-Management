@@ -221,19 +221,21 @@
   return {...d,invoices:(d.invoices||[]).filter(i=>keep(i.period)),payment_notices:(d.payment_notices||[]).filter(n=>keep(period(n.invoice_id))),payment_proofs:(d.payment_proofs||[]).filter(p=>keep(period(p.invoice_id)))};
  }
  function payFilter(d){
-  const years=[...new Set((d.invoices||[]).map(i=>String(i.period||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  const years=[...new Set([...(d.invoices||[]).map(i=>String(i.period||'').slice(0,4)),String(d.today||new Date().toLocaleDateString('en-CA')).slice(0,4)].filter(Boolean))].sort().reverse();
   if(!years.length)return '';
   const f=S.payPeriod||{y:'all',m:'all'},names=L(MONTHS_EN,MONTHS_NL);
   const opt=(v,l,cur)=>'<option value="'+v+'" '+(String(cur)===String(v)?'selected':'')+'>'+safe(l)+'</option>';
-  const shown=payShown(d).invoices.length;
+  const shown=payShown(d).invoices.length,now=String(d.today||new Date().toLocaleDateString('en-CA')),isNow=String(f.y)===now.slice(0,4)&&Number(f.m)===Number(now.slice(5,7));
   return '<div class="pay-filter"><span class="pay-filter-l">'+ic('calendar')+L('Show bills for','Facturen voor')+'</span>'
    +'<select data-pay="m" aria-label="'+L('Month','Maand')+'" '+(f.y==='all'?'disabled':'')+'>'+opt('all',L('All months','Alle maanden'),f.m)+names.map((n,i)=>opt(i+1,n,f.m)).join('')+'</select>'
    +'<select data-pay="y" aria-label="'+L('Year','Jaar')+'">'+opt('all',L('All years','Alle jaren'),f.y)+years.map(y=>opt(y,y,f.y)).join('')+'</select>'
+   +'<button type="button" class="button small '+(isNow?'active':'')+'" data-pay="now" '+(isNow?'aria-pressed="true"':'')+'>'+L('This month','Deze maand')+'</button>'
    +(f.y!=='all'?'<button type="button" class="button small" data-pay="clear">'+L('Show all','Alles tonen')+'</button>':'')
    +'<small>'+shown+' '+(shown===1?L('bill','factuur'):L('bills','facturen'))+'</small></div>';
  }
  document.addEventListener('change',ev=>{const s=ev.target.closest&&ev.target.closest('select[data-pay]');if(!s)return;const f={...(S.payPeriod||{y:'all',m:'all'})};f[s.dataset.pay]=s.value==='all'?'all':Number(s.value);if(f.y==='all')f.m='all';S.payPeriod=f;shell();});
- document.addEventListener('click',ev=>{if(ev.target.closest&&ev.target.closest('[data-pay="clear"]')){S.payPeriod={y:'all',m:'all'};shell();}});
+ document.addEventListener('click',ev=>{if(!ev.target.closest)return;if(ev.target.closest('[data-pay="clear"]')){S.payPeriod={y:'all',m:'all'};shell();}
+  if(ev.target.closest('[data-pay="now"]')){const t=String((S.data&&S.data.today)||new Date().toLocaleDateString('en-CA'));S.payPeriod={y:Number(t.slice(0,4)),m:Number(t.slice(5,7))};shell();}});
  function noticesBox(d){
   const list=d.payment_notices||[];if(!list.length)return '';
   // a shared home shows both people's reports: who reported it, for which bill, from which account

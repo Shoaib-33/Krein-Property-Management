@@ -18,3 +18,4 @@
 .pay-filter-l{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px;color:#24453a}
 .pay-filter select{padding:6px 10px;border:1px solid #cfdcd6;border-radius:8px;background:#fff;font:inherit;font-size:13px}
 .pay-filter small{margin-left:auto;color:#6b7f77;font-size:12px}
+.pay-filter .button.active{background:#e6f3ec;border-color:#9cc9b2;color:#17573d}
