@@ -210,12 +210,36 @@
   if(n)return '<span class="badge blue" title="'+safe(L('Confirmed automatically when the payment shows in the bank statement.','Wordt automatisch bevestigd zodra de betaling op het bankafschrift staat.'))+'">'+L('You said paid on ','U meldde betaald op ')+day(n.paid_on)+'</span><button class="button small" data-do="paid-withdraw" data-id="'+n.id+'">'+L('Undo','Ongedaan maken')+'</button>';
   return '<button class="button small primary" data-do="paid" data-id="'+i.id+'">'+L('I have paid','Ik heb betaald')+'</button>';
  }
+ // the month / year filter on Rent and payments: everything follows the month the bill is for
+ const MONTHS_EN=['January','February','March','April','May','June','July','August','September','October','November','December'],MONTHS_NL=['januari','februari','maart','april','mei','juni','juli','augustus','september','oktober','november','december'];
+ function payKey(d){const f=S.payPeriod||{y:'all',m:'all'};return f.y==='all'?'':f.m==='all'?String(f.y):f.y+'-'+String(f.m).padStart(2,'0');}
+ function payShown(d){
+  const k=payKey(d);if(!k)return d;
+  const period=id=>((d.invoices||[]).find(i=>i.id===id)||{}).period||'';
+  const keep=p=>String(p||'').startsWith(k);
+  return {...d,invoices:(d.invoices||[]).filter(i=>keep(i.period)),payment_notices:(d.payment_notices||[]).filter(n=>keep(period(n.invoice_id))),payment_proofs:(d.payment_proofs||[]).filter(p=>keep(period(p.invoice_id)))};
+ }
+ function payFilter(d){
+  const years=[...new Set((d.invoices||[]).map(i=>String(i.period||'').slice(0,4)).filter(Boolean))].sort().reverse();
+  if(!years.length)return '';
+  const f=S.payPeriod||{y:'all',m:'all'},names=L(MONTHS_EN,MONTHS_NL);
+  const opt=(v,l,cur)=>'<option value="'+v+'" '+(String(cur)===String(v)?'selected':'')+'>'+safe(l)+'</option>';
+  const shown=payShown(d).invoices.length;
+  return '<div class="pay-filter"><span class="pay-filter-l">'+ic('calendar')+L('Show bills for','Facturen voor')+'</span>'
+   +'<select data-pay="m" aria-label="'+L('Month','Maand')+'" '+(f.y==='all'?'disabled':'')+'>'+opt('all',L('All months','Alle maanden'),f.m)+names.map((n,i)=>opt(i+1,n,f.m)).join('')+'</select>'
+   +'<select data-pay="y" aria-label="'+L('Year','Jaar')+'">'+opt('all',L('All years','Alle jaren'),f.y)+years.map(y=>opt(y,y,f.y)).join('')+'</select>'
+   +(f.y!=='all'?'<button type="button" class="button small" data-pay="clear">'+L('Show all','Alles tonen')+'</button>':'')
+   +'<small>'+shown+' '+(shown===1?L('bill','factuur'):L('bills','facturen'))+'</small></div>';
+ }
+ document.addEventListener('change',ev=>{const s=ev.target.closest&&ev.target.closest('select[data-pay]');if(!s)return;const f={...(S.payPeriod||{y:'all',m:'all'})};f[s.dataset.pay]=s.value==='all'?'all':Number(s.value);if(f.y==='all')f.m='all';S.payPeriod=f;shell();});
+ document.addEventListener('click',ev=>{if(ev.target.closest&&ev.target.closest('[data-pay="clear"]')){S.payPeriod={y:'all',m:'all'};shell();}});
  function noticesBox(d){
   const list=d.payment_notices||[];if(!list.length)return '';
   // a shared home shows both people's reports: who reported it, for which bill, from which account
   const mine=new Set((d.accounts||[]).map(a=>a.id)),shared=list.some(n=>n.tenant_id&&!mine.has(n.tenant_id))||(current(d).people||[]).length>1;
   const month=p=>p?new Intl.DateTimeFormat(window.havenLang==='nl'?'nl-NL':'en-GB',{month:'long',year:'numeric'}).format(new Date(+p.slice(0,4),+p.slice(5,7)-1,15)):'';
-  const who=n=>!n.tenant_id||mine.has(n.tenant_id)?'<strong>'+L('You','U')+'</strong>':safe(n.reporter||L('Your co-tenant','Uw medehuurder'));
+  const others=((current(d)||{}).people||[]).filter(p=>!p.me);
+  const who=n=>!n.tenant_id||mine.has(n.tenant_id)?'<strong>'+L('You','U')+'</strong>':safe(n.reporter||(others.find(p=>p.tenant_id===n.tenant_id)||(others.length===1?others[0]:{})).name||L('Your co-tenant','Uw medehuurder'));
   return box(shared?L('Payments reported in your home','Gemelde betalingen voor uw woning'):L('Payments you reported','Door u gemelde betalingen'),
    L('After you tell us you paid, the payment is confirmed as soon as it shows in the bank statement.','Nadat u een betaling meldt, wordt die bevestigd zodra hij op het bankafschrift staat.')+(shared?' '+L('You and your co-tenant each report your own part.','U en uw medehuurder melden ieder het eigen deel.'):''),
    table([L('Invoice','Factuur'),...(shared?[L('Reported by','Gemeld door')]:[]),L('From account','Vanaf rekening'),L('Amount','Bedrag'),L('Paid on','Betaald op'),L('Status','Status')],list.map(n=>{const inv=(d.invoices.find(i=>i.id===n.invoice_id)||{});
@@ -230,7 +254,7 @@
  }
  function tenantBody(d){
   if(S.page==='home')return tenantDashboard(d);
-  if(S.page==='payments')return tenantAlerts(d)+'<div class="page-heading"><div><div class="eyebrow">YOUR ACCOUNT</div><h1>Rent and payments</h1><p class="subtitle">Invoices, outstanding amounts and receipt reviews.</p></div><button class="button" data-do="request">Ask about payment</button></div><div class="notice">'+L('Pay by bank transfer and put the invoice number (for example HVN-1-202611-0001) in the description. Payments from a bank account saved below are recognised automatically. You can still upload a receipt yourself if you want your manager to see it sooner.','Betaal per overboeking en zet het factuurnummer (bijvoorbeeld HVN-1-202611-0001) in de omschrijving. Betalingen vanaf een rekening die hieronder staat, worden automatisch herkend. U kunt ook zelf een betalingsbewijs uploaden als u wilt dat uw beheerder het eerder ziet.')+'</div>'+coNote(d)+scheduleCards(d)+bankBox(d)+box('Invoices','Each bill shows the rent, service advance, due date and amount outstanding.',table(['Invoice','Period','Total','Balance','Due',''],d.invoices.map(i=>[safe(i.number),safe(i.period),cash(i.total_cents),cash(i.balance_cents)+shareInfo(i),day(i.due_date),'<div class="actions"><a class="button small" href="/api/tenant/invoices/'+i.id+'/pdf">View PDF</a>'+(i.balance_cents>0?paidControls(d,i)+'<button class="button small" data-do="proof" data-id="'+i.id+'">Submit proof</button>':'')+'</div>'])),'','')+noticesBox(d)+box('Receipt history','Every submitted receipt and review.',table(['Invoice','Amount','Date','Status','Staff note'],d.payment_proofs.map(p=>[safe(d.invoices.find(i=>i.id===p.invoice_id)?.number),cash(p.amount_cents),day(p.paid_on),tag(p.status),safe(p.review_note||'Awaiting review')])));
+  if(S.page==='payments')return tenantAlerts(d)+'<div class="page-heading"><div><div class="eyebrow">YOUR ACCOUNT</div><h1>Rent and payments</h1><p class="subtitle">Invoices, outstanding amounts and receipt reviews.</p></div><button class="button" data-do="request">Ask about payment</button></div><div class="notice">'+L('Pay by bank transfer and put the invoice number (for example HVN-1-202611-0001) in the description. Payments from a bank account saved below are recognised automatically. You can still upload a receipt yourself if you want your manager to see it sooner.','Betaal per overboeking en zet het factuurnummer (bijvoorbeeld HVN-1-202611-0001) in de omschrijving. Betalingen vanaf een rekening die hieronder staat, worden automatisch herkend. U kunt ook zelf een betalingsbewijs uploaden als u wilt dat uw beheerder het eerder ziet.')+'</div>'+coNote(d)+scheduleCards(d)+bankBox(d)+payFilter(d)+box('Invoices','Each bill shows the rent, service advance, due date and amount outstanding.',table(['Invoice','Period','Total','Balance','Due',''],payShown(d).invoices.map(i=>[safe(i.number),safe(i.period),cash(i.total_cents),cash(i.balance_cents)+shareInfo(i),day(i.due_date),'<div class="actions"><a class="button small" href="/api/tenant/invoices/'+i.id+'/pdf">View PDF</a>'+(i.balance_cents>0?paidControls(d,i)+'<button class="button small" data-do="proof" data-id="'+i.id+'">Submit proof</button>':'')+'</div>'])),'','')+noticesBox(payShown(d))+box('Receipt history','Every submitted receipt and review.',table(['Invoice','Amount','Date','Status','Staff note'],payShown(d).payment_proofs.map(p=>[safe(d.invoices.find(i=>i.id===p.invoice_id)?.number),cash(p.amount_cents),day(p.paid_on),tag(p.status),safe(p.review_note||'Awaiting review')])));
   if(S.page==='repairs')return repairsPage(d);
   if(S.page==='documents')return '<div class="page-heading"><div><div class="eyebrow">DOCUMENTS</div><h1>Shared with you</h1><p class="subtitle">Only documents your property manager made available.</p></div></div>'+offersBox(d)+box('Tenancy documents','',table(['Document','Type','Shared',''],d.documents.map(x=>[safe(x.name),safe(x.kind),day(x.shared_at),'<a class="button small" href="/api/tenant/documents/'+x.id+'/file">View</a>'])));
   if(S.page==='messages')return messagesPage(d);

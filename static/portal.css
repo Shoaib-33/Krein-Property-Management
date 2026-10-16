@@ -14,3 +14,7 @@
 .rp-done strong{display:flex;align-items:center;gap:6px;color:#1d6b4f;font-size:13px}
 .rp-done p{margin:6px 0 8px;font-size:13px}
 .rp-photo img{display:block;max-width:220px;max-height:160px;border-radius:8px;border:1px solid #cfe6d8;margin:6px 0 8px;object-fit:cover}
+.pay-filter{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:0 0 14px;padding:10px 14px;background:#fff;border:1px solid #dfe9e4;border-radius:12px}
+.pay-filter-l{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px;color:#24453a}
+.pay-filter select{padding:6px 10px;border:1px solid #cfdcd6;border-radius:8px;background:#fff;font:inherit;font-size:13px}
+.pay-filter small{margin-left:auto;color:#6b7f77;font-size:12px}

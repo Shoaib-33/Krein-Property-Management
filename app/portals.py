@@ -191,7 +191,7 @@ def tenant_data(user=Depends(current_user)):
             own=[s for s in inv['shares'] if s['me']]
             inv['my_due_cents']=min(inv['balance_cents'],max(0,own[0]['share_cents']-own[0]['paid_cents'])) if own else inv['balance_cents']
         for c in contracts:
-            c['people']=[{'name':p['name'],'main':bool(p['main']),'me':p['tenant_id'] in mine} for p in people(conn,c['id'])]
+            c['people']=[{'tenant_id':p['tenant_id'],'name':p['name'],'main':bool(p['main']),'me':p['tenant_id'] in mine} for p in people(conn,c['id'])]
         result['payment_notices']=[dict(r) for r in conn.execute(f"SELECT id,contract_id,invoice_id,amount_cents,paid_on,iban,note,status,created_at,confirmed_at,tenant_id,(SELECT name FROM tenants WHERE id=payment_notices.tenant_id) reporter FROM payment_notices WHERE contract_id IN ({placeholders}) AND status<>'withdrawn' ORDER BY id DESC",ids)]
         result['payment_proofs']=[dict(r) for r in conn.execute(f'SELECT p.id,p.invoice_id,p.document_id,p.amount_cents,p.paid_on,p.method,p.reference,p.note,p.status,p.review_note,p.created_at FROM payment_proofs p JOIN invoices i ON i.id=p.invoice_id WHERE i.contract_id IN ({placeholders}) ORDER BY p.id DESC',ids)]
         result['documents']=[dict(r) for r in conn.execute(f'SELECT d.id,d.name,d.kind,d.size,d.mime,s.contract_id,s.shared_at FROM shared_documents s JOIN documents d ON d.id=s.document_id WHERE s.contract_id IN ({placeholders}) AND s.revoked=0 ORDER BY s.id DESC',ids)]
