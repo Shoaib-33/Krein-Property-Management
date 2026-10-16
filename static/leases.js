@@ -48,6 +48,7 @@
     modal('Send contract for signature', `<form id="ls-form" class="lf-form">${hasSig === false ? `<div class="notice"><span><strong>Your signature is not set up yet.</strong> The contract will go out without it and you sign when you approve. To put your signature on every contract as it is sent, add it in <a href="#settings" data-action="navigate" data-page="settings">Settings</a>.</span></div>` : hasSig ? `<p class="lf-ok">${icon('check')} Your signature will be placed on the contract when it is sent.</p>` : ''}<p class="modal-note">Step 1 of 2. Haven fills the contract from your template. Next you can read it and edit the wording for this tenant, then send it to their portal.</p>
       <div class="form-grid">${sel('tenant_id', 'Tenant', tenants.map(t => [t.id, t.name + (hasLogin(t.id) ? '' : ' (no portal login yet)')]), d.tenant_id, 'wide')}
       ${sel('property_id', 'Property', rows('properties').map(p => [p.id, p.name + (activeContract(p.id) ? ' (occupied)' : '')]), d.property_id)}${sel('template_id', 'Contract template', templates.map(t => [t.id, t.name]), d.template_id)}
+      <div class="field wide lf-warn" id="ls-prop-warn" role="alert" hidden></div>
       ${inp('start_date', 'Tenancy starts', 'date', d.start_date || today(), 'required')}${inp('end_date', 'Ends (leave empty if open-ended)', 'date', d.end_date)}
       ${inp('basic_rent', 'Basic rent per month (€)', 'number', d.basic_rent, 'required step="0.01" min="0"')}${inp('service_charge', 'Service-charge advance (€)', 'number', d.service_charge ?? '0', 'step="0.01" min="0"')}${inp('deposit', 'Deposit (€)', 'number', d.deposit ?? '0', 'step="0.01" min="0"')}</div>
       ${coSection(d, tenants)}
@@ -55,6 +56,7 @@
       <div class="form-grid"><div class="field"><label for="ls-c1">Your own question (optional)</label><input id="ls-c1" name="custom1" type="text" maxlength="80" value="${e(d.custom1 || '')}" placeholder="e.g. Licence plate number"></div><div class="field"><label for="ls-c2">Another question (optional)</label><input id="ls-c2" name="custom2" type="text" maxlength="80" value="${e(d.custom2 || '')}"></div></div>
       <p class="form-error" id="ls-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="submit" class="button primary">Next: read and edit the contract</button></div></form>`);
     coRefresh(document.getElementById('ls-form'));
+    showClash(document.getElementById('ls-form'));
   }
   // co-tenants (a partner or spouse) sign the same contract in their own portal; the household may split the rent
   function coSection(d, tenants) {
@@ -63,6 +65,25 @@
       <p class="modal-note">The tenant's partner is ticked already. Each person signs in their own portal; the contract counts as signed when everyone has signed. All of them are liable for the full rent.</p>
       ${coPicker(main, chosen, d.split_mode ?? '', d.co_shares || {})}</details>`;
   }
+  // the chosen unit is already rented (or out for signature) in those dates: say so next to the property, before sending
+  function unitClash(f) {
+    const prop = Number(val(f, 'property_id')), start = val(f, 'start_date') || today(), end = val(f, 'end_date') || '9999-12-31';
+    const name = (rows('properties').find(p => p.id === prop) || {}).name || 'This unit';
+    const c = rows('contracts').find(c => c.property_id === prop && ['active', 'notice given', 'pending signature'].includes(c.status) && c.start_date <= end && (!c.end_date || c.end_date >= start));
+    if (c) return `<strong>${e(name)} is already rented</strong> to ${e(tenantFor(c.id).name)} ${c.end_date ? `until ${e(dateLabel(c.end_date))}. Choose another property, or a start date after ${e(dateLabel(c.end_date))}.` : 'with no end date. Choose another property, or record the end of that tenancy first.'}`;
+    const o = rows('lease_offers').find(o => o.property_id === prop && ['sent', 'signed', 'returned'].includes(o.status) && o.start_date <= end && (!o.end_date || o.end_date >= start));
+    if (o) return `<strong>${e(name)} already has a contract out for signature</strong> (to ${e(o.tenant_name)}, from ${e(dateLabel(o.start_date))}). Withdraw that one first, or choose another property.`;
+    return '';
+  }
+  function showClash(f) {
+    const box = document.getElementById('ls-prop-warn'), msg = unitClash(f), sel = f.elements.property_id;
+    if (!box) return msg;
+    box.innerHTML = msg ? `${icon('bell')}<span>${msg}</span>` : '';
+    box.hidden = !msg;
+    if (sel) sel.classList.toggle('bad', !!msg);
+    return msg;
+  }
+  document.addEventListener('change', ev => { const f = ev.target.form; if (f && f.id === 'ls-form' && ['property_id', 'start_date', 'end_date'].includes(ev.target.name)) showClash(f); });
   function collectDraft(f) {
     const d = {tenant_id: Number(val(f, 'tenant_id')), property_id: Number(val(f, 'property_id')), template_id: Number(val(f, 'template_id')), start_date: val(f, 'start_date'), end_date: val(f, 'end_date') || null,
       basic_rent: val(f, 'basic_rent'), service_charge: val(f, 'service_charge') || '0', deposit: val(f, 'deposit') || '0', custom1: val(f, 'custom1').trim(), custom2: val(f, 'custom2').trim(), asks: {}};
@@ -105,7 +126,14 @@
   document.addEventListener('submit', async ev => {
     const f = ev.target;
     if (f.id === 'ls-form') {
-      ev.preventDefault(); sendDraft = collectDraft(f);
+      ev.preventDefault();
+      if (showClash(f)) {   // an occupied unit: stop here and show why, next to the property
+        const box = document.getElementById('ls-prop-warn');
+        box.scrollIntoView({block: 'center', behavior: 'smooth'}); f.elements.property_id.focus();
+        box.classList.remove('shake'); void box.offsetWidth; box.classList.add('shake');
+        return;
+      }
+      sendDraft = collectDraft(f);
       const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
       await showEditStep(sendDraft); btn.disabled = false;
     }
