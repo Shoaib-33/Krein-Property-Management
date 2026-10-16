@@ -243,6 +243,24 @@ class CoTenantTests(unittest.TestCase):
         self.assertEqual(len(listed['emails']), 2)
         self.assertEqual(len(listed['people']), 2)
 
+    def test_only_approval_notifies_and_each_person_hears_whose_part_it_was(self):
+        tid, partner = self.add_partner()
+        inv = self.oldest_open(partner)
+        half = inv['balance_cents'] // 2
+        titles = lambda c: [n['title'] for n in c.get('/api/tenant/data').json()['notifications']]
+        r = self.finance.post('/api/bank/import', data={'company_id': '1', 'mode': 'review'}, files={'file': ('s.xml', camt([(f'{half / 100:.2f}', 'L BAKKER', PARTNER_IBAN, 'huur', 'P1')]), 'text/xml')})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertNotIn('Payment approved', titles(partner))   # found in the statement, not approved yet: nobody is told
+        self.assertNotIn('Payment approved for your home', titles(self.main))
+        line = next(l for l in self.finance.get('/api/bank/lines?company_id=1&status=check').json()['items'] if l['amount_cents'] == half)
+        self.assertEqual(self.finance.post(f"/api/bank/lines/{line['id']}/approve", json={}).status_code, 200)
+        mine = partner.get('/api/tenant/data').json()['notifications']
+        self.assertIn('Payment approved', [n['title'] for n in mine])
+        other = next(n for n in self.main.get('/api/tenant/data').json()['notifications'] if n['title'] == 'Payment approved for your home')
+        self.assertIn('Lucas Bakker', other['body'])
+        self.assertIn('Your own part still open', other['body'])
+        self.assertNotIn('Payment approved', titles(self.main))   # the main tenant is not told HER payment was approved
+
     def test_portal_access_is_refused_to_people_not_on_the_contract(self):
         tid, partner = self.add_partner()
         other = self.manager.get('/api/data?company_id=1').json()

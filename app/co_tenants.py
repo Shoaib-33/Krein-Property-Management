@@ -270,3 +270,33 @@ def unlink_partner(tenant_id: int, user=Depends(current_user)):
         conn.execute('UPDATE tenants SET co_of=NULL WHERE id=?', (tenant_id,))
         audit(conn, user['id'], t['company_id'], 'partner_unlinked', 'tenant', tenant_id, {'was_co_of': t['co_of']})
     return {'ok': True}
+
+
+def notify_payment(conn, invoice_id, payer_tenant_id, amount_cents, how):
+    """An approved payment (bank statement approved, or receipt approved): the person who paid hears it is approved;
+    on a shared home the others hear whose part it was and what is still open for them."""
+    from .main import invoice_balance
+    from .portal_access import notify, notify_tenant
+    inv = dict(conn.execute('SELECT id,number,company_id,contract_id FROM invoices WHERE id=?', (invoice_id,)).fetchone())
+    persons = people(conn, inv['contract_id'])
+    eur = lambda c: f'EUR {c / 100:,.2f}'
+    if len(persons) < 2:
+        notify_tenant(conn, inv['contract_id'], 'Payment approved', f'Your payment of {eur(amount_cents)} for invoice {inv["number"]} was approved ({how}). Thank you.', 'payments')
+        return
+    open_ = invoice_balance(conn, invoice_id)
+    shares = {s['tenant_id']: s for s in invoice_shares(conn, inv)}
+    payer = next((p for p in persons if p['tenant_id'] == payer_tenant_id), None)
+    for p in persons:
+        users = [r[0] for r in conn.execute('SELECT user_id FROM portal_accounts WHERE tenant_id=? AND company_id=? AND enabled=1', (p['tenant_id'], inv['company_id']))]
+        if not users:
+            continue
+        if payer and p['tenant_id'] == payer['tenant_id']:
+            title, body = 'Payment approved', f'Your payment of {eur(amount_cents)} for invoice {inv["number"]} was approved ({how}). Thank you.'
+        else:
+            own = shares.get(p['tenant_id'])
+            left = max(0, own['share_cents'] - own['paid_cents']) if own else open_
+            who = payer['name'] if payer else 'A payment'
+            title = 'Payment approved for your home'
+            body = (f'{who}{"’s part" if payer else ""} of {eur(amount_cents)} for invoice {inv["number"]} was approved. '
+                    + ('The bill is now fully paid.' if open_ <= 0 else f'Your own part still open: {eur(left)}.' if left > 0 else 'Your own part is paid.'))
+        notify(conn, inv['company_id'], users, title, body, 'payments')

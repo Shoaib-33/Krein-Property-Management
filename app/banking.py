@@ -347,7 +347,6 @@ def book(conn, company_id, line_id, allocations, user_id, tenant_id, reason):
     approved with it, and the tenant's "I have paid" notice for the invoice is marked confirmed by the bank."""
     line = dict(conn.execute('SELECT * FROM bank_lines WHERE id=?', (line_id,)).fetchone())
     from .main import insert
-    from .portal_access import notify_tenant
     who = 'Landlord bank' if line['owner_id'] else 'Bank'
     for invoice, amount in allocations:
         if amount <= 0:
@@ -368,7 +367,8 @@ def book(conn, company_id, line_id, allocations, user_id, tenant_id, reason):
             if n:
                 conn.execute("UPDATE payment_notices SET status='confirmed',bank_line_id=?,confirmed_at=? WHERE id=?", (line_id, now(), n[0]))
         number = invoice.get('number') or conn.execute('SELECT number FROM invoices WHERE id=?', (invoice['id'],)).fetchone()[0]
-        notify_tenant(conn, invoice['contract_id'], 'Payment received', f'We received EUR {amount / 100:,.2f} for invoice {number}. Thank you.', 'payments')
+        from .co_tenants import notify_payment   # only now (booked = approved): the payer, and on a shared home whose part it was
+        notify_payment(conn, invoice['id'], payer, amount, 'confirmed by the bank statement')
     first = allocations[0][0]['id'] if allocations else None
     conn.execute("UPDATE bank_lines SET status='booked',tenant_id=?,invoice_id=?,reason=?,decided_by=?,decided_at=? WHERE id=?", (tenant_id, first, reason, user_id, now(), line_id))
     if tenant_id and line['iban']:

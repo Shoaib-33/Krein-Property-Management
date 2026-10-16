@@ -244,7 +244,7 @@ class BankingTests(unittest.TestCase):
         self.assertEqual((r['booked'], r['to_approve']), (0, 2), r)
         self.assertEqual(self.balance(first['id']), first['balance_cents'])          # nothing booked
         with db.connect() as conn:
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM notifications WHERE title='Payment received'").fetchone()[0], 0)   # nobody told
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM notifications WHERE title='Payment approved'").fetchone()[0], 0)   # nobody told
         listing = self.finance.get('/api/bank/lines?company_id=1&status=check').json()
         self.assertEqual((listing['mode'], listing['to_approve']), ('review', 2))
         line = next(l for l in listing['items'] if l['name'] == 'PAYER ONE')
@@ -259,7 +259,7 @@ class BankingTests(unittest.TestCase):
         self.assertEqual(self.finance.post(f"/api/bank/lines/{line['id']}/approve").status_code, 200)
         self.assertEqual(self.balance(first['id']), 0)
         with db.connect() as conn:
-            self.assertEqual(conn.execute("SELECT COUNT(*) FROM notifications WHERE title='Payment received'").fetchone()[0] >= 1, True)
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM notifications WHERE title='Payment approved'").fetchone()[0] >= 1, True)
         done = self.finance.post('/api/bank/approve-all', json={'company_id': 1}).json()
         self.assertEqual(done, {'approved': 1, 'skipped': 0})
         self.assertEqual(self.balance(second['id']), 0)

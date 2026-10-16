@@ -1332,7 +1332,11 @@ def review_proof(proof_id: int, data: dict, user=Depends(current_user)):
         audit(conn, user['id'], proof['company_id'], decision, 'payment_proof', proof_id, {'note': note, 'amount_cents': proof['amount_cents']})
         from .portal_access import notify_tenant
         contract_id = conn.execute('SELECT contract_id FROM invoices WHERE id=?', (proof['invoice_id'],)).fetchone()[0]
-        notify_tenant(conn, contract_id, 'Payment ' + decision, note, 'payments')
+        if decision == 'approved':
+            from .co_tenants import notify_payment, tenant_of_user
+            notify_payment(conn, proof['invoice_id'], tenant_of_user(conn, proof['submitted_by'], contract_id) if proof['submitted_by'] else None, proof['amount_cents'], 'receipt checked' + (f': {note}' if note else ''))
+        else:
+            notify_tenant(conn, contract_id, 'Payment ' + decision, note, 'payments')
     return {'ok': True}
 
 
