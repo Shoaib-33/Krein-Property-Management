@@ -133,6 +133,13 @@ class CoTenantTests(unittest.TestCase):
             states = dict(conn.execute('SELECT tenant_id,status FROM payment_notices WHERE invoice_id=?', (inv['id'],)).fetchall())
         self.assertEqual(states[tid], 'confirmed')
         self.assertEqual(sorted(states.values()), ['confirmed', 'waiting'])
+        # staff see who sent each notice; the main tenant's payment imported with "Review first" is found but waits for approval
+        self.finance.post('/api/bank/import', data={'company_id': '1', 'mode': 'review'}, files={'file': ('s2.xml', camt([(f'{rest / 100:.2f}', 'E JANSEN', OTHER_IBAN, f"Huur {inv['number']}", 'P9')]), 'text/xml')})
+        notices = {n['tenant_id']: n for n in self.manager.get('/api/data?company_id=1').json()['payment_notices'] if n['invoice_id'] == inv['id']}
+        self.assertEqual(notices[tid]['status'], 'confirmed')
+        main_notice = next(n for t, n in notices.items() if t != tid)
+        self.assertEqual(main_notice['status'], 'waiting')
+        self.assertTrue(main_notice['found_line'])
 
     def test_a_co_tenant_who_leaves_loses_access_and_the_main_tenant_can_be_swapped(self):
         tid, partner = self.add_partner()

@@ -62,7 +62,7 @@ def staff_extras(conn,user,company_id,role):
         result['bank_to_check']=conn.execute("SELECT COUNT(*) FROM bank_lines WHERE company_id=? AND owner_id IS NULL AND status IN ('suggested','unmatched')",(company_id,)).fetchone()[0]
     if role in ('admin','manager','finance'):
         from . import history
-        result['payment_notices']=[dict(r) for r in conn.execute("SELECT n.id,n.contract_id,n.invoice_id,n.amount_cents,n.paid_on,n.iban,n.note,n.status,n.bank_line_id,n.created_at,n.confirmed_at,i.number invoice_number,i.period invoice_period FROM payment_notices n JOIN invoices i ON i.id=n.invoice_id WHERE n.company_id=? AND (n.status='waiting' OR n.created_at>=?) ORDER BY n.id DESC",(company_id,history.cutoff()))]
+        result['payment_notices']=[dict(r) for r in conn.execute("SELECT n.id,n.contract_id,n.invoice_id,n.amount_cents,n.paid_on,n.iban,n.note,n.status,n.bank_line_id,n.created_at,n.confirmed_at,i.number invoice_number,i.period invoice_period,n.tenant_id,(SELECT l.id FROM bank_lines l WHERE l.invoice_id=n.invoice_id AND l.status='suggested' AND l.amount_cents=n.amount_cents ORDER BY l.id LIMIT 1) found_line FROM payment_notices n JOIN invoices i ON i.id=n.invoice_id WHERE n.company_id=? AND (n.status='waiting' OR n.created_at>=?) ORDER BY n.id DESC",(company_id,history.cutoff()))]
     result['owner_accounts']=[dict(r) for r in conn.execute('SELECT a.owner_id,a.user_id,a.enabled,u.name,u.email FROM owner_accounts a JOIN users u ON u.id=a.user_id WHERE a.company_id=?',(company_id,))]
     if role in ('admin','manager','finance'):
         result['owner_expenses']=[dict(r) for r in conn.execute('SELECT * FROM owner_expenses WHERE company_id=? ORDER BY incurred_on DESC,id DESC',(company_id,))]
