@@ -212,8 +212,15 @@
  }
  function noticesBox(d){
   const list=d.payment_notices||[];if(!list.length)return '';
-  return box(L('Payments you reported','Door u gemelde betalingen'),L('After you tell us you paid, the payment is confirmed as soon as it shows in the bank statement.','Nadat u een betaling meldt, wordt die bevestigd zodra hij op het bankafschrift staat.'),
-   table([L('Invoice','Factuur'),L('Amount','Bedrag'),L('Paid on','Betaald op'),L('Status','Status')],list.map(n=>[safe((d.invoices.find(i=>i.id===n.invoice_id)||{}).number||''),cash(n.amount_cents),day(n.paid_on),n.status==='confirmed'?'<span class="badge green">'+L('Confirmed by the bank','Bevestigd door de bank')+'</span>':'<span class="badge blue">'+L('Waiting for the bank statement','Wacht op het bankafschrift')+'</span>'])),'','');
+  // a shared home shows both people's reports: who reported it, for which bill, from which account
+  const mine=new Set((d.accounts||[]).map(a=>a.id)),shared=list.some(n=>n.tenant_id&&!mine.has(n.tenant_id))||(current(d).people||[]).length>1;
+  const month=p=>p?new Intl.DateTimeFormat(window.havenLang==='nl'?'nl-NL':'en-GB',{month:'long',year:'numeric'}).format(new Date(+p.slice(0,4),+p.slice(5,7)-1,15)):'';
+  const who=n=>!n.tenant_id||mine.has(n.tenant_id)?'<strong>'+L('You','U')+'</strong>':safe(n.reporter||L('Your co-tenant','Uw medehuurder'));
+  return box(shared?L('Payments reported in your home','Gemelde betalingen voor uw woning'):L('Payments you reported','Door u gemelde betalingen'),
+   L('After you tell us you paid, the payment is confirmed as soon as it shows in the bank statement.','Nadat u een betaling meldt, wordt die bevestigd zodra hij op het bankafschrift staat.')+(shared?' '+L('You and your co-tenant each report your own part.','U en uw medehuurder melden ieder het eigen deel.'):''),
+   table([L('Invoice','Factuur'),...(shared?[L('Reported by','Gemeld door')]:[]),L('From account','Vanaf rekening'),L('Amount','Bedrag'),L('Paid on','Betaald op'),L('Status','Status')],list.map(n=>{const inv=(d.invoices.find(i=>i.id===n.invoice_id)||{});
+    return [safe(inv.number||'')+'<small>'+safe(month(inv.period))+'</small>',...(shared?[who(n)]:[]),n.iban?safe(n.iban.replace(/(.{4})/g,'$1 ').trim()):'—',cash(n.amount_cents),day(n.paid_on),
+     n.status==='confirmed'?'<span class="badge green">'+L('Confirmed by the bank','Bevestigd door de bank')+'</span>'+(n.confirmed_at?'<small>'+day(n.confirmed_at)+'</small>':''):'<span class="badge blue">'+L('Waiting for the bank statement','Wacht op het bankafschrift')+'</span>'];})),'','');
  }
  function bankBox(d){
   const list=d.bank_accounts||[];
