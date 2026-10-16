@@ -95,6 +95,7 @@
   const payload = d => ({company_id: state.company, tenant_id: d.tenant_id, property_id: d.property_id, template_id: d.template_id, start_date: d.start_date, end_date: d.end_date, basic_rent: d.basic_rent, service_charge: d.service_charge, deposit: d.deposit, co_tenant_ids: d.co_tenant_ids || [], co_shares: d.co_shares || {}, split_mode: d.split_mode || ''});
   // Step 2: the contract as a document, set up like the PDF, edited in place. Open details are inputs inside the text.
   let doc = null, sigInfo = null;
+  const signersOf = d => [d.tenant_id, ...(d.co_tenant_ids || [])].map(id => byId('tenants', Number(id)).name).filter(Boolean);
   async function showEditStep(d) {
     let r;
     try { r = await api('/api/lease-offers/preview', {method: 'POST', body: payload(d)}); } catch (err) { document.getElementById('ls-error').textContent = err.message; return; }
@@ -102,7 +103,7 @@
     const asks = [...Object.entries(d.asks).map(([key, v]) => ({label: (ASK.find(a => a[0] === key) || [key, key])[1], required: v.required})), ...[d.custom1, d.custom2].filter(Boolean).map(label => ({label, required: true}))];
     modal('Read and edit the contract', `<div class="de-note">Step 2 of 2. This is how the contract will look to the tenant. Click a pencil to change a sentence. The yellow boxes are details Haven does not know yet. Your template stays as it is.</div>
       <div class="de-wrap"><div id="de-host"></div></div>
-      <div class="de-bar"><span class="de-status" id="de-status"></span><p class="form-error" id="ls-error" role="alert"></p><button type="button" class="button" data-ls="back">Back</button><button type="button" class="button primary" id="ls-go">Send to tenant</button></div>`);
+      <div class="de-bar"><span class="de-status" id="de-status"></span><p class="form-error" id="ls-error" role="alert"></p><button type="button" class="button" data-ls="back">Back</button><button type="button" class="button primary" id="ls-go">${e(signersOf(d).length > 1 ? `Send to ${signersOf(d).join(" and ")}` : "Send to tenant")}</button></div>`);
     const dlg = document.getElementById('modal');
     dlg.classList.add('doc-modal'); dlg.addEventListener('close', () => { dlg.classList.remove('doc-modal'); doc = null; }, {once: true});
     const status = document.getElementById('de-status'), go = document.getElementById('ls-go');
@@ -119,7 +120,7 @@
       const err = document.getElementById('ls-error'); go.disabled = true; err.textContent = '';
       try {
         await api('/api/lease-offers', {method: 'POST', body: {...payload(sendDraft), body: doc.text(), form_fields: formFieldsOf(sendDraft)}});
-        sendDraft = null; closeModal(); await refresh(); toast('Sent. The tenant can now read, fill in and sign it in their portal.');
+        const who = signersOf(sendDraft); sendDraft = null; closeModal(); await refresh(); toast(who.length > 1 ? `One contract sent to ${who.join(' and ')}. Each signs it in their own portal; it is complete when all have signed.` : 'Sent. The tenant can now read, fill in and sign it in their portal.');
       } catch (ex) { err.textContent = ex.message; check(); }
     });
   }
