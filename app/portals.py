@@ -152,7 +152,7 @@ def tenant_data(user=Depends(current_user)):
         accounts=[dict(r) for r in conn.execute('SELECT t.*,a.user_id FROM portal_accounts a JOIN tenants t ON t.id=a.tenant_id WHERE a.user_id=? AND a.enabled=1',(user['id'],))]
         if not accounts:
             raise HTTPException(403,'Tenant access is not enabled for this account.')
-        contracts=[dict(r) for r in conn.execute('SELECT c.*,p.name property_name,p.address,p.city,p.postcode,p.area,p.rooms,p.energy_label,co.name company_name,co.payment_instructions FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id AND a.company_id=c.company_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE a.user_id=? AND a.enabled=1 ORDER BY c.start_date DESC',(user['id'],))]
+        contracts=[dict(r) for r in conn.execute('SELECT c.*,p.name property_name,p.address,p.city,p.postcode,p.area,p.rooms,p.energy_label,co.name company_name,co.payment_instructions FROM contracts c JOIN contract_people cp ON cp.contract_id=c.id JOIN portal_accounts a ON a.tenant_id=cp.tenant_id AND a.company_id=c.company_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE a.user_id=? AND a.enabled=1 GROUP BY c.id ORDER BY c.start_date DESC',(user['id'],))]
         ids=[c['id'] for c in contracts]
         company_ids=sorted({a['company_id'] for a in accounts})
         from .main import video_limit
@@ -184,7 +184,15 @@ def tenant_data(user=Depends(current_user)):
             clause=' AND status="final"' if table=='inspections' else ' AND status<>"pending"' if table=='payment_plans' else ' AND released_at IS NOT NULL' if table=='invoices' else ' AND (invoice_id IS NULL OR invoice_id IN (SELECT id FROM invoices WHERE released_at IS NOT NULL))' if table=='ledger' else ''
             result[key]=[dict(r) for r in conn.execute(f'SELECT {columns} FROM {table} WHERE contract_id IN ({placeholders}){clause} ORDER BY id DESC',ids)]
         result['invoices']=[{**r,'balance_cents':invoice_balance(conn,r['id'])} for r in result['invoices']]
-        result['payment_notices']=[dict(r) for r in conn.execute(f"SELECT id,contract_id,invoice_id,amount_cents,paid_on,iban,note,status,created_at,confirmed_at FROM payment_notices WHERE contract_id IN ({placeholders}) AND status<>'withdrawn' ORDER BY id DESC",ids)]
+        from .co_tenants import invoice_shares, people
+        mine={a['id'] for a in accounts}
+        for inv in result['invoices']:
+            inv['shares']=[{**s,'me':s['tenant_id'] in mine} for s in invoice_shares(conn,inv)]
+            own=[s for s in inv['shares'] if s['me']]
+            inv['my_due_cents']=min(inv['balance_cents'],max(0,own[0]['share_cents']-own[0]['paid_cents'])) if own else inv['balance_cents']
+        for c in contracts:
+            c['people']=[{'name':p['name'],'main':bool(p['main']),'me':p['tenant_id'] in mine} for p in people(conn,c['id'])]
+        result['payment_notices']=[dict(r) for r in conn.execute(f"SELECT id,contract_id,invoice_id,amount_cents,paid_on,iban,note,status,created_at,confirmed_at,tenant_id FROM payment_notices WHERE contract_id IN ({placeholders}) AND status<>'withdrawn' ORDER BY id DESC",ids)]
         result['payment_proofs']=[dict(r) for r in conn.execute(f'SELECT p.id,p.invoice_id,p.document_id,p.amount_cents,p.paid_on,p.method,p.reference,p.note,p.status,p.review_note,p.created_at FROM payment_proofs p JOIN invoices i ON i.id=p.invoice_id WHERE i.contract_id IN ({placeholders}) ORDER BY p.id DESC',ids)]
         result['documents']=[dict(r) for r in conn.execute(f'SELECT d.id,d.name,d.kind,d.size,d.mime,s.contract_id,s.shared_at FROM shared_documents s JOIN documents d ON d.id=s.document_id WHERE s.contract_id IN ({placeholders}) AND s.revoked=0 ORDER BY s.id DESC',ids)]
         result['messages']=[dict(r) for r in conn.execute(f'SELECT p.id,p.contract_id,p.sender_id,p.subject,p.body,p.document_id,p.created_at,COALESCE(p.thread_id,p.id) thread_id,u.name sender_name FROM portal_messages p JOIN users u ON u.id=p.sender_id WHERE p.contract_id IN ({placeholders}) ORDER BY p.id DESC',ids)]
@@ -228,8 +236,8 @@ def tenant_document(document_id:int,download:int=0,user=Depends(current_user)):
         if not doc:
             raise HTTPException(404,'Document not found.')
         # Share scope is explicit; merely being linked to a tenancy never publishes an internal document.
-        shared=conn.execute('SELECT s.contract_id FROM shared_documents s JOIN contracts c ON c.id=s.contract_id JOIN portal_accounts a ON a.tenant_id=c.tenant_id AND a.company_id=c.company_id WHERE s.document_id=? AND s.revoked=0 AND a.user_id=? AND a.enabled=1',(document_id,user['id'])).fetchone()
-        own_proof=conn.execute('SELECT i.contract_id FROM payment_proofs p JOIN invoices i ON i.id=p.invoice_id JOIN contracts c ON c.id=i.contract_id JOIN portal_accounts a ON a.tenant_id=c.tenant_id AND a.company_id=c.company_id WHERE p.document_id=? AND a.user_id=? AND a.enabled=1',(document_id,user['id'])).fetchone()
+        shared=conn.execute('SELECT s.contract_id FROM shared_documents s JOIN contract_people c ON c.contract_id=s.contract_id JOIN portal_accounts a ON a.tenant_id=c.tenant_id AND a.company_id=c.company_id WHERE s.document_id=? AND s.revoked=0 AND a.user_id=? AND a.enabled=1',(document_id,user['id'])).fetchone()
+        own_proof=conn.execute('SELECT i.contract_id FROM payment_proofs p JOIN invoices i ON i.id=p.invoice_id JOIN contract_people c ON c.contract_id=i.contract_id JOIN portal_accounts a ON a.tenant_id=c.tenant_id AND a.company_id=c.company_id WHERE p.document_id=? AND a.user_id=? AND a.enabled=1',(document_id,user['id'])).fetchone()
         if not shared and not own_proof:
             raise HTTPException(404,'Document not found.')
         audit(conn,user['id'],doc['company_id'],'downloaded' if download else 'viewed','document',document_id,{})

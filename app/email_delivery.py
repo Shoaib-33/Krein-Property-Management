@@ -187,6 +187,11 @@ def _deliver_one(job, settings):
     message = EmailMessage()
     message['From'] = settings['sender']
     message['To'] = row['recipient']
+    with db.connect() as conn:   # co-tenants (medehuurders) get the same bill in copy
+        copies = sorted({r[0] for r in conn.execute('SELECT t.email FROM contract_tenants ct JOIN tenants t ON t.id=ct.tenant_id JOIN invoices i ON i.contract_id=ct.contract_id '
+                                                    "WHERE i.id=? AND ct.removed_at IS NULL AND t.archived_at IS NULL AND t.email LIKE '%@%'", (row['invoice_id'],)) if r[0].lower() != str(row['recipient']).lower()})
+    if copies:
+        message['Cc'] = ', '.join(copies)
     message['Subject'] = subject
     message.set_content(body)
     if row['kind'] == 'invoice_issued':

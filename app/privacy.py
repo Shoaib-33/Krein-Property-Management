@@ -94,12 +94,12 @@ def candidates(conn, today=None):
     from .main import invoice_balance
     out = []
     for t in conn.execute('SELECT * FROM tenants WHERE archived_at IS NOT NULL AND erased_at IS NULL'):
-        last = conn.execute('SELECT MAX(COALESCE(end_date,"9999-12-31")),COUNT(*) FROM contracts WHERE tenant_id=?', (t['id'],)).fetchone()
+        last = conn.execute('SELECT MAX(COALESCE(end_date,"9999-12-31")),COUNT(*) FROM contracts WHERE id IN (SELECT contract_id FROM contract_people WHERE tenant_id=?)', (t['id'],)).fetchone()
         if last[1] and last[0] >= limit:
             continue
         if not last[1] and (t['archived_at'] or '')[:10] >= limit:
             continue
-        owed = sum(invoice_balance(conn, r[0]) for r in conn.execute('SELECT i.id FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE c.tenant_id=?', (t['id'],)))
+        owed = sum(invoice_balance(conn, r[0]) for r in conn.execute('SELECT i.id FROM invoices i JOIN contract_people c ON c.contract_id=i.contract_id WHERE c.tenant_id=?', (t['id'],)))
         if owed > 0:
             continue
         out.append(dict(t))

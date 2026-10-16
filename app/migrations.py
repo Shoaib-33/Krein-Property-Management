@@ -543,6 +543,35 @@ CREATE TABLE contractor_offers (
 CREATE INDEX contractor_offers_contractor ON contractor_offers(contractor_id, status);
 '''
 
+# V34: co-tenants (medehuurders, e.g. spouses) on one contract, an optional split of the rent, and who paid each payment.
+# The contract's tenant stays locked, except for a recorded handover to a co-tenant who is already on the contract.
+V34 = '''
+CREATE TABLE contract_tenants (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), contract_id INTEGER NOT NULL REFERENCES contracts(id),
+ tenant_id INTEGER NOT NULL REFERENCES tenants(id), share_cents INTEGER, added_by INTEGER REFERENCES users(id), added_at TEXT NOT NULL,
+ removed_at TEXT, removed_by INTEGER REFERENCES users(id), removed_reason TEXT, UNIQUE(contract_id, tenant_id)
+);
+CREATE INDEX contract_tenants_tenant ON contract_tenants(tenant_id);
+CREATE VIEW contract_people AS
+ SELECT c.id contract_id, c.company_id, c.tenant_id, 1 main FROM contracts c
+ UNION ALL SELECT ct.contract_id, ct.company_id, ct.tenant_id, 0 FROM contract_tenants ct WHERE ct.removed_at IS NULL;
+ALTER TABLE contracts ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
+ALTER TABLE ledger ADD COLUMN payer_tenant_id INTEGER REFERENCES tenants(id);
+ALTER TABLE payment_notices ADD COLUMN tenant_id INTEGER REFERENCES tenants(id);
+UPDATE payment_notices SET tenant_id=(SELECT tenant_id FROM contracts WHERE id=payment_notices.contract_id);
+CREATE TABLE contract_handovers (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), contract_id INTEGER NOT NULL REFERENCES contracts(id),
+ from_tenant_id INTEGER NOT NULL REFERENCES tenants(id), to_tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL, applied INTEGER NOT NULL DEFAULT 0
+);
+DROP TRIGGER IF EXISTS contract_identity_locked;
+CREATE TRIGGER contract_identity_locked BEFORE UPDATE OF signed_on,company_id,property_id,tenant_id,start_date ON contracts
+WHEN NOT ((OLD.status='pending signature' AND NEW.status='active' AND NEW.company_id=OLD.company_id AND NEW.property_id=OLD.property_id AND NEW.tenant_id=OLD.tenant_id AND NEW.start_date=OLD.start_date AND NEW.end_date IS OLD.end_date)
+ OR (NEW.signed_on IS OLD.signed_on AND NEW.company_id=OLD.company_id AND NEW.property_id=OLD.property_id AND NEW.start_date=OLD.start_date
+     AND EXISTS (SELECT 1 FROM contract_handovers h WHERE h.contract_id=OLD.id AND h.from_tenant_id=OLD.tenant_id AND h.to_tenant_id=NEW.tenant_id AND h.applied=0)))
+BEGIN SELECT RAISE(ABORT,'Contract identity is locked'); END;
+'''
+
 
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
@@ -807,6 +836,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (33, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=34').fetchone():
+            statement = ''
+            for line in V34.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (34, now()))
         conn.commit()
     except Exception:
         conn.rollback()

@@ -25,8 +25,8 @@ def tenant_file(tenant_id: int, user=Depends(current_user)):
         role = role['role'] if role else ('admin' if user.get('global_admin') else '')
         scope = getattr(conn, 'scope', None)
         money = role in MONEY_ROLES
-        contracts = rows(conn, 'SELECT c.*,p.name property_name,p.address,p.city,p.postcode FROM contracts c JOIN properties p ON p.id=c.property_id WHERE c.tenant_id=? AND c.company_id=? ORDER BY c.start_date DESC',
-                         (tenant_id, tenant['company_id']))
+        contracts = rows(conn, 'SELECT c.*,p.name property_name,p.address,p.city,p.postcode,(c.tenant_id=?) is_main FROM contracts c JOIN properties p ON p.id=c.property_id WHERE c.id IN (SELECT contract_id FROM contract_people WHERE tenant_id=?) AND c.company_id=? ORDER BY c.start_date DESC',
+                         (tenant_id, tenant_id, tenant['company_id']))
         if scope is not None:   # a landlord: only his own tenancies of this tenant
             contracts = [c for c in contracts if c['id'] in scope.contracts]
         ids = [c['id'] for c in contracts] or [0]
@@ -36,6 +36,8 @@ def tenant_file(tenant_id: int, user=Depends(current_user)):
             current = [r for r in c['rent_history'] if r['effective_from'] <= local_today().isoformat()]
             c['rent'] = (current or c['rent_history'] or [{}])[-1]
             c['schedule'] = payment_schedule(conn, c) if c['status'] in ('active', 'notice given') else None
+            from .co_tenants import people
+            c['people'] = [{'tenant_id': p['tenant_id'], 'name': p['name'], 'main': bool(p['main']), 'share_cents': p['share_cents']} for p in people(conn, c['id'])]
             c['offer'] = (rows(conn, 'SELECT id,final_document_id,signed_at,signer_name FROM lease_offers WHERE contract_id=? ORDER BY id DESC LIMIT 1', (c['id'],)) or [None])[0]
         login = (rows(conn, 'SELECT u.email,a.enabled,a.created_at FROM portal_accounts a JOIN users u ON u.id=a.user_id WHERE a.tenant_id=? AND a.company_id=?', (tenant_id, tenant['company_id'])) or [None])[0]
         out = {
@@ -51,7 +53,7 @@ def tenant_file(tenant_id: int, user=Depends(current_user)):
         invoices = rows(conn, f'SELECT id,contract_id,number,period,due_date,total_cents,released_at,created_at FROM invoices WHERE contract_id IN ({marks}) ORDER BY due_date DESC,id DESC', ids)
         inv_ids = [i['id'] for i in invoices] or [0]
         imarks = ','.join('?' for _ in inv_ids)
-        ledger = rows(conn, f'''SELECT l.id,l.invoice_id,l.kind,l.amount_cents,l.created_at,l.note,l.proof_id,
+        ledger = rows(conn, f'''SELECT l.id,l.invoice_id,l.kind,l.amount_cents,l.created_at,l.note,l.proof_id,l.payer_tenant_id,(SELECT name FROM tenants WHERE id=l.payer_tenant_id) paid_by,
                 (SELECT b.line_id FROM bank_bookings b WHERE b.ledger_id=l.id) bank_line_id FROM ledger l WHERE l.invoice_id IN ({imarks}) ORDER BY l.id''', inv_ids)
         lines = {r['id']: r for r in rows(conn, f'SELECT id,booked_on,iban,name,owner_id FROM bank_lines WHERE id IN ({",".join(str(int(x["bank_line_id"])) for x in ledger if x["bank_line_id"]) or "0"})')}
         proofs = rows(conn, f'SELECT id,invoice_id,amount_cents,paid_on,method,status,review_note,created_at,reviewed_at,document_id FROM payment_proofs WHERE invoice_id IN ({imarks}) ORDER BY id', inv_ids)
@@ -63,9 +65,11 @@ def tenant_file(tenant_id: int, user=Depends(current_user)):
             how = 'credit note' if l['kind'] == 'credit_note' else 'reversal' if l['kind'] == 'reversal' else 'bank statement' if l['bank_line_id'] else 'receipt' if l['proof_id'] else 'recorded by staff'
             line = lines.get(l['bank_line_id']) if l['bank_line_id'] else None
             payments.append({'invoice_id': l['invoice_id'], 'date': (line['booked_on'] if line else l['created_at'][:10]), 'amount_cents': -l['amount_cents'], 'how': how,
-                             'iban': line['iban'] if line else '', 'payer': line['name'] if line else '', 'proof_id': l['proof_id']})
+                             'iban': line['iban'] if line else '', 'payer': line['name'] if line else '', 'proof_id': l['proof_id'], 'paid_by': l['paid_by'] or ''})
+        from .co_tenants import invoice_shares
         for i in invoices:
             i['balance_cents'] = invoice_balance(conn, i['id'])
+            i['shares'] = invoice_shares(conn, i)   # who pays which part, when the household splits the rent
             i['payments'] = [p for p in payments if p['invoice_id'] == i['id']]
             i['receipts'] = [p for p in proofs if p['invoice_id'] == i['id']]
             i['notices'] = [n for n in notices if n['invoice_id'] == i['id']]

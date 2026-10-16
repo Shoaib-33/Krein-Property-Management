@@ -35,7 +35,7 @@ def landlord_scope(conn, user_id, company_id):
     if scope.properties:
         scope.contracts = {r[0] for r in conn.execute(f'SELECT id FROM contracts WHERE company_id=? AND property_id IN ({marks(scope.properties)})', (company_id, *scope.properties))}
     if scope.contracts:
-        scope.tenants = {r[0] for r in conn.execute(f'SELECT DISTINCT tenant_id FROM contracts WHERE id IN ({marks(scope.contracts)})', tuple(scope.contracts))}
+        scope.tenants = {r[0] for r in conn.execute(f'SELECT DISTINCT tenant_id FROM contract_people WHERE contract_id IN ({marks(scope.contracts)})', tuple(scope.contracts))}
     scope.tenants |= {r[0] for r in conn.execute(f'SELECT id FROM tenants WHERE company_id=? AND scope_owner_id IN ({marks(owners)})', (company_id, *owners))}
     return scope
 
@@ -95,7 +95,7 @@ def require_own_tenant(conn, tenant_id):
     scope = getattr(conn, 'scope', None)
     if scope is None:
         return
-    others = conn.execute('SELECT 1 FROM contracts WHERE tenant_id=? AND company_id=? AND id NOT IN (' + marks(scope.contracts) + ') LIMIT 1',
+    others = conn.execute('SELECT 1 FROM contract_people WHERE tenant_id=? AND company_id=? AND contract_id NOT IN (' + marks(scope.contracts) + ') LIMIT 1',
                           (tenant_id, scope.company_id, *scope.contracts)).fetchone()
     if others or tenant_id not in scope.tenants:
         raise HTTPException(403, 'This tenant also rents from another owner. Ask the company to change these details.')
@@ -124,6 +124,7 @@ def filter_payload(conn, result, scope):
     message_ids = {r['id'] for r in out['portal_messages']}
     out['thread_states'] = [r for r in result.get('thread_states', []) if r.get('thread_id') in message_ids]
     out['payment_notices'] = by_contract(result.get('payment_notices', []))
+    out['co_tenants'] = by_contract(result.get('co_tenants', []))
     out['collects_rent'] = bool(O) and bool(conn.execute(f'SELECT 1 FROM owners WHERE collects_rent=1 AND id IN ({marks(O)})', tuple(O)).fetchone())
     out['tenant_bank_accounts'] = [r for r in result.get('tenant_bank_accounts', []) if r.get('tenant_id') in T]
     out['portal_accounts'] = [r for r in result.get('portal_accounts', []) if r.get('tenant_id') in T]

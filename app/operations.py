@@ -55,6 +55,7 @@ def staff_extras(conn,user,company_id,role):
     if role in ('admin','manager'):
         result['automation_rules']=[dict(r) for r in conn.execute('SELECT * FROM automation_rules WHERE company_id=? ORDER BY id',(company_id,))]
         result['automation_runs']=[dict(r) for r in conn.execute('SELECT * FROM automation_runs WHERE company_id=? ORDER BY id DESC LIMIT 40',(company_id,))]
+    result['co_tenants']=[dict(r) for r in conn.execute('SELECT ct.id,ct.contract_id,ct.tenant_id,ct.share_cents,ct.added_at,ct.removed_at,ct.removed_reason FROM contract_tenants ct WHERE ct.company_id=? ORDER BY ct.id',(company_id,))]
     if role in ('admin','manager','finance','property'):
         result['tenant_bank_accounts']=[dict(r) for r in conn.execute('SELECT id,tenant_id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE company_id=? ORDER BY id',(company_id,))]
     if role in ('admin','manager','finance'):

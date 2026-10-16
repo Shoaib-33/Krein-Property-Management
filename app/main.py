@@ -255,7 +255,7 @@ def issue_month(conn, company_id, period, user_id, only_contracts=None):
         from .email_delivery import queue_invoice
         queue_invoice(conn, {'id': invoice_id, 'company_id': company_id, 'contract_id': c['id']}, c['tenant_email'])
         from .portal_access import notify_staff, notify_tenant
-        portal_ready = conn.execute('SELECT 1 FROM portal_accounts WHERE tenant_id=? AND company_id=? AND enabled=1', (c['tenant_id'], company_id)).fetchone()
+        portal_ready = conn.execute('SELECT 1 FROM contract_people cp JOIN portal_accounts a ON a.tenant_id=cp.tenant_id AND a.company_id=cp.company_id WHERE cp.contract_id=? AND a.enabled=1', (c['id'],)).fetchone()
         if portal_ready:
             notify_tenant(conn, c['id'], 'Monthly rent bill ready', f'Invoice {number} for {period} is available. Amount: {euros(b+s)}. Due: {start.isoformat()}.', 'payments')
         else:
@@ -351,7 +351,7 @@ def process_overdue_invoices(company_id=None):
                 if not case:
                     case_id=insert(conn,'arrears_cases',{'company_id':company,'contract_id':inv['contract_id'],'invoice_id':inv['id'],'status':'open','created_at':now(),'updated_at':now()})
                     created+=1
-                    active=conn.execute('SELECT 1 FROM portal_accounts a JOIN contracts c ON c.tenant_id=a.tenant_id AND c.company_id=a.company_id WHERE c.id=? AND a.enabled=1',(inv['contract_id'],)).fetchone()
+                    active=conn.execute('SELECT 1 FROM portal_accounts a JOIN contract_people c ON c.tenant_id=a.tenant_id AND c.company_id=a.company_id WHERE c.contract_id=? AND a.enabled=1',(inv['contract_id'],)).fetchone()
                     if active:
                         notify_tenant(conn,inv['contract_id'],'Rent payment reminder',f'Invoice {inv["number"]} still has an outstanding balance. Please pay using your agreed payment method, submit proof in Haven, or contact your property manager. Balance: {euros(balance)}.','payments')
                         insert(conn,'arrears_events',{'company_id':company,'case_id':case_id,'step':'friendly_reminder_sent','occurred_on':today.isoformat(),'note':'In-app reminder sent. External payment methods remain unchanged.','created_at':now()})
@@ -559,9 +559,9 @@ def archive_tenant(tenant_id: int, data: dict, user=Depends(current_user)):
         require_own_tenant(conn, tenant_id)
         today = local_today().isoformat()
         # a current OR future tenancy blocks removal (a future one would still be invoiced to a closed contact)
-        if conn.execute("SELECT 1 FROM contracts WHERE company_id=? AND tenant_id=? AND status IN ('active','notice given') AND (end_date IS NULL OR end_date>=?)", (company_id, tenant_id, today)).fetchone():
+        if conn.execute("SELECT 1 FROM contracts c JOIN contract_people cp ON cp.contract_id=c.id WHERE c.company_id=? AND cp.tenant_id=? AND c.status IN ('active','notice given') AND (c.end_date IS NULL OR c.end_date>=?)", (company_id, tenant_id, today)).fetchone():
             raise HTTPException(409, 'This tenant has a current or upcoming tenancy. Record the tenancy end date before removing the contact.')
-        owed = sum(invoice_balance(conn, r[0]) for r in conn.execute('SELECT i.id FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE c.tenant_id=? AND i.company_id=? AND i.released_at IS NOT NULL', (tenant_id, company_id)))
+        owed = sum(invoice_balance(conn, r[0]) for r in conn.execute('SELECT i.id FROM invoices i JOIN contract_people c ON c.contract_id=i.contract_id WHERE c.tenant_id=? AND i.company_id=? AND i.released_at IS NOT NULL', (tenant_id, company_id)))
         if owed > 0:
             raise HTTPException(409, f'This tenant still owes {euros(owed)}. Settle or credit the open invoices before removing the contact.')
         if tenant['archived_at']:
@@ -1319,7 +1319,9 @@ def review_proof(proof_id: int, data: dict, user=Depends(current_user)):
             inv = linked(conn, 'invoices', proof['invoice_id'], proof['company_id'])
             if proof['amount_cents'] > invoice_balance(conn, inv['id']):
                 raise HTTPException(409, 'The balance has changed. This payment exceeds the remaining amount.')
-            insert(conn, 'ledger', {'company_id': proof['company_id'], 'contract_id': inv['contract_id'], 'invoice_id': inv['id'], 'proof_id': proof_id, 'kind': 'payment', 'amount_cents': -proof['amount_cents'], 'created_by': user['id'], 'created_at': now(), 'note': note})
+            from .co_tenants import tenant_of_user
+            insert(conn, 'ledger', {'company_id': proof['company_id'], 'contract_id': inv['contract_id'], 'invoice_id': inv['id'], 'proof_id': proof_id, 'kind': 'payment', 'amount_cents': -proof['amount_cents'], 'created_by': user['id'], 'created_at': now(), 'note': note,
+                                    'payer_tenant_id': tenant_of_user(conn, proof['submitted_by'], inv['contract_id']) if proof['submitted_by'] else None})
         conn.execute('UPDATE payment_proofs SET status=?,reviewed_by=?,review_note=?,reviewed_at=? WHERE id=?', (decision, user['id'], note, now(), proof_id))
         audit(conn, user['id'], proof['company_id'], decision, 'payment_proof', proof_id, {'note': note, 'amount_cents': proof['amount_cents']})
         from .portal_access import notify_tenant
@@ -1336,7 +1338,7 @@ def reverse_payment(proof_id: int, data: dict, user=Depends(current_user)):
         if proof['status'] != 'approved':
             raise HTTPException(409, 'Only an approved payment can be reversed.')
         posting = conn.execute('SELECT * FROM ledger WHERE proof_id=? AND kind="payment"', (proof_id,)).fetchone()
-        insert(conn, 'ledger', {'company_id': proof['company_id'], 'contract_id': posting['contract_id'], 'invoice_id': posting['invoice_id'], 'kind': 'reversal', 'amount_cents': -posting['amount_cents'], 'reverses_id': posting['id'], 'created_by': user['id'], 'created_at': now(), 'note': note})
+        insert(conn, 'ledger', {'company_id': proof['company_id'], 'contract_id': posting['contract_id'], 'invoice_id': posting['invoice_id'], 'kind': 'reversal', 'amount_cents': -posting['amount_cents'], 'reverses_id': posting['id'], 'created_by': user['id'], 'created_at': now(), 'note': note, 'payer_tenant_id': posting['payer_tenant_id']})
         conn.execute('UPDATE payment_proofs SET status="reversed" WHERE id=?', (proof_id,))
         audit(conn, user['id'], proof['company_id'], 'reversed', 'payment_proof', proof_id, {'note': note})
         from .portal_access import notify_tenant
@@ -2039,6 +2041,8 @@ app.include_router(tenant_file_router)
 from .password_reset import router as password_reset_router
 app.include_router(password_reset_router)
 from .contractor_agreements import router as contractor_agreements_router
+from .co_tenants import router as co_tenants_router
+app.include_router(co_tenants_router)
 app.include_router(contractor_agreements_router)
 app.include_router(portal_router)
 app.include_router(sla_router)

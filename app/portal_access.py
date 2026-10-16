@@ -4,7 +4,7 @@ from .db import now
 
 
 def tenant_contract(conn, user, contract_id):
-    row = conn.execute('SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id AND a.company_id=c.company_id WHERE c.id=? AND a.user_id=? AND a.enabled=1', (contract_id, user['id'])).fetchone()
+    row = conn.execute('SELECT c.* FROM contracts c JOIN contract_people cp ON cp.contract_id=c.id JOIN portal_accounts a ON a.tenant_id=cp.tenant_id AND a.company_id=c.company_id WHERE c.id=? AND a.user_id=? AND a.enabled=1', (contract_id, user['id'])).fetchone()
     if not row:
         raise HTTPException(404, 'Tenancy not found.')
     return dict(row)
@@ -32,7 +32,7 @@ def notify(conn, company_id, user_ids, title, body, target):
 
 def notify_tenant(conn, contract_id, title, body, target='home'):
     c = conn.execute('SELECT * FROM contracts WHERE id=?', (contract_id,)).fetchone()
-    ids = [r[0] for r in conn.execute('SELECT user_id FROM portal_accounts WHERE tenant_id=? AND company_id=? AND enabled=1', (c['tenant_id'], c['company_id']))]
+    ids = [r[0] for r in conn.execute('SELECT a.user_id FROM contract_people cp JOIN portal_accounts a ON a.tenant_id=cp.tenant_id AND a.company_id=cp.company_id AND a.enabled=1 WHERE cp.contract_id=?', (contract_id,))]   # main tenant and co-tenants
     notify(conn, c['company_id'], ids, title, body, target)
 
 

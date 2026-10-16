@@ -239,12 +239,14 @@ def balance(conn, invoice_id):
 
 def open_invoices(conn, company_id, tenant_ids=None, reach=None):
     """Released invoices with something still to pay, oldest first."""
-    sql = ('SELECT i.id,i.number,i.period,i.due_date,i.total_cents,i.contract_id,c.tenant_id,t.name tenant_name FROM invoices i JOIN contracts c ON c.id=i.contract_id '
+    sql = ('SELECT i.id,i.number,i.period,i.due_date,i.total_cents,i.contract_id,c.tenant_id,t.name tenant_name,'
+           '(SELECT group_concat(cp.tenant_id) FROM contract_people cp WHERE cp.contract_id=c.id) people FROM invoices i JOIN contracts c ON c.id=i.contract_id '
            'JOIN tenants t ON t.id=c.tenant_id WHERE i.company_id=? AND i.released_at IS NOT NULL')
     rows = [dict(r) for r in conn.execute(sql + ' ORDER BY i.due_date, i.id', (company_id,))]
     out = []
     for r in rows:
-        if tenant_ids is not None and r['tenant_id'] not in tenant_ids:
+        r['people'] = {int(x) for x in str(r['people'] or r['tenant_id']).split(',')}   # main tenant and co-tenants
+        if tenant_ids is not None and not r['people'] & set(tenant_ids):
             continue
         if reach is not None and not reach.ok(r['contract_id']):
             continue
@@ -275,18 +277,26 @@ def match(conn, company_id, line, reach=None):
             tenant = found[0]['tenant_id']
             if open_ and sum(f['balance_cents'] for f in open_) == amount:
                 return 'booked', tenant, [(f, f['balance_cents']) for f in open_], 'Invoice number in the description and the amount matches.'
+            if len(open_) == 1:
+                part = share_match(conn, open_[0], line)
+                if part:
+                    return 'booked', part[0], [(open_[0], amount)], f'Invoice number in the description; the amount is the part of the rent {part[1]} pays.'
             target = open_[0] if open_ else found[0]
             why = 'Invoice number in the description, but the amount is different from what is open.' if open_ else 'Invoice number in the description, but that invoice is already paid.'
             return 'suggested', tenant, [(target, amount)], why
     # 2. a known bank account
     if line['iban']:
         owners = sorted({r[0] for r in conn.execute('SELECT a.tenant_id FROM tenant_bank_accounts a JOIN tenants t ON t.id=a.tenant_id WHERE a.company_id=? AND a.iban=? AND t.archived_at IS NULL', (company_id, line['iban']))})
-        owners = [t for t in owners if any(reach.ok(c[0]) for c in conn.execute('SELECT id FROM contracts WHERE tenant_id=?', (t,)))]
+        owners = [t for t in owners if any(reach.ok(c[0]) for c in conn.execute('SELECT contract_id FROM contract_people WHERE tenant_id=?', (t,)))]
         if len(owners) == 1:
             opens = open_invoices(conn, company_id, {owners[0]}, reach)
             exact = next((o for o in opens if o['balance_cents'] == amount), None)
             if exact:
                 return 'booked', owners[0], [(exact, amount)], 'Known bank account of this tenant and the amount matches an open invoice.'
+            from .co_tenants import open_share
+            own = next((o for o in opens if open_share(conn, o, owners[0]) == amount), None)
+            if own:
+                return 'booked', owners[0], [(own, amount)], 'Known bank account of this co-tenant; the amount is their part of the rent.'
             if opens and sum(o['balance_cents'] for o in opens) == amount:
                 return 'booked', owners[0], [(o, o['balance_cents']) for o in opens], 'Known bank account; the amount pays all open invoices.'
             if opens:
@@ -295,7 +305,7 @@ def match(conn, company_id, line, reach=None):
         if len(owners) > 1:
             return 'suggested', None, [], 'This bank account is linked to more than one tenant. Choose the invoice.'
     # 3. the tenant said "I have paid" this amount
-    notices = [dict(r) for r in conn.execute("SELECT n.*,i.number,c.tenant_id FROM payment_notices n JOIN invoices i ON i.id=n.invoice_id JOIN contracts c ON c.id=n.contract_id "
+    notices = [dict(r) for r in conn.execute("SELECT n.*,i.number,COALESCE(n.tenant_id,c.tenant_id) tenant_id FROM payment_notices n JOIN invoices i ON i.id=n.invoice_id JOIN contracts c ON c.id=n.contract_id "
                                              "WHERE n.company_id=? AND n.status='waiting' AND n.amount_cents=?", (company_id, amount)) if reach.ok(r['contract_id'])]
     if line['iban']:
         same = [n for n in notices if n['iban'] and n['iban'] == line['iban']]
@@ -308,11 +318,28 @@ def match(conn, company_id, line, reach=None):
         return 'suggested', n['tenant_id'], [({'id': n['invoice_id'], 'number': n['number'], 'contract_id': n['contract_id']}, amount)], f'The tenant said they paid this amount on {n["paid_on"]}.'
     # 4. name and amount
     payer = words(line['name'])
-    candidates = [o for o in open_invoices(conn, company_id, None, reach) if o['balance_cents'] == amount and payer & words(o['tenant_name'])]
-    tenants = {o['tenant_id'] for o in candidates}
+    candidates = []
+    from .co_tenants import open_share
+    for o in open_invoices(conn, company_id, None, reach):
+        for tid, name in conn.execute(f'SELECT id,name FROM tenants WHERE id IN ({",".join(str(int(x)) for x in o["people"])})'):
+            if payer & words(name) and (o['balance_cents'] == amount or open_share(conn, o, tid) == amount):
+                candidates.append((o, tid))
+    tenants = {tid for _, tid in candidates}
     if len(tenants) == 1:
-        return 'suggested', candidates[0]['tenant_id'], [(candidates[0], amount)], 'The payer name and the amount fit this tenant.'
+        return 'suggested', candidates[0][1], [(candidates[0][0], amount)], 'The payer name and the amount fit this tenant.'
     return 'unmatched', None, [], 'No invoice number, known bank account, payment notice or matching name and amount.'
+
+
+def share_match(conn, invoice, line):
+    """(tenant_id, name) when the amount is exactly what one person on a split rent still has to pay of their own part.
+    The payer's bank account or name decides who; when both parts are the same and nothing tells them apart, the first open part."""
+    from .co_tenants import invoice_shares
+    parts = [s for s in invoice_shares(conn, invoice) if s['share_cents'] - s['paid_cents'] == line['amount_cents'] and line['amount_cents'] > 0]
+    if not parts:
+        return None
+    ids = {r[0] for r in conn.execute('SELECT tenant_id FROM tenant_bank_accounts WHERE iban=?', (line['iban'] or '-',))}
+    who = [s for s in parts if s['tenant_id'] in ids] or [s for s in parts if words(line['name']) & words(s['name'])] or parts
+    return who[0]['tenant_id'], who[0]['name']
 
 
 def book(conn, company_id, line_id, allocations, user_id, tenant_id, reason):
@@ -326,13 +353,20 @@ def book(conn, company_id, line_id, allocations, user_id, tenant_id, reason):
         if amount <= 0:
             continue
         proof = conn.execute("SELECT id FROM payment_proofs WHERE invoice_id=? AND status='pending' AND amount_cents=? ORDER BY id LIMIT 1", (invoice['id'], amount)).fetchone()
+        from .co_tenants import person_of
+        payer = person_of(conn, invoice['contract_id'], tenant_id)
         ledger_id = insert(conn, 'ledger', {'company_id': company_id, 'contract_id': invoice['contract_id'], 'invoice_id': invoice['id'], 'proof_id': proof[0] if proof else None, 'kind': 'payment',
-                                            'amount_cents': -amount, 'created_by': user_id, 'created_at': now(),
+                                            'amount_cents': -amount, 'created_by': user_id, 'created_at': now(), 'payer_tenant_id': payer,
                                             'note': f"{who} {line['booked_on']}: {line['name'] or 'payer'} {pretty_iban(line['iban']) if line['iban'] else ''} {line['bank_ref'] or ''}".strip()[:300]})
         conn.execute('INSERT INTO bank_bookings(line_id,ledger_id) VALUES(?,?)', (line_id, ledger_id))
         if proof:
             conn.execute("UPDATE payment_proofs SET status='approved',reviewed_by=?,review_note=?,reviewed_at=? WHERE id=?", (user_id, 'Confirmed by the bank statement.', now(), proof[0]))
-        conn.execute("UPDATE payment_notices SET status='confirmed',bank_line_id=?,confirmed_at=? WHERE invoice_id=? AND status='waiting'", (line_id, now(), invoice['id']))
+        if balance(conn, invoice['id']) <= 0:
+            conn.execute("UPDATE payment_notices SET status='confirmed',bank_line_id=?,confirmed_at=? WHERE invoice_id=? AND status='waiting'", (line_id, now(), invoice['id']))
+        else:   # a part payment confirms only the notice of whoever paid (or the one for this amount)
+            n = conn.execute("SELECT id FROM payment_notices WHERE invoice_id=? AND status='waiting' ORDER BY (tenant_id IS ?) DESC,(amount_cents=?) DESC,id LIMIT 1", (invoice['id'], payer, amount)).fetchone()
+            if n:
+                conn.execute("UPDATE payment_notices SET status='confirmed',bank_line_id=?,confirmed_at=? WHERE id=?", (line_id, now(), n[0]))
         number = invoice.get('number') or conn.execute('SELECT number FROM invoices WHERE id=?', (invoice['id'],)).fetchone()[0]
         notify_tenant(conn, invoice['contract_id'], 'Payment received', f'We received EUR {amount / 100:,.2f} for invoice {number}. Thank you.', 'payments')
     first = allocations[0][0]['id'] if allocations else None
@@ -627,7 +661,7 @@ def undo_line(line_id: int, data: dict, user=Depends(current_user)):
         if line['status'] != 'booked':
             raise HTTPException(409, 'This payment is not booked.')
         for b in conn.execute('SELECT g.ledger_id,l.* FROM bank_bookings g JOIN ledger l ON l.id=g.ledger_id WHERE g.line_id=?', (line_id,)).fetchall():
-            insert(conn, 'ledger', {'company_id': b['company_id'], 'contract_id': b['contract_id'], 'invoice_id': b['invoice_id'], 'kind': 'reversal', 'amount_cents': -b['amount_cents'],
+            insert(conn, 'ledger', {'company_id': b['company_id'], 'contract_id': b['contract_id'], 'invoice_id': b['invoice_id'], 'kind': 'reversal', 'amount_cents': -b['amount_cents'], 'payer_tenant_id': b['payer_tenant_id'],
                                     'reverses_id': b['ledger_id'], 'created_by': user['id'], 'created_at': now(), 'note': 'Bank booking taken back: ' + note})
             if b['proof_id']:
                 conn.execute("UPDATE payment_proofs SET status='pending',reviewed_by=NULL,review_note=NULL,reviewed_at=NULL WHERE id=?", (b['proof_id'],))
@@ -673,11 +707,15 @@ def tenant_says_paid(invoice_id: int, data: dict, user=Depends(current_user)):
             raise HTTPException(404, 'Record not found.')
         if balance(conn, invoice_id) <= 0:
             raise HTTPException(409, 'This invoice is already paid.')
-        if conn.execute("SELECT 1 FROM payment_notices WHERE invoice_id=? AND status='waiting'", (invoice_id,)).fetchone():
+        from .co_tenants import tenant_of_user
+        tenant_id = tenant_of_user(conn, user['id'], inv['contract_id']) or conn.execute('SELECT tenant_id FROM contracts WHERE id=?', (inv['contract_id'],)).fetchone()[0]
+        if conn.execute("SELECT 1 FROM payment_notices WHERE invoice_id=? AND status='waiting' AND tenant_id=?", (invoice_id, tenant_id)).fetchone():
             raise HTTPException(409, 'You already told us this invoice is paid. It is confirmed as soon as the payment shows in the bank statement.')
-        tenant_id = conn.execute('SELECT tenant_id FROM contracts WHERE id=?', (inv['contract_id'],)).fetchone()[0]
-        nid = conn.execute('INSERT INTO payment_notices(company_id,contract_id,invoice_id,amount_cents,paid_on,iban,note,status,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
-                           (inv['company_id'], inv['contract_id'], invoice_id, amount, paid_on, iban, note, 'waiting', user['id'], now())).lastrowid
+        waiting = conn.execute("SELECT COALESCE(SUM(amount_cents),0) FROM payment_notices WHERE invoice_id=? AND status='waiting'", (invoice_id,)).fetchone()[0]
+        if amount + waiting > balance(conn, invoice_id):
+            raise HTTPException(409, 'This is more than is still open on this invoice (including what your co-tenant already reported).')
+        nid = conn.execute('INSERT INTO payment_notices(company_id,contract_id,invoice_id,amount_cents,paid_on,iban,note,status,created_by,created_at,tenant_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+                           (inv['company_id'], inv['contract_id'], invoice_id, amount, paid_on, iban, note, 'waiting', user['id'], now(), tenant_id)).lastrowid
         if iban:
             add_bank_account(conn, inv['company_id'], tenant_id, iban, user['name'], 'tenant', user['id'])
         notify_staff(conn, inv['company_id'], 'Tenant says the rent is paid', f'{user["name"]} paid EUR {amount / 100:,.2f} for {inv["number"]} on {paid_on}. It is confirmed when it shows in the bank statement.', 'payments', contract_id=inv['contract_id'])

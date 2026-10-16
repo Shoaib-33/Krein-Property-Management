@@ -31,7 +31,7 @@
     ensurePeriodInvoices(key);
     const q = (state.tenantSearch || '').toLowerCase(), today_ = today();
     const people = rows('tenants').filter(t => !t.archived_at || t.archived_at.slice(0, 10) >= r[0]).map(t => {
-      const cs = rows('contracts').filter(c => c.tenant_id === t.id && overlapsPeriod(key, c.start_date, c.end_date));
+      const cs = contractsOfTenant(t.id).filter(c => overlapsPeriod(key, c.start_date, c.end_date));
       if (!cs.length) return null;
       const ids = new Set(cs.map(c => c.id));
       const inv = rows('invoices').filter(i => ids.has(i.contract_id) && i.released_at && inPeriod(key, i.period + '-01'));
@@ -127,7 +127,7 @@
     </div>`;
     // tenancies
     const contracts = panel('Tenancies', `${f.contracts.length} contract${f.contracts.length === 1 ? '' : 's'}`, table(['Property', 'Period', 'Rent / month', 'Deposit', 'Status', ''], f.contracts.map(c => [
-      `<strong>${e(c.property_name)}</strong><small>${e(c.address)}, ${e(c.city)}</small>`, `${e(dateLabel(c.start_date))} – ${c.end_date ? e(dateLabel(c.end_date)) : 'open-ended'}`,
+      `<strong>${e(c.property_name)}</strong><small>${e(c.address)}, ${e(c.city)}</small>${withWhom(c)}`, `${e(dateLabel(c.start_date))} – ${c.end_date ? e(dateLabel(c.end_date)) : 'open-ended'}`,
       `<span class="amount">${eur((c.rent.basic_cents || 0) + (c.rent.service_cents || 0))}</span><small>basic ${eur(c.rent.basic_cents)} + service ${eur(c.rent.service_cents)}</small>`,
       eur(c.deposit_cents), badge(c.end_date && c.end_date < today() ? 'ended' : c.status),
       `<div class="actions">${c.offer && c.offer.final_document_id ? `<a class="button small" href="/api/documents/${c.offer.final_document_id}/file" target="_blank" rel="noopener">Signed contract</a>` : ''}<button type="button" class="button small" data-action="contract-detail" data-id="${c.id}">Open file</button></div>`]), 'No tenancies yet.'));
@@ -143,7 +143,7 @@
       money_ = yearChips;
       const invoices = panel('Invoices and how they were paid', 'Each invoice with what the tenant did (said paid, uploaded a receipt) and how the money arrived.', table(['Invoice', 'Period', 'Amount', 'Due', 'Open', 'Status', 'Payment trail', ''], f.invoices.map(i => {
         const [label, tone] = invStatusOf(i);
-        return [`<strong>${e(i.number)}</strong>`, e(i.period), `<span class="amount">${eur(i.total_cents)}</span>`, e(dateLabel(i.due_date)), i.balance_cents > 0 ? `<strong>${eur(i.balance_cents)}</strong>` : '—', badge(label, tone), trail(i),
+        return [`<strong>${e(i.number)}</strong>`, e(i.period), `<span class="amount">${eur(i.total_cents)}</span>`, e(dateLabel(i.due_date)), (i.balance_cents > 0 ? `<strong>${eur(i.balance_cents)}</strong>` : '—') + shareLines(i), badge(label, tone), trail(i),
           `<div class="actions"><a class="button small" href="/api/invoices/${i.id}/pdf" target="_blank" rel="noopener">PDF</a>${actionBtn('Manage', 'invoice-detail', i.id)}</div>`];
       }), 'No invoices yet.'));
       const history = panel('Payment history', 'Every payment, credit and correction, newest first.', table(['Date', 'Amount', 'Invoice', 'How', 'From'], f.payments.map(p => [
@@ -172,8 +172,17 @@
     const receipt = (ui.file.invoices || []).flatMap(i => i.receipts).find(r => r.id === p.proof_id);
     const view = receipt && receipt.document_id ? `<a class="button small" href="/api/documents/${receipt.document_id}/file">View receipt</a>` : '';
     const bank = p.iban ? `${e(p.payer || '')}<small>${e(iban(p.iban))}</small>` : '';
-    return bank || view ? `<div class="tf-from">${bank ? `<div>${bank}</div>` : ''}${view}</div>` : '<span class="muted">—</span>';
+    const by = p.paid_by ? `<small class="co-by">paid by ${e(p.paid_by)}</small>` : '';
+    return bank || view || by ? `<div class="tf-from">${bank ? `<div>${bank}</div>` : ''}${view}${by}</div>` : '<span class="muted">—</span>';
   }
+  // who else is on the contract: "Co-tenant · with Lucas Bakker (main tenant)"
+  function withWhom(c) {
+    const others = (c.people || []).filter(p => p.tenant_id !== ui.id);
+    if (!others.length) return '';
+    return `<small class="co-with">${c.is_main ? 'Main tenant' : 'Co-tenant'} · with ${others.map(p => `<button type="button" class="tenant-link" data-tenant="${p.tenant_id}">${e(p.name)}</button>${p.main ? ' (main tenant)' : ''}`).join(', ')}</small>`;
+  }
+  // a split rent: each person's part and what they paid of it
+  const shareLines = i => (i.shares || []).length ? `<div class="co-shares">${i.shares.map(s => `<small class="${s.paid_cents >= s.share_cents ? 'ok' : ''}">${e(s.name)}: ${eur(Math.min(s.paid_cents, s.share_cents))} of ${eur(s.share_cents)}${s.paid_cents >= s.share_cents ? ' ✓' : ''}</small>`).join('')}</div>` : '';
   const statBox = (label, value, foot) => `<div class="stat"><div class="stat-top">${e(label)}</div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></div>`;
 
   document.addEventListener('click', ev => {
