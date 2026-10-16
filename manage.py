@@ -157,8 +157,12 @@ def main():
         db.init_db()
         destination=db.DATA_DIR / ('backup-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'.zip')
         snapshot=db.DATA_DIR / 'backup-snapshot.db'
-        with db.connect() as source,sqlite3.connect(snapshot) as target:
-            source.backup(target)
+        target=sqlite3.connect(snapshot)   # closed explicitly: "with" on a sqlite3 connection only commits, and Windows cannot delete an open file
+        try:
+            with db.connect() as source:
+                source.backup(target)
+        finally:
+            target.close()
         with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED) as archive:
             archive.write(snapshot,'haven.db')
             for path in (db.DATA_DIR/'uploads').iterdir():
