@@ -4,6 +4,8 @@ Flow: staff send an offer (the agreement is rendered from a Lease template, can 
 the tenant reads it, fills in the form the landlord asked for and signs by drawing, typing or uploading a signature, staff review
 the signed offer and approve it with their own signature. Approval creates the tenancy, so the tenant "joins" only after the
 landlord has accepted the signature. Staff can return it for changes or withdraw it, and the tenant can decline.
+Co-tenants (a partner or spouse, app/co_tenants.py) can sign the same agreement, each in their own portal; it counts as signed
+when everyone has signed, and approval puts them on the tenancy with the agreed split of the rent.
 """
 import base64
 import hashlib
@@ -168,7 +170,70 @@ def agreement_file(conn, offer, offer_id, stamp=''):
                   'caption': f'{offer["signer_name"]}\nOndertekend {offer["signed_at"][:10]} {offer["signed_at"][11:19]} UTC'}
     else:
         tenant = {'label': 'Huurder / Tenant', 'image': None, 'caption': 'Te ondertekenen door de huurder / To be signed by the tenant'}
-    return agreement_pdf_bytes(text, company=company, logo=logo_bytes(offer['company_id']), reference=f'HVO-{offer["company_id"]}-{offer_id:04d}', signatures=[landlord, tenant], subject=f'Huurovereenkomst {offer_id}')
+    boxes = [landlord, tenant]
+    for s in co_signers(conn, offer_id):
+        if s['signed_at']:
+            boxes.append({'label': 'Medehuurder / Co-tenant', 'image': bytes(s['signature']) if s['signature'] else None, 'caption': f'{s["signer_name"]}\nOndertekend {s["signed_at"][:10]} {s["signed_at"][11:19]} UTC'})
+        else:
+            boxes.append({'label': 'Medehuurder / Co-tenant', 'image': None, 'caption': f'{s["name"]}\nTe ondertekenen / To be signed'})
+        if s['form_values']:
+            text += details_text(defs, json.loads(s['form_values'])).replace('gegevens huurder | Appendix: tenant details', f'gegevens medehuurder {s["name"]} | Appendix: co-tenant details')
+    return agreement_pdf_bytes(text, company=company, logo=logo_bytes(offer['company_id']), reference=f'HVO-{offer["company_id"]}-{offer_id:04d}', signatures=boxes, subject=f'Huurovereenkomst {offer_id}')
+
+
+def co_signers(conn, offer_id):
+    return [dict(r) for r in conn.execute('SELECT s.*,t.name,t.email FROM lease_offer_signers s JOIN tenants t ON t.id=s.tenant_id WHERE s.offer_id=? ORDER BY s.id', (offer_id,))]
+
+
+def offer_users(conn, offer):
+    """Portal logins of everyone who signs this agreement: the tenant and the co-tenants."""
+    ids = [offer['tenant_id']] + [s['tenant_id'] for s in co_signers(conn, offer['id'])]
+    return sorted({u for t in ids for u in tenant_users(conn, offer['company_id'], t)})
+
+
+def all_signed(conn, offer_id):
+    o = conn.execute('SELECT signed_at FROM lease_offers WHERE id=?', (offer_id,)).fetchone()
+    return bool(o['signed_at']) and not conn.execute('SELECT 1 FROM lease_offer_signers WHERE offer_id=? AND signed_at IS NULL', (offer_id,)).fetchone()
+
+
+CO_CLAUSE = '''
+
+## Medehuurders | Co-tenants
+Deze overeenkomst wordt ook als huurder aangegaan door: {names}. Alle huurders zijn hoofdelijk aansprakelijk voor de nakoming van deze overeenkomst, waaronder de volledige huurprijs (artikel 6:6 en 7:266 BW).{split}
+This agreement is also entered into as tenant by: {names}. All tenants are jointly and severally liable for this agreement, including the full rent.{split_en}'''
+
+
+def co_inputs(conn, data, company_id, tenant):
+    """The co-tenants chosen in the send form (tenants of the company), the split and the clause added to the contract text."""
+    ids = []
+    for raw in data.get('co_tenant_ids') or []:
+        t = linked(conn, 'tenants', int(raw), company_id)
+        if t['archived_at']:
+            raise HTTPException(422, f'{t["name"]} has been removed.')
+        if t['id'] != tenant['id'] and t['id'] not in [x['id'] for x in ids]:
+            ids.append(dict(t))
+    if len(ids) > 3:
+        raise HTTPException(422, 'A contract can have at most three co-tenants.')
+    mode = data.get('split_mode') or ''
+    if mode not in ('', 'equal', 'fixed') or (mode and not ids):
+        mode = ''
+    shares = {}
+    for t in ids:
+        raw = (data.get('co_shares') or {}).get(str(t['id']))
+        shares[t['id']] = money({'share': raw}, 'share', True) if raw not in (None, '') else None
+        if mode == 'fixed' and not shares[t['id']]:
+            raise HTTPException(422, f'Enter the fixed monthly amount {t["name"]} pays (the main tenant pays the rest).')
+    clause = ''
+    if ids:
+        names = ', '.join(t['name'] for t in ids)
+        split = split_en = ''
+        if mode == 'equal':
+            split, split_en = ' De huurders betalen ieder een gelijk deel van de huur.', ' The tenants each pay an equal part of the rent.'
+        elif mode == 'fixed':
+            split = ' Onderlinge verdeling: ' + '; '.join(f'{t["name"]} betaalt {euros(shares[t["id"]])} per maand' for t in ids) + f'; {tenant["name"]} betaalt het overige deel.'
+            split_en = ' Agreed split: ' + '; '.join(f'{t["name"]} pays {euros(shares[t["id"]])} a month' for t in ids) + f'; {tenant["name"]} pays the rest.'
+        clause = CO_CLAUSE.format(names=names, split=split, split_en=split_en)
+    return ids, mode, shares, clause
 
 
 def signature_url(raw):
@@ -238,7 +303,9 @@ def prepare(conn, user, data):
     if problem:
         raise HTTPException(409, problem)
     body, missing = render(template['body'], offer_context(conn, company_id, tenant, prop, user, start, end, basic, service, deposit))
-    return {'company_id': company_id, 'start': start, 'end': end, 'basic': basic, 'service': service, 'deposit': deposit, 'tenant': tenant, 'prop': prop, 'template': template, 'body': body, 'missing': missing}
+    co, mode, shares, clause = co_inputs(conn, data, company_id, tenant)
+    return {'company_id': company_id, 'start': start, 'end': end, 'basic': basic, 'service': service, 'deposit': deposit, 'tenant': tenant, 'prop': prop, 'template': template,
+            'body': body.rstrip() + clause, 'missing': missing, 'co': co, 'split_mode': mode, 'shares': shares}
 
 
 @router.post('/api/lease-offers/preview')
@@ -259,6 +326,9 @@ def send_offer(data: dict, user=Depends(current_user)):
         users = tenant_users(conn, company_id, tenant['id'])
         if not users:
             raise HTTPException(422, f'{tenant["name"]} has no portal login yet. Invite them to the tenant portal first (Tenants > open the tenant > Invite to portal), then send the contract.')
+        for t in ctx['co']:
+            if not tenant_users(conn, company_id, t['id']):
+                raise HTTPException(422, f'{t["name"]} (co-tenant) has no portal login yet. Invite them to the tenant portal first, then send the contract.')
         edited = 0
         custom = data.get('body')
         if isinstance(custom, str) and custom.strip():
@@ -279,13 +349,15 @@ def send_offer(data: dict, user=Depends(current_user)):
                                                  'form_fields': json.dumps(form) if form is not None else None, 'edited': edited,
                                                  'landlord_signature': bytes(sig['data']) if sig else None, 'landlord_signature_mode': sig['mode'] if sig else None,
                                                  'landlord_signer_name': sig['signer_name'] if sig else None, 'landlord_signer_title': sig['signer_title'] if sig else None,
-                                                 'landlord_signed_at': datetime.now(timezone.utc).isoformat(timespec='seconds') if sig else None})
+                                                 'landlord_signed_at': datetime.now(timezone.utc).isoformat(timespec='seconds') if sig else None, 'split_mode': ctx['split_mode']})
+        for t in ctx['co']:
+            insert(conn, 'lease_offer_signers', {'company_id': company_id, 'offer_id': offer_id, 'tenant_id': t['id'], 'share_cents': ctx['shares'][t['id']]})
         pdf = agreement_file(conn, dict(conn.execute('SELECT * FROM lease_offers WHERE id=?', (offer_id,)).fetchone()), offer_id)
         filename = re.sub(r'[^A-Za-z0-9._-]+', '-', f'Huurovereenkomst-{tenant["name"]}-{start}').strip('-') + '.pdf'
         doc_id = save_document(conn, company_id, None, user['id'], 'Lease draft', (pdf, 'application/pdf', '.pdf', filename))
         conn.execute('UPDATE lease_offers SET document_id=? WHERE id=?', (doc_id, offer_id))
-        notify(conn, company_id, users, 'Contract ready to sign', f'{prop["name"]}: please read and sign your tenancy agreement.', 'documents')
-        audit(conn, user['id'], company_id, 'sent', 'lease_offer', offer_id, {'tenant_id': tenant['id'], 'property_id': prop['id'], 'start_date': start, 'document_id': doc_id, 'landlord_signed': bool(sig), 'edited_text': bool(edited), 'asks': [f['key'] for f in form or []]})
+        notify(conn, company_id, offer_users(conn, {'id': offer_id, 'company_id': company_id, 'tenant_id': tenant['id']}), 'Contract ready to sign', f'{prop["name"]}: please read and sign your tenancy agreement.', 'documents')
+        audit(conn, user['id'], company_id, 'sent', 'lease_offer', offer_id, {'co_tenants': [t['id'] for t in ctx['co']], 'split_mode': ctx['split_mode'], 'tenant_id': tenant['id'], 'property_id': prop['id'], 'start_date': start, 'document_id': doc_id, 'landlord_signed': bool(sig), 'edited_text': bool(edited), 'asks': [f['key'] for f in form or []]})
     return {'id': offer_id, 'status': 'sent'}
 
 
@@ -300,7 +372,7 @@ def withdraw(offer_id: int, data: dict, user=Depends(current_user)):
         if offer['status'] not in OPEN:
             raise HTTPException(409, 'This contract is already closed.')
         conn.execute("UPDATE lease_offers SET status='withdrawn',reviewed_by=?,reviewed_at=?,response_note=? WHERE id=?", (user['id'], now(), str(data.get('note', '')).strip()[:500], offer_id))
-        notify(conn, offer['company_id'], tenant_users(conn, offer['company_id'], offer['tenant_id']), 'Contract withdrawn', 'The landlord withdrew the contract you were asked to sign.', 'documents')
+        notify(conn, offer['company_id'], offer_users(conn, offer), 'Contract withdrawn', 'The landlord withdrew the contract you were asked to sign.', 'documents')
         audit(conn, user['id'], offer['company_id'], 'withdrawn', 'lease_offer', offer_id, {})
     return {'ok': True}
 
@@ -313,7 +385,8 @@ def send_back(offer_id: int, data: dict, user=Depends(current_user)):
         if offer['status'] != 'signed':
             raise HTTPException(409, 'Only a signed contract can be returned.')
         conn.execute("UPDATE lease_offers SET status='returned',reviewed_by=?,reviewed_at=?,response_note=?,signer_name=NULL,signed_at=NULL,signed_ip=NULL,signed_hash=NULL,tenant_signature=NULL,tenant_signature_mode=NULL WHERE id=?", (user['id'], now(), note, offer_id))
-        notify(conn, offer['company_id'], tenant_users(conn, offer['company_id'], offer['tenant_id']), 'Contract returned to you', note, 'documents')
+        conn.execute('UPDATE lease_offer_signers SET signer_name=NULL,signed_at=NULL,signed_ip=NULL,signed_hash=NULL,signature=NULL,signature_mode=NULL WHERE offer_id=?', (offer_id,))
+        notify(conn, offer['company_id'], offer_users(conn, offer), 'Contract returned to you', note, 'documents')
         audit(conn, user['id'], offer['company_id'], 'returned', 'lease_offer', offer_id, {'note': note})
     return {'ok': True}
 
@@ -334,6 +407,11 @@ def approve(offer_id: int, data: dict, user=Depends(current_user)):
         contract_id = insert(conn, 'contracts', {'company_id': offer['company_id'], 'property_id': offer['property_id'], 'tenant_id': offer['tenant_id'], 'signed_on': signed_day,
                                                  'start_date': offer['start_date'], 'end_date': offer['end_date'], 'status': 'active', 'deposit_cents': offer['deposit_cents'], 'created_at': now()})
         insert(conn, 'rent_versions', {'company_id': offer['company_id'], 'contract_id': contract_id, 'effective_from': offer['start_date'], 'basic_cents': offer['basic_cents'], 'service_cents': offer['service_cents'], 'created_at': now(), 'created_by': user['id']})
+        co = co_signers(conn, offer_id)
+        for s in co:
+            conn.execute('INSERT INTO contract_tenants(company_id,contract_id,tenant_id,share_cents,added_by,added_at) VALUES(?,?,?,?,?,?)', (offer['company_id'], contract_id, s['tenant_id'], s['share_cents'], user['id'], now()))
+        if co and offer['split_mode']:
+            conn.execute('UPDATE contracts SET split_mode=? WHERE id=?', (offer['split_mode'], contract_id))
         defs = json.loads(offer['form_fields']) if offer['form_fields'] else []
         values = json.loads(offer['form_values']) if offer['form_values'] else {}
         landlord_sig, landlord_mode = (bytes(offer['landlord_signature']), offer['landlord_signature_mode']) if offer['landlord_signature'] else (None, None)
@@ -343,7 +421,7 @@ def approve(offer_id: int, data: dict, user=Depends(current_user)):
         signed_for = dict(offer, landlord_signature=landlord_sig, landlord_signer_name=offer['landlord_signer_name'] or user['name'], landlord_signer_title=offer['landlord_signer_title'] or '',
                           landlord_signed_at=offer['landlord_signed_at'] or datetime.now(timezone.utc).isoformat(timespec='seconds'))
         stamp = (f'\n\n## Elektronische ondertekening | Electronic signature record\nSigned by the tenant: {offer["signer_name"]} on {offer["signed_at"][:10]} at {offer["signed_at"][11:19]} UTC (IP {offer["signed_ip"]}).\n'
-                 f'Signed for the landlord: {signed_for["landlord_signer_name"]} on {signed_for["landlord_signed_at"][:10]}. Accepted by {user["name"]} on {local_today().isoformat()}.\nDocument fingerprint (SHA-256 of the agreement text and the tenant details): {offer["signed_hash"]}')
+                 + ''.join(f'Signed by the co-tenant: {s["signer_name"]} on {s["signed_at"][:10]} at {s["signed_at"][11:19]} UTC (IP {s["signed_ip"]}), fingerprint {s["signed_hash"]}.\n' for s in co) + f'Signed for the landlord: {signed_for["landlord_signer_name"]} on {signed_for["landlord_signed_at"][:10]}. Accepted by {user["name"]} on {local_today().isoformat()}.\nDocument fingerprint (SHA-256 of the agreement text and the tenant details): {offer["signed_hash"]}')
         pdf = agreement_file(conn, signed_for, offer_id, stamp)
         filename = re.sub(r'[^A-Za-z0-9._-]+', '-', f'Getekende-huurovereenkomst-{tenant["name"]}-{offer["start_date"]}').strip('-') + '.pdf'
         final_id = save_document(conn, offer['company_id'], contract_id, user['id'], 'Contract', (pdf, 'application/pdf', '.pdf', filename))
@@ -352,7 +430,7 @@ def approve(offer_id: int, data: dict, user=Depends(current_user)):
                      (user['id'], now(), contract_id, final_id, landlord_sig, landlord_mode, signed_for['landlord_signer_name'], signed_for['landlord_signer_title'], signed_for['landlord_signed_at'], offer_id))
         task(conn, offer['company_id'], contract_id, 'Complete move-in inspection', offer['start_date'], 'Inspection')
         task(conn, offer['company_id'], contract_id, 'Collect deposit and confirm WWS points', offer['start_date'], 'Contract')
-        notify(conn, offer['company_id'], tenant_users(conn, offer['company_id'], offer['tenant_id']), 'Welcome home: tenancy confirmed', 'Your signed agreement has been accepted. You can find it in Documents.', 'documents')
+        notify(conn, offer['company_id'], offer_users(conn, offer), 'Welcome home: tenancy confirmed', 'Your signed agreement has been accepted. You can find it in Documents.', 'documents')
         audit(conn, user['id'], offer['company_id'], 'approved', 'lease_offer', offer_id, {'contract_id': contract_id, 'document_id': final_id})
     return {'contract_id': contract_id}
 
@@ -366,14 +444,23 @@ def review(offer_id: int, user=Depends(current_user)):
     values = json.loads(offer['form_values']) if offer['form_values'] else {}
     return {'id': offer_id, 'status': offer['status'], 'edited': bool(offer['edited']), 'fields': defs, 'values': values, 'signer_name': offer['signer_name'], 'signed_at': offer['signed_at'], 'signed_ip': offer['signed_ip'],
             'signature': signature_url(offer['tenant_signature']), 'signature_mode': offer['tenant_signature_mode'], 'fingerprint': offer['signed_hash'],
-            'landlord_signed': bool(offer['landlord_signature']), 'landlord_name': offer['landlord_signer_name']}
+            'landlord_signed': bool(offer['landlord_signature']), 'landlord_name': offer['landlord_signer_name'],
+            'co_signers': [{'name': s['name'], 'signer_name': s['signer_name'], 'signed_at': s['signed_at'], 'signature': signature_url(s['signature']), 'signature_mode': s['signature_mode'],
+                            'values': json.loads(s['form_values']) if s['form_values'] else {}, 'share_cents': s['share_cents']} for s in co_signers_ro(offer_id)], 'split_mode': offer['split_mode']}
+
+
+def co_signers_ro(offer_id):
+    from .db import connect
+    with connect() as conn:
+        return co_signers(conn, offer_id)
 
 
 def send_file(conn, offer, download=False):
     """Sent or returned: the draft. Signed by the tenant: the contract with the tenant's details and signature, waiting for the landlord.
     Approved: the final signed agreement with both signatures."""
     from fastapi.responses import Response
-    if offer['status'] == 'signed' and offer.get('signer_name'):
+    partly = offer['status'] in ('sent', 'returned') and (offer.get('signer_name') or conn.execute('SELECT 1 FROM lease_offer_signers WHERE offer_id=? AND signed_at IS NOT NULL', (offer['id'],)).fetchone())
+    if (offer['status'] == 'signed' and offer.get('signer_name')) or partly:   # with every signature given so far
         return Response(agreement_file(conn, offer, offer['id']), media_type='application/pdf', headers={'Content-Disposition': 'inline; filename="Huurovereenkomst-getekend-door-huurder.pdf"'})
     doc_id = offer['final_document_id'] if offer['status'] == 'approved' and offer.get('final_document_id') else offer['document_id']
     doc = conn.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
@@ -391,7 +478,8 @@ def staff_file(offer_id: int, download: int = 0, user=Depends(current_user)):
 # ---------- tenant side ----------
 
 def own_offer(conn, offer_id, user):
-    row = conn.execute('SELECT o.* FROM lease_offers o JOIN portal_accounts a ON a.tenant_id=o.tenant_id AND a.company_id=o.company_id WHERE o.id=? AND a.user_id=? AND a.enabled=1', (offer_id, user['id'])).fetchone()
+    row = conn.execute('SELECT o.*,a.tenant_id me FROM lease_offers o JOIN portal_accounts a ON a.company_id=o.company_id AND a.user_id=? AND a.enabled=1 '
+                       'AND (a.tenant_id=o.tenant_id OR a.tenant_id IN (SELECT tenant_id FROM lease_offer_signers WHERE offer_id=o.id)) WHERE o.id=? ORDER BY (a.tenant_id=o.tenant_id) DESC LIMIT 1', (user['id'], offer_id)).fetchone()
     if not row:
         raise HTTPException(404, 'Contract not found.')
     return dict(row)
@@ -400,15 +488,23 @@ def own_offer(conn, offer_id, user):
 def tenant_offers(conn, user_id):
     sql = '''SELECT o.id,o.status,o.start_date,o.end_date,o.basic_cents,o.service_cents,o.deposit_cents,o.sent_at,o.signed_at,o.signer_name,o.response_note,o.final_document_id,o.body,o.form_fields,o.form_values,
              p.name property_name,p.address,p.city,t.name tenant_name,co.name company_name
-             FROM lease_offers o JOIN portal_accounts a ON a.tenant_id=o.tenant_id AND a.company_id=o.company_id
+,a.tenant_id me,(SELECT name FROM tenants WHERE id=a.tenant_id) me_name
+             FROM lease_offers o JOIN portal_accounts a ON a.company_id=o.company_id AND (a.tenant_id=o.tenant_id OR a.tenant_id IN (SELECT tenant_id FROM lease_offer_signers WHERE offer_id=o.id))
              JOIN properties p ON p.id=o.property_id JOIN tenants t ON t.id=o.tenant_id JOIN companies co ON co.id=o.company_id
-             WHERE a.user_id=? AND a.enabled=1 AND o.status<>'withdrawn' ORDER BY o.id DESC'''
+             WHERE a.user_id=? AND a.enabled=1 AND o.status<>'withdrawn' GROUP BY o.id ORDER BY o.id DESC'''
     out = []
     for r in conn.execute(sql, (user_id,)):
         item = dict(r)
+        co = co_signers(conn, item['id'])
+        mine = next((s for s in co if s['tenant_id'] == item['me']), None)
+        item['signers'] = [{'name': item['tenant_name'], 'signed': bool(item['signed_at']), 'me': mine is None}] + [{'name': s['name'], 'signed': bool(s['signed_at']), 'me': s is mine} for s in co]
+        item['me_signed'] = bool(mine['signed_at']) if mine else bool(item['signed_at'])
+        item['me_signed_at'] = mine['signed_at'] if mine else item['signed_at']
+        if mine:   # a co-tenant fills in and sees their own details
+            item['form_values'] = mine['form_values']
         item['form_fields'] = json.loads(item['form_fields']) if item['form_fields'] else None
         item['form_values'] = json.loads(item['form_values']) if item['form_values'] else {}
-        if item['status'] in ('approved', 'declined', 'signed'):
+        if item['status'] in ('approved', 'declined', 'signed') or item['me_signed']:
             item['body'] = None  # the signed contract is read as the PDF
         out.append(item)
     return out
@@ -434,7 +530,10 @@ def sign(offer_id: int, data: dict, request: Request, user=Depends(current_user)
         offer = own_offer(conn, offer_id, user)
         if offer['status'] not in ('sent', 'returned'):
             raise HTTPException(409, 'This contract cannot be signed any more.')
-        tenant = conn.execute('SELECT * FROM tenants WHERE id=?', (offer['tenant_id'],)).fetchone()
+        co_row = conn.execute('SELECT * FROM lease_offer_signers WHERE offer_id=? AND tenant_id=?', (offer_id, offer['me'])).fetchone() if offer['me'] != offer['tenant_id'] else None
+        if (co_row and co_row['signed_at']) or (not co_row and offer['signed_at']):
+            raise HTTPException(409, 'You have already signed this contract.')
+        tenant = conn.execute('SELECT * FROM tenants WHERE id=?', (offer['me'],)).fetchone()
         defs = json.loads(offer['form_fields']) if offer['form_fields'] is not None else None
         values = clean_form(defs, data.get('form'))
         image, mode = None, None
@@ -448,14 +547,25 @@ def sign(offer_id: int, data: dict, request: Request, user=Depends(current_user)
         from .security import client_ip
         ip = client_ip(request)
         digest = hashlib.sha256((offer['body'] + json.dumps(values, sort_keys=True)).encode()).hexdigest() if values else hashlib.sha256(offer['body'].encode()).hexdigest()
-        conn.execute("UPDATE lease_offers SET status='signed',signer_name=?,signed_at=?,signed_ip=?,signed_hash=?,response_note=NULL,form_values=?,tenant_signature=?,tenant_signature_mode=? WHERE id=?",
-                     (tenant['name'], stamp, ip, digest, json.dumps(values) if defs is not None else None, image, mode, offer_id))
+        if co_row:
+            conn.execute('UPDATE lease_offer_signers SET signer_name=?,signed_at=?,signed_ip=?,signed_hash=?,form_values=?,signature=?,signature_mode=? WHERE id=?',
+                         (tenant['name'], stamp, ip, digest, json.dumps(values) if defs is not None else None, image, mode, co_row['id']))
+        else:
+            conn.execute("UPDATE lease_offers SET signer_name=?,signed_at=?,signed_ip=?,signed_hash=?,response_note=NULL,form_values=?,tenant_signature=?,tenant_signature_mode=? WHERE id=?",
+                         (tenant['name'], stamp, ip, digest, json.dumps(values) if defs is not None else None, image, mode, offer_id))
+        complete = all_signed(conn, offer_id)
+        if complete:
+            conn.execute("UPDATE lease_offers SET status='signed',response_note=NULL WHERE id=?", (offer_id,))
         if values.get('phone') and not (tenant['phone'] or '').strip():
             conn.execute('UPDATE tenants SET phone=? WHERE id=?', (values['phone'], tenant['id']))
         if values.get('iban'):   # the rent account from the contract form: bank payments from it are recognised (app/banking.py)
             from .banking import add_bank_account
             add_bank_account(conn, offer['company_id'], tenant['id'], values['iban'], values.get('account_holder', ''), 'tenant', user['id'])
-        notify_staff(conn, offer['company_id'], 'Contract signed, approval needed', f'{tenant["name"]} signed the tenancy agreement.', 'contracts', property_id=offer['property_id'])
+        if complete:
+            notify_staff(conn, offer['company_id'], 'Contract signed, approval needed', f'{tenant["name"]} signed the tenancy agreement.', 'contracts', property_id=offer['property_id'])
+        else:   # the others are told their signature is still needed
+            others = [u for u in offer_users(conn, offer) if u != user['id']]
+            notify(conn, offer['company_id'], others, 'Your co-tenant signed', f'{tenant["name"]} signed the tenancy agreement. Your signature is still needed.', 'documents')
         audit(conn, user['id'], offer['company_id'], 'signed', 'lease_offer', offer_id, {'ip': ip, 'sha256': digest, 'signature_mode': mode, 'details_given': sorted(values)})
     return {'ok': True}
 

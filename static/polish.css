@@ -311,3 +311,9 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .co-box{margin:6px 0 14px}
 .co-actions{margin-top:10px;gap:8px}
 .co-note strong{font-weight:700}
+.lf-cobox{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:14px 0}
+.lf-cobox summary{cursor:pointer;font-weight:700;font-size:13px}
+.lf-colist{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:6px;margin:8px 0;max-height:190px;overflow:auto}
+.lf-co{display:grid;grid-template-columns:auto 1fr 120px;gap:8px;align-items:center;border:1px solid var(--line);border-radius:8px;padding:6px 8px;font-size:13px}
+.lf-co input[type=number]{width:100%;padding:5px 6px;font-size:12px}
+.lf-cosig{border-top:1px solid var(--line);padding-top:10px;margin-top:10px}

@@ -27,8 +27,8 @@
     const list = offers(), waiting = list.filter(o => o.status === 'signed').length;
     const banner = waiting ? `<div class="notice lease-alert">${icon('check')}<span><strong>${waiting} signed contract${waiting === 1 ? '' : 's'} waiting for your approval.</strong> Approving it creates the tenancy and the tenant joins.</span></div>` : '';
     const body = list.length ? table(['Tenant', 'Property', 'Starts', 'Rent / month', 'Status', ''], list.map(o => [
-      `<strong>${e(o.tenant_name)}</strong>${o.response_note ? `<small>${e(o.response_note)}</small>` : ''}`, e(o.property_name), dateLabel(o.start_date),
-      `<span class="amount">${money(o.basic_cents + o.service_cents)}</span>`, badge(LABEL[o.status][0], LABEL[o.status][1]), `<div class="actions">${actionsFor(o)}</div>`
+      `<strong>${e(o.tenant_name)}</strong>${o.co_names ? `<small class="co-with">with ${e(o.co_names)}</small>` : ''}${o.response_note ? `<small>${e(o.response_note)}</small>` : ''}`, e(o.property_name), dateLabel(o.start_date),
+      `<span class="amount">${money(o.basic_cents + o.service_cents)}</span>`, badge(LABEL[o.status][0], LABEL[o.status][1]) + (o.co_count && ['sent', 'returned'].includes(o.status) ? `<small>${(o.signed_at ? 1 : 0) + o.co_signed} of ${o.co_count + 1} signed</small>` : ''), `<div class="actions">${actionsFor(o)}</div>`
     ])) : `<div class="empty"><h3>No contracts out for signature</h3><p>Press <strong>Send contract for signature</strong>. The tenant reads and signs it in their portal, then you approve it.</p></div>`;
     return `${banner}${panel('Contracts for signature', 'Sent to the tenant portal. A contract becomes a tenancy only after you approve the signature.', body)}`;
   }
@@ -50,18 +50,33 @@
       ${sel('property_id', 'Property', rows('properties').map(p => [p.id, p.name + (activeContract(p.id) ? ' (occupied)' : '')]), d.property_id)}${sel('template_id', 'Contract template', templates.map(t => [t.id, t.name]), d.template_id)}
       ${inp('start_date', 'Tenancy starts', 'date', d.start_date || today(), 'required')}${inp('end_date', 'Ends (leave empty if open-ended)', 'date', d.end_date)}
       ${inp('basic_rent', 'Basic rent per month (€)', 'number', d.basic_rent, 'required step="0.01" min="0"')}${inp('service_charge', 'Service-charge advance (€)', 'number', d.service_charge ?? '0', 'step="0.01" min="0"')}${inp('deposit', 'Deposit (€)', 'number', d.deposit ?? '0', 'step="0.01" min="0"')}</div>
+      ${coSection(d, tenants)}
       <h3 class="lf-h">Details the tenant fills in before signing</h3><p class="modal-note">Always asked: the IBAN and account holder of the account the rent will be paid from, so bank payments are recognised automatically.</p><div class="lf-fields">${ask}</div>
       <div class="form-grid"><div class="field"><label for="ls-c1">Your own question (optional)</label><input id="ls-c1" name="custom1" type="text" maxlength="80" value="${e(d.custom1 || '')}" placeholder="e.g. Licence plate number"></div><div class="field"><label for="ls-c2">Another question (optional)</label><input id="ls-c2" name="custom2" type="text" maxlength="80" value="${e(d.custom2 || '')}"></div></div>
       <p class="form-error" id="ls-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="submit" class="button primary">Next: read and edit the contract</button></div></form>`);
+  }
+  // co-tenants (a partner or spouse) sign the same contract in their own portal; the household may split the rent
+  function coSection(d, tenants) {
+    const chosen = new Set((d.co_tenant_ids || []).map(Number)), shares = d.co_shares || {};
+    const list = tenants.map(t => `<div class="lf-co"><input type="checkbox" id="co-${t.id}" name="co-${t.id}" ${chosen.has(t.id) ? 'checked' : ''}><label for="co-${t.id}">${e(t.name)}${hasLogin(t.id) ? '' : ' <small>(no portal login yet)</small>'}</label>`
+      + `<input type="number" name="coshare-${t.id}" step="0.01" min="0" placeholder="€ fixed / month" aria-label="Fixed amount ${e(t.name)} pays a month" value="${e(shares[t.id] || '')}"></div>`).join('');
+    const modes = [['', 'Not split: one rent, anyone may pay it'], ['equal', 'Equal parts'], ['fixed', 'Fixed amount for each co-tenant, the main tenant pays the rest']];
+    return `<details class="lf-cobox" ${chosen.size ? 'open' : ''}><summary>Co-tenants who sign too (partner, spouse)${chosen.size ? ` · ${chosen.size} chosen` : ''}</summary>
+      <p class="modal-note">Tick the people who rent the home together with the tenant. Each signs in their own portal; the contract counts as signed when everyone has signed. All of them are liable for the full rent.</p>
+      <div class="lf-colist">${list}</div>
+      <div class="form-grid"><div class="field wide"><label for="ls-split">How do they split the rent?</label><select id="ls-split" name="split_mode">${modes.map(([v, l]) => `<option value="${v}" ${(d.split_mode || '') === v ? 'selected' : ''}>${e(l)}</option>`).join('')}</select></div></div></details>`;
   }
   function collectDraft(f) {
     const d = {tenant_id: Number(val(f, 'tenant_id')), property_id: Number(val(f, 'property_id')), template_id: Number(val(f, 'template_id')), start_date: val(f, 'start_date'), end_date: val(f, 'end_date') || null,
       basic_rent: val(f, 'basic_rent'), service_charge: val(f, 'service_charge') || '0', deposit: val(f, 'deposit') || '0', custom1: val(f, 'custom1').trim(), custom2: val(f, 'custom2').trim(), asks: {}};
     for (const [key] of ASK) if (f.elements['ask-' + key]?.checked) d.asks[key] = {required: val(f, 'req-' + key) !== '0'};
+    d.co_tenant_ids = rows('tenants').filter(t => f.elements['co-' + t.id]?.checked && t.id !== d.tenant_id).map(t => t.id);
+    d.co_shares = Object.fromEntries(d.co_tenant_ids.map(id => [id, val(f, 'coshare-' + id)]));
+    d.split_mode = d.co_tenant_ids.length ? val(f, 'split_mode') : '';
     return d;
   }
   const formFieldsOf = d => [...Object.entries(d.asks).map(([key, v]) => ({key, required: v.required})), ...[d.custom1, d.custom2].filter(Boolean).map(label => ({label, required: true}))];
-  const payload = d => ({company_id: state.company, tenant_id: d.tenant_id, property_id: d.property_id, template_id: d.template_id, start_date: d.start_date, end_date: d.end_date, basic_rent: d.basic_rent, service_charge: d.service_charge, deposit: d.deposit});
+  const payload = d => ({company_id: state.company, tenant_id: d.tenant_id, property_id: d.property_id, template_id: d.template_id, start_date: d.start_date, end_date: d.end_date, basic_rent: d.basic_rent, service_charge: d.service_charge, deposit: d.deposit, co_tenant_ids: d.co_tenant_ids || [], co_shares: d.co_shares || {}, split_mode: d.split_mode || ''});
   // Step 2: the contract as a document, set up like the PDF, edited in place. Open details are inputs inside the text.
   let doc = null, sigInfo = null;
   async function showEditStep(d) {
@@ -166,9 +181,10 @@
         <p>Signed by <strong>${e(r.signer_name || '')}</strong> on ${e(dateLabel((r.signed_at || '').slice(0, 10)))}${how ? ` with a ${how} signature` : ''}. ${r.edited ? 'The contract text was edited for this tenant.' : ''}</p>
         ${r.signature ? `<img class="lf-sigimg" src="${e(r.signature)}" alt="The tenant's signature">` : ''}
         ${answers}
+        ${(r.co_signers || []).map(s => `<div class="lf-cosig"><p>Co-tenant <strong>${e(s.signer_name || s.name)}</strong> signed on ${e(dateLabel((s.signed_at || '').slice(0, 10)))}${s.share_cents ? ` · pays ${money(s.share_cents)} a month` : ''}.</p>${s.signature ? `<img class="lf-sigimg" src="${e(s.signature)}" alt="Signature of ${e(s.name)}">` : ''}${r.fields.length ? `<div class="lf-answers">${r.fields.map(f => `<div><span>${e(f.label)}</span><strong>${e(s.values[f.key] || '—')}</strong></div>`).join('')}</div>` : ''}</div>`).join('')}
         <p><a class="button small" href="/api/lease-offers/${id}/file" target="_blank" rel="noopener">${icon('folder')} Open the contract as signed so far (PDF)</a></p>
         ${needPad ? `<div class="sign-step"><span>2</span>Sign for the landlord</div>${HavenSignature.html(state.me.name)}` : `<p class="lf-ok">${icon('check')} The contract already carries the landlord's signature (${e(r.landlord_name || '')}), placed when it was sent.</p>`}
-        <div class="sign-agree"><input type="checkbox" id="la-confirm"><label for="la-confirm">I checked the signed contract. Approving makes ${e(o.tenant_name)} the tenant of ${e(o.property_name)} from ${e(dateLabel(o.start_date))}.</label></div>
+        <div class="sign-agree"><input type="checkbox" id="la-confirm"><label for="la-confirm">I checked the signed contract. Approving makes ${e(o.tenant_name)}${o.co_names ? ' and ' + e(o.co_names) : ''} the tenant of ${e(o.property_name)} from ${e(dateLabel(o.start_date))}.</label></div>
         <p class="form-error" id="la-error" role="alert"></p>
         <div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="button" class="button primary" id="la-go" disabled>Approve and create tenancy</button></div></div>`);
       const dlg = document.getElementById('modal'), root = dlg.querySelector('.sign-sheet'), go = document.getElementById('la-go'), box = document.getElementById('la-confirm');

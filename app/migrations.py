@@ -572,6 +572,16 @@ WHEN NOT ((OLD.status='pending signature' AND NEW.status='active' AND NEW.compan
 BEGIN SELECT RAISE(ABORT,'Contract identity is locked'); END;
 '''
 
+# V35: co-tenants who sign the tenancy agreement together with the tenant (each in their own portal), and the agreed split
+V35 = '''
+CREATE TABLE lease_offer_signers (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), offer_id INTEGER NOT NULL REFERENCES lease_offers(id),
+ tenant_id INTEGER NOT NULL REFERENCES tenants(id), share_cents INTEGER, signer_name TEXT, signed_at TEXT, signed_ip TEXT, signed_hash TEXT,
+ signature BLOB, signature_mode TEXT, form_values TEXT, UNIQUE(offer_id, tenant_id)
+);
+ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
+'''
+
 
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
@@ -844,6 +854,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (34, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=35').fetchone():
+            statement = ''
+            for line in V35.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (35, now()))
         conn.commit()
     except Exception:
         conn.rollback()

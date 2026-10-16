@@ -172,7 +172,9 @@ def agreement_pdf_bytes(text, *, company, logo=None, reference='', signatures=No
             parts += [HRFlowable(width='92%', thickness=0.7, color=colors.HexColor('#9aaba4'), hAlign='LEFT'), Spacer(1, 2),
                       Paragraph('<b>' + esc(sig['label']) + '</b><br/>' + esc(sig['caption']).replace(chr(10), '<br/>'), st['cap'])]
             cells.append(parts)
-        table = Table([cells], colWidths=[doc.width / len(cells)] * len(cells), style=TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0)]))
+        per_row = 2 if len(cells) > 2 else len(cells)   # landlord + tenant side by side; co-tenants on the next rows
+        grid = [cells[i:i + per_row] + [''] * (per_row - len(cells[i:i + per_row])) for i in range(0, len(cells), per_row)]
+        table = Table(grid, colWidths=[doc.width / per_row] * per_row, style=TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('BOTTOMPADDING', (0, 0), (-1, -1), 10)]))
         story += [Spacer(1, 16), KeepTogether([Paragraph('Ondertekening', st['h2']), Paragraph('Signatures', st['h2en']), table])]
 
     footer = (reference + '  ·  ' if reference else '') + str(company.get('name', ''))[:26]
