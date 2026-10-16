@@ -12,15 +12,16 @@
 
   // Payment verification: the tenants who said "I have paid", waiting for the bank statement or confirmed by it
   function noticesPanel() {
-    const list = rows('payment_notices').filter(n => inPeriod('payments', n.paid_on));
+    const list = rows('payment_notices').filter(n => inPeriod('payments', (n.invoice_period || n.paid_on) + '-01'));
+    const billFor = p => p ? new Intl.DateTimeFormat('en-GB', {month: 'long', year: 'numeric'}).format(new Date(+p.slice(0, 4), +p.slice(5, 7) - 1, 15)) : '—';
     if (!list.length) return '';
     const age = n => Math.floor((Date.now() - new Date(n.paid_on + 'T12:00:00')) / 86400000);
     const body = list.map(n => {
       const t = tenantFor(n.contract_id), status = n.status === 'confirmed' ? badge('Confirmed by bank', 'green') : n.status === 'withdrawn' ? badge('Withdrawn', 'gray')
         : age(n) > 7 ? badge('Not in the bank yet', 'amber') : badge('Waiting for bank statement', 'blue');
-      return [`<strong>${e(t.name || '')}</strong><small>${e(propertyFor(n.contract_id).name || '')}</small>`, e(n.invoice_number), `<strong>${eur(n.amount_cents)}</strong>`, e(dateLabel(n.paid_on)), e(n.iban ? n.iban.replace(/(.{4})/g, '$1 ').trim() : '—'), status, e(n.note || '')];
+      return [`<strong>${e(t.name || '')}</strong><small>${e(propertyFor(n.contract_id).name || '')}</small>`, e(n.invoice_number), `<strong>${e(billFor(n.invoice_period))}</strong>`, `<strong>${eur(n.amount_cents)}</strong>`, e(dateLabel(n.paid_on)), e(n.iban ? n.iban.replace(/(.{4})/g, '$1 ').trim() : '—'), status, e(n.note || '')];
     });
-    return `<div class="section-stack bank-notices">${panel('Tenants who said they paid', 'A tenant can report a payment without a receipt. It is confirmed automatically when the payment shows up in an imported bank statement.', table(['Tenant', 'Invoice', 'Amount', 'Paid on', 'From account', 'Status', 'Note'], body))}</div>`;
+    return `<div class="section-stack bank-notices">${panel('Tenants who said they paid', 'A tenant can report a payment without a receipt. It is confirmed automatically when the payment shows up in an imported bank statement.' + (periodValue('payments') ? ` Showing bills for ${periodLabel('payments')}.` : ''), table(['Tenant', 'Invoice', 'Bill for', 'Amount', 'Paid on', 'From account', 'Status', 'Note'], body))}</div>`;
   }
 
   const ui = {tab: 'check', data: null, loading: false, company: null};
