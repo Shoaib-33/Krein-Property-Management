@@ -35,11 +35,15 @@
       if (!cs.length) return null;
       const ids = new Set(cs.map(c => c.id));
       const inv = rows('invoices').filter(i => ids.has(i.contract_id) && i.released_at && inPeriod(key, i.period + '-01'));
-      const billed = inv.reduce((s, i) => s + i.total_cents, 0), open = inv.reduce((s, i) => s + Math.max(0, balance(i)), 0);
-      const pays = rows('ledger').filter(l => l.kind === 'payment' && inv.some(i => i.id === l.invoice_id)).sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
-      const late = inv.some(i => balance(i) > 0 && i.due_date < today_);
+      const own = inv.map(i => personBill(i, t.id)), split = own.some(Boolean);
+      const billed = inv.reduce((s, i, k) => s + (own[k] ? own[k].share : i.total_cents), 0), open = inv.reduce((s, i, k) => s + (own[k] ? own[k].open : Math.max(0, balance(i))), 0);
+      const mainOf = i => contract(i.contract_id).tenant_id === t.id;
+      const pays = rows('ledger').filter(l => l.kind === 'payment' && inv.some(i => i.id === l.invoice_id && (!own[inv.indexOf(i)] || l.payer_tenant_id === t.id || (!l.payer_tenant_id && mainOf(i)))))
+        .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));
+      const late = inv.some((i, k) => (own[k] ? own[k].open : balance(i)) > 0 && i.due_date < today_);
+      const household = split ? {billed: inv.reduce((s, i) => s + i.total_cents, 0), open: inv.reduce((s, i) => s + Math.max(0, balance(i)), 0), others: inv.flatMap(i => (sharesOf(i) || []).filter(x => x.tenant.id !== t.id && x.paid < x.share).map(x => x.tenant.name))} : null;
       const status = !inv.length ? 'Not invoiced' : open <= 0 ? 'Paid' : late ? 'Overdue' : open < billed ? 'Partly paid' : 'Open';
-      return {t, cs, inv, billed, open, pays, status, movedIn: cs.some(c => inPeriod(key, c.start_date)), movingOut: cs.some(c => c.end_date && inPeriod(key, c.end_date))};
+      return {t, cs, inv, billed, open, pays, status, household, movedIn: cs.some(c => inPeriod(key, c.start_date)), movingOut: cs.some(c => c.end_date && inPeriod(key, c.end_date))};
     }).filter(Boolean).filter(x => !q || `${x.t.name} ${x.t.email} ${x.t.phone}`.toLowerCase().includes(q));
     const order = orderHouseholds(people.map(x => x.t));
     people.sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t));
@@ -53,8 +57,9 @@
       const main = householdMain(x.t);
       return [`<div class="${main ? 'co-row' : ''}"><button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>${main ? `<small class="co-with">Co-tenant · with ${e(byId('tenants', main).name)}</small>` : householdNames(x.t).length ? `<small class="co-with">Rents with ${e(householdNames(x.t).join(', '))}</small>` : ''}</div>`,
         `<strong>${e(x.cs.map(c => propertyFor(c.id).name).join(', '))}</strong><small>${x.movedIn ? 'moved in ' + e(dateLabel(x.cs.find(c => inPeriod(key, c.start_date)).start_date)) : ''}${x.movingOut ? (x.movedIn ? ' · ' : '') + 'leaves ' + e(dateLabel(x.cs.find(c => c.end_date && inPeriod(key, c.end_date)).end_date)) : ''}</small>`,
-        ...(money_ ? [x.inv.length ? `<span class="amount">${money(x.billed)}</span><small>${x.inv.map(i => e(i.number)).join(', ')}</small>` : '<span class="muted">—</span>',
-          badge(x.status, tone[x.status]), x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>',
+        ...(money_ ? [x.inv.length ? `<span class="amount">${money(x.billed)}</span><small>${x.household ? `own part of ${money(x.household.billed)} · ` : ''}${x.inv.map(i => e(i.number)).join(', ')}</small>` : '<span class="muted">—</span>',
+          badge(x.household && x.status === 'Paid' ? 'Own part paid' : x.status, tone[x.status]) + (x.household && x.household.open > 0 && x.status === 'Paid' ? `<small class="co-by">waiting for ${e([...new Set(x.household.others)].join(', '))}</small>` : ''),
+          (x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>') + (x.household && x.household.open > 0 ? `<small>household ${money(x.household.open)} open</small>` : ''),
           last ? `<strong>${e(dateLabel(last.created_at.slice(0, 10)))}</strong><small>${e(howPaid(last))} · ${money(-last.amount_cents)}</small>` : '<span class="muted">No payment</span>'] : []),
         `<button type="button" class="button small" data-tenant="${x.t.id}">Open</button>`];
     });

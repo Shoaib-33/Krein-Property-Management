@@ -120,6 +120,19 @@
     out.set(ps[0].tenant.id, rest);
     return out;
   }
+  // one person's part of a split bill and what they paid of it (same rule as invoice_shares() in app/co_tenants.py:
+  // payments nobody is named for count for the main tenant first). null when the rent is not split.
+  window.sharesOf = inv => {
+    const c = contract(inv.contract_id); if (!c || !c.id) return null;
+    const ls = rows('ledger').filter(l => l.invoice_id === inv.id);
+    const billed = ls.filter(l => !['payment', 'reversal'].includes(l.kind)).reduce((s, l) => s + l.amount_cents, 0) || inv.total_cents;
+    const split = parts(c, billed); if (!split) return null;
+    const paid = new Map(); let loose = 0;
+    for (const l of ls.filter(l => ['payment', 'reversal'].includes(l.kind))) { if (l.payer_tenant_id) paid.set(l.payer_tenant_id, (paid.get(l.payer_tenant_id) || 0) - l.amount_cents); else loose -= l.amount_cents; }
+    return peopleOf(c.id).map(p => { const share = split.get(p.tenant.id) || 0; let got = paid.get(p.tenant.id) || 0; if (loose > 0) { const x = Math.min(loose, Math.max(0, share - got)); got += x; loose -= x; } return {tenant: p.tenant, main: p.main, share, paid: got}; });
+  };
+  window.partOfRent = (cid, tid, total) => { const c = contract(cid), m = c && c.id ? parts(c, total) : null; return m ? m.get(tid) : null; };
+  window.personBill = (inv, tid) => { const s = (sharesOf(inv) || []).find(x => x.tenant.id === tid); return s ? {share: s.share, paid: s.paid, open: Math.max(0, s.share - s.paid)} : null; };
   const canChange = () => ['admin', 'manager', 'property', 'landlord'].includes(company().role) || !!company().landlord;
 
   function section(c) {
