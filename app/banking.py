@@ -403,6 +403,45 @@ def bank_settings(company_id: int, user=Depends(current_user)):
         return {'mode': saved_mode(conn, company_id, reach), 'own_account': reach.owner_id is not None}
 
 
+def ingest(conn, company_id, reach, parsed, mode, user_id, filename, fmt, sha):
+    """Book or queue the incoming payments of one statement (an uploaded file, or what the bank connection fetched).
+    Already known payments are skipped, so the same payment arriving again adds nothing."""
+    automatic = mode == 'auto'
+    summary = {'format': fmt, 'mode': mode, 'payments': len(parsed), 'new': 0, 'duplicates': 0, 'booked': 0, 'suggested': 0, 'unmatched': 0}
+    prefix = f'o{reach.owner_id}:' if reach.owner_id else ''
+    import_id = conn.execute('INSERT INTO bank_imports(company_id,owner_id,filename,format,sha256,lines,created_by,created_at,mode) VALUES(?,?,?,?,?,?,?,?,?)',
+                             (company_id, reach.owner_id, filename[:120], fmt, sha, len(parsed), user_id, now(), mode)).lastrowid
+    if reach.owner_id:   # remember the choice for next time
+        conn.execute('UPDATE owners SET bank_mode=? WHERE id=?', (mode, reach.owner_id))
+    else:
+        conn.execute('UPDATE companies SET bank_mode=? WHERE id=?', (mode, company_id))
+    seen = {}
+    for line in parsed:
+        if line['amount_cents'] <= 0:
+            continue
+        cur = conn.execute('INSERT OR IGNORE INTO bank_lines(company_id,owner_id,import_id,dedupe,booked_on,amount_cents,iban,name,description,bank_ref,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
+                           (company_id, reach.owner_id, import_id, prefix + dedupe_key(line, seen), line['booked_on'], line['amount_cents'], line['iban'], line['name'][:140], line['description'][:500], line['bank_ref'][:120], 'unmatched', now()))
+        if cur.rowcount == 0:
+            summary['duplicates'] += 1
+            continue
+        summary['new'] += 1
+        line_id = cur.lastrowid
+        status, tenant, allocations, reason = match(conn, company_id, line, reach)
+        if status == 'booked' and automatic:
+            book(conn, company_id, line_id, allocations, user_id, tenant, reason)
+            summary['booked'] += 1
+            continue
+        certain = status == 'booked'
+        if certain:   # review first: the match is shown, nothing is booked or sent until a person approves it
+            status, reason = 'suggested', 'Match found: ' + reason
+            summary['to_approve'] = summary.get('to_approve', 0) + 1
+        conn.execute('UPDATE bank_lines SET status=?,tenant_id=?,invoice_id=?,reason=?,certain=? WHERE id=?', (status, tenant, allocations[0][0]['id'] if allocations else None, reason, int(certain), line_id))
+        summary[status] += 1
+    conn.execute('UPDATE bank_imports SET booked=? WHERE id=?', (summary['booked'], import_id))
+    summary['import_id'] = import_id
+    return summary
+
+
 @router.post('/api/bank/import')
 async def import_statement(company_id: int = Form(...), mode: str = Form(''), auto: str = Form(''), file: UploadFile = File(...), user=Depends(current_user)):
     """mode 'auto': certain matches are booked and the tenant is told at once.
@@ -419,42 +458,11 @@ async def import_statement(company_id: int = Form(...), mode: str = Form(''), au
     if not raw or len(raw) > MAX_FILE:
         raise HTTPException(422, 'Upload a statement file of at most 5 MB.')
     fmt, parsed = parse_statement(raw, file.filename or '')
-    automatic = mode == 'auto'
-    summary = {'format': fmt, 'mode': mode, 'payments': len(parsed), 'new': 0, 'duplicates': 0, 'booked': 0, 'suggested': 0, 'unmatched': 0}
     with transaction() as conn:
         reach = bank_reach(conn, user, company_id)
         conn.scope = None
-        prefix = f'o{reach.owner_id}:' if reach.owner_id else ''
-        import_id = conn.execute('INSERT INTO bank_imports(company_id,owner_id,filename,format,sha256,lines,created_by,created_at,mode) VALUES(?,?,?,?,?,?,?,?,?)',
-                                 (company_id, reach.owner_id, (file.filename or 'statement')[:120], fmt, hashlib.sha256(raw).hexdigest(), len(parsed), user['id'], now(), mode)).lastrowid
-        if reach.owner_id:   # remember the choice for next time
-            conn.execute('UPDATE owners SET bank_mode=? WHERE id=?', (mode, reach.owner_id))
-        else:
-            conn.execute('UPDATE companies SET bank_mode=? WHERE id=?', (mode, company_id))
-        seen = {}
-        for line in parsed:
-            if line['amount_cents'] <= 0:
-                continue
-            cur = conn.execute('INSERT OR IGNORE INTO bank_lines(company_id,owner_id,import_id,dedupe,booked_on,amount_cents,iban,name,description,bank_ref,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)',
-                               (company_id, reach.owner_id, import_id, prefix + dedupe_key(line, seen), line['booked_on'], line['amount_cents'], line['iban'], line['name'][:140], line['description'][:500], line['bank_ref'][:120], 'unmatched', now()))
-            if cur.rowcount == 0:
-                summary['duplicates'] += 1
-                continue
-            summary['new'] += 1
-            line_id = cur.lastrowid
-            status, tenant, allocations, reason = match(conn, company_id, line, reach)
-            if status == 'booked' and automatic:
-                book(conn, company_id, line_id, allocations, user['id'], tenant, reason)
-                summary['booked'] += 1
-                continue
-            certain = status == 'booked'
-            if certain:   # review first: the match is shown, nothing is booked or sent until a person approves it
-                status, reason = 'suggested', 'Match found: ' + reason
-                summary['to_approve'] = summary.get('to_approve', 0) + 1
-            conn.execute('UPDATE bank_lines SET status=?,tenant_id=?,invoice_id=?,reason=?,certain=? WHERE id=?', (status, tenant, allocations[0][0]['id'] if allocations else None, reason, int(certain), line_id))
-            summary[status] += 1
-        conn.execute('UPDATE bank_imports SET booked=? WHERE id=?', (summary['booked'], import_id))
-        audit(conn, user['id'], company_id, 'imported', 'bank_statement', import_id, {**summary, 'landlord_account': bool(reach.owner_id)})
+        summary = ingest(conn, company_id, reach, parsed, mode, user['id'], file.filename or 'statement', fmt, hashlib.sha256(raw).hexdigest())
+        audit(conn, user['id'], company_id, 'imported', 'bank_statement', summary['import_id'], {**summary, 'landlord_account': bool(reach.owner_id)})
     return summary
 
 

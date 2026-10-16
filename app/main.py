@@ -34,7 +34,7 @@ OPERATIONS = ('property', 'manager')
 @asynccontextmanager
 async def lifespan(app):
     db.init_db()
-    tasks = [asyncio.create_task(monthly_billing_scheduler()), asyncio.create_task(email_delivery_loop())]
+    tasks = [asyncio.create_task(monthly_billing_scheduler()), asyncio.create_task(email_delivery_loop()), asyncio.create_task(bank_connection_loop())]
     app.state.billing_task = tasks[0]
     yield
     for t in tasks:
@@ -409,6 +409,21 @@ async def email_delivery_loop():
         except Exception:
             logging.exception('Email delivery loop failed; it tries again in 2 minutes.')
         await asyncio.sleep(120)
+
+
+async def bank_connection_loop():
+    """The automatic bank connection (app/ponto.py) looks for new payments every HAVEN_PONTO_SYNC_MINUTES; it does nothing until the keys are set."""
+    from .ponto import settings, sync_all, sync_minutes
+    await asyncio.sleep(90)   # let the server start first
+    while True:
+        try:
+            if settings():
+                await asyncio.to_thread(sync_all)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception('Bank connection loop failed; it tries again later.')
+        await asyncio.sleep(sync_minutes() * 60)
 
 
 @app.get('/api/health')
@@ -2052,6 +2067,8 @@ from .password_reset import router as password_reset_router
 app.include_router(password_reset_router)
 from .contractor_agreements import router as contractor_agreements_router
 from .co_tenants import router as co_tenants_router
+from .ponto import router as ponto_router
+app.include_router(ponto_router)
 app.include_router(co_tenants_router)
 app.include_router(contractor_agreements_router)
 app.include_router(portal_router)

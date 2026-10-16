@@ -582,6 +582,22 @@ CREATE TABLE lease_offer_signers (
 ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
 '''
 
+# V38: the automatic bank connection (Ponto, read-only): the company's permission and the accounts it covers (app/ponto.py)
+V38 = '''
+CREATE TABLE bank_connections (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), provider TEXT NOT NULL DEFAULT 'ponto',
+ status TEXT NOT NULL CHECK(status IN ('pending','connected','expired','revoked','replaced')), oauth_state TEXT, code_verifier TEXT,
+ access_token TEXT, refresh_token TEXT, access_expires_at TEXT, connected_by INTEGER REFERENCES users(id), connected_at TEXT,
+ last_sync_at TEXT, last_error TEXT, reminded_at TEXT, created_at TEXT NOT NULL
+);
+CREATE INDEX bank_connections_company ON bank_connections(company_id,status);
+CREATE TABLE bank_connection_accounts (
+ id INTEGER PRIMARY KEY, connection_id INTEGER NOT NULL REFERENCES bank_connections(id), company_id INTEGER NOT NULL REFERENCES companies(id),
+ ponto_id TEXT NOT NULL, iban TEXT NOT NULL DEFAULT '', name TEXT NOT NULL DEFAULT '', holder TEXT NOT NULL DEFAULT '', authorization_expires_at TEXT,
+ last_synced_at TEXT, enabled INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, UNIQUE(connection_id, ponto_id)
+);
+'''
+
 # V37: invoice and reminder emails go to every person on the contract separately (one job per recipient), each with their own part
 V37 = '''
 ALTER TABLE outbound_email_jobs RENAME TO outbound_email_jobs_v36;
@@ -907,6 +923,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (37, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=38').fetchone():
+            statement = ''
+            for line in V38.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (38, now()))
         conn.commit()
     except Exception:
         conn.rollback()

@@ -339,3 +339,7 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .pg-person{display:block}
 .pg-mail{display:grid;grid-template-columns:auto auto 1fr;gap:6px;align-items:center;font-size:12px;margin-bottom:4px}
 .pg-mail small{color:var(--muted);font-size:11px}
+.pn-box p{margin:0 0 8px;font-size:13.5px}
+.pn-box code{font-size:12px;background:#f2f5f3;padding:1px 5px;border-radius:5px}
+.pn-status{display:flex;gap:10px;align-items:center;margin-bottom:8px;font-size:13px}
+.pn-actions{margin-top:10px;gap:8px}
