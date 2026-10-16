@@ -20,6 +20,7 @@
     const acc = rows('portal_accounts').find(a => a.user_id === userId && (!ids.size || ids.has(a.tenant_id)));
     return acc ? byId('tenants', acc.tenant_id) : tenantFor(contractId);
   };
+  const homeCell = cid => { const p = propertyFor(cid) || {}, co = window.coNames ? coNames(cid) : []; return `<strong>${e(p.name || '—')}</strong>${co.length ? `<small>shared: ${e([tenantFor(cid).name, ...co].join(' & '))}</small>` : ''}`; };
   function submissions() {
     const f = state.filter || 'All', want = s => f === 'All' || s === f.toLowerCase();
     const items = [];
@@ -27,7 +28,7 @@
       const inv = byId('invoices', p.invoice_id);
       if (!inv.id || !want(p.status) || !inPeriod('payments', (inv.period ? inv.period + '-01' : p.paid_on))) continue;
       const byBank = p.status === 'approved' && /bank statement/i.test(p.review_note || '');
-      items.push({when: p.created_at, row: [tenantCell(senderOf(p.submitted_by, inv.contract_id)), `<strong>${e(inv.number)}</strong><small>${e(BILL(inv.period))} · ${e(p.method)}</small>`,
+      items.push({when: p.created_at, row: [tenantCell(senderOf(p.submitted_by, inv.contract_id)), homeCell(inv.contract_id), `<strong>${e(inv.number)}</strong><small>${e(BILL(inv.period))} · ${e(p.method)}</small>`,
         `<span class="amount">${money(p.amount_cents)}</span>`, dateLabel(p.created_at), badge(p.status) + (byBank ? '<small class="co-by">Confirmed by bank</small>' : ''),
         actionBtn(p.status === 'pending' ? 'Review receipt' : 'View receipt', 'review-proof', p.id, p.status === 'pending' ? 'small primary' : 'small')]});
     }
@@ -41,7 +42,7 @@
         : badge('pending') + `<small class="co-by">${late ? 'Not in the bank yet' : 'Waiting for bank statement'}</small>`;
       const act = n.status === 'confirmed' && n.bank_line_id ? `<a class="button small" href="/api/bank/lines/${n.bank_line_id}/statement.pdf" data-pv-title="Bank statement">Bank statement</a>`
         : n.found_line ? `<button type="button" class="button small primary" data-action="navigate" data-page="bank">Approve in Bank statements</button>` : '';
-      items.push({when: n.created_at, row: [tenantCell(who), `<strong>${e(n.invoice_number)}</strong><small>${e(BILL(n.invoice_period))} · ${e(how)}</small>`,
+      items.push({when: n.created_at, row: [tenantCell(who), homeCell(n.contract_id), `<strong>${e(n.invoice_number)}</strong><small>${e(BILL(n.invoice_period))} · ${e(how)}</small>`,
         `<span class="amount">${money(n.amount_cents)}</span>`, dateLabel(n.created_at), state_ + (n.note ? `<small>${e(n.note)}</small>` : ''), act]});
     }
     return items.sort((a, b) => String(b.when).localeCompare(String(a.when))).map(x => x.row);
@@ -54,7 +55,7 @@
     return heading('Every payment, verified', 'Review the receipt. Confirm the funds. Keep a clear record.', button('Record a submission', 'staff-proof', '', 'primary'), 'PAYMENT VERIFICATION')
       + notice('A receipt is evidence of a claimed payment. Confirm actual receipt independently before approving. A tenant who only says they paid is confirmed by the bank statement. Staff-submitted receipts require a different reviewer.')
       + periodBar('payments', periodValue('payments') ? `Bills for ${e(periodLabel('payments'))}` : '')
-      + panel('Payment submissions', sub, filters(['All', 'Pending', 'Approved', 'Rejected', 'Reversed']) + table(['Tenant', 'Invoice', 'Amount', 'Submitted', 'Status', ''], submissions(), 'Nothing in this list.'));
+      + panel('Payment submissions', sub, filters(['All', 'Pending', 'Approved', 'Rejected', 'Reversed']) + table(['Tenant', 'Home', 'Invoice', 'Amount', 'Submitted', 'Status', ''], submissions(), 'Nothing in this list.'));
   };
 
   const ui = {tab: 'check', data: null, loading: false, company: null};
