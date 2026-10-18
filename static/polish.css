@@ -343,3 +343,13 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .pn-box code{font-size:12px;background:#f2f5f3;padding:1px 5px;border-radius:5px}
 .pn-status{display:flex;gap:10px;align-items:center;margin-bottom:8px;font-size:13px}
 .pn-actions{margin-top:10px;gap:8px}
+.ax-wrap{overflow-x:auto}
+.ax-table{width:100%;border-collapse:collapse;font-size:13px}
+.ax-table th{position:sticky;top:0;background:#eef4f0;padding:10px 8px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;text-align:center}
+.ax-table th:first-child{text-align:left}
+.ax-table td{padding:8px;border-bottom:1px solid var(--line)}
+.ax-feature{white-space:nowrap}
+.ax-cell{text-align:center}
+.ax-cell input{width:18px;height:18px;cursor:pointer;accent-color:#1a7a52}
+.ax-na{color:#b6c2bc}
+.ax-group td{background:#f7faf8;font-weight:800;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:#4b6358;padding-top:14px}

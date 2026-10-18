@@ -108,9 +108,13 @@ def authorize(conn, user, company_id, roles=None, scoped=False):
         conn.scope = landlord_scope(conn, user['id'], company_id)
         if not conn.scope.properties:
             raise HTTPException(403, 'No property has been assigned to you yet. Ask your manager to add one to your portfolio.')
+        from .access import check   # the Developer's access matrix (app/access.py)
+        check(conn, user, role)
         return role
     if roles and role not in roles and role != 'admin':
         raise HTTPException(403, 'Your role cannot perform this action.')
+    from .access import check
+    check(conn, user, role)
     return role
 
 

@@ -156,7 +156,8 @@ def tenant_data(user=Depends(current_user)):
         ids=[c['id'] for c in contracts]
         company_ids=sorted({a['company_id'] for a in accounts})
         from .main import video_limit
-        result={'accounts':accounts,'contracts':contracts,'today':local_today().isoformat(),'video_limit_mb':video_limit()//(1024*1024)}
+        from .access import off_map
+        result={'accounts':accounts,'contracts':contracts,'today':local_today().isoformat(),'video_limit_mb':video_limit()//(1024*1024),'access_off':off_map(conn)['tenant']}
         tmarks=','.join('?' for _ in accounts)
         result['bank_accounts']=[dict(r) for r in conn.execute(f'SELECT id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE tenant_id IN ({tmarks}) GROUP BY iban ORDER BY id',tuple(a['id'] for a in accounts))]
         from .lease_offers import tenant_offers

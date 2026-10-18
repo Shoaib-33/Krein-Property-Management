@@ -177,7 +177,10 @@
  }
  const HELP=['messages','repairs','requests'];
  const TAB_TARGETS={home:['home'],payments:['payments'],documents:['documents'],messages:HELP};
- function helpTabs(){const t=[['messages','Messages','message'],['repairs','Repairs','wrench'],['requests','Requests & complaints','calendar']];return '<div class="view-switch" role="tablist">'+t.map(([id,n,sym])=>'<button type="button" class="vs-btn '+(S.page===id?'active':'')+'" data-do="nav" data-page="'+id+'">'+ic(sym)+' '+n+((S.data.notifications||[]).filter(x=>!x.is_read&&x.target===id).length?'<span class="count">'+(S.data.notifications||[]).filter(x=>!x.is_read&&x.target===id).length+'</span>':'')+'</button>').join('')+'</div>';}
+ const OFF=k=>((S.data&&S.data.access_off)||[]).includes(k);
+ const TAB_OFF={payments:'t_payments',documents:'t_documents',messages:'t_messages',repairs:'t_repairs',requests:'t_requests'};
+ const tabOff=id=>id==='messages'?['t_messages','t_repairs','t_requests'].every(OFF):OFF(TAB_OFF[id]);
+ function helpTabs(){const t=[['messages','Messages','message'],['repairs','Repairs','wrench'],['requests','Requests & complaints','calendar']].filter(([id])=>!OFF(TAB_OFF[id]));return '<div class="view-switch" role="tablist">'+t.map(([id,n,sym])=>'<button type="button" class="vs-btn '+(S.page===id?'active':'')+'" data-do="nav" data-page="'+id+'">'+ic(sym)+' '+n+((S.data.notifications||[]).filter(x=>!x.is_read&&x.target===id).length?'<span class="count">'+(S.data.notifications||[]).filter(x=>!x.is_read&&x.target===id).length+'</span>':'')+'</button>').join('')+'</div>';}
  function requestCard(r,d){
   const roots=(d.messages||[]).filter(m=>m.thread_id===m.id&&m.contract_id===r.contract_id&&m.subject==='Response: '+r.subject);
   const ids=new Set(roots.map(m=>m.id));
@@ -205,6 +208,7 @@
   return '<div class="notice co-note"><span>'+L('You rent this home together with ','U huurt deze woning samen met ')+'<strong>'+others.map(p=>safe(p.name)).join(', ')+'</strong>.'+part+' '+L('Each of you pays from your own account; a bill is settled when all parts are in.','Ieder betaalt vanaf de eigen rekening; een factuur is voldaan als alle delen binnen zijn.')+'</span></div>';
  }
  function paidControls(d,i){
+  if(OFF('t_paid'))return '';
   const mine=new Set((d.accounts||[]).map(a=>a.id));
   const n=(d.payment_notices||[]).find(x=>x.invoice_id===i.id&&x.status==='waiting'&&(!x.tenant_id||mine.has(x.tenant_id)));
   if(!n&&(i.shares||[]).length&&i.my_due_cents<=0)return '<span class="badge green">'+L('Your part is paid','Uw deel is betaald')+'</span>';
@@ -250,6 +254,7 @@
      n.status==='confirmed'?'<span class="badge green">'+L('Confirmed by the bank','Bevestigd door de bank')+'</span>'+(n.confirmed_at?'<small>'+day(n.confirmed_at)+'</small>':''):'<span class="badge blue">'+L('Waiting for the bank statement','Wacht op het bankafschrift')+'</span>'];})),'','');
  }
  function bankBox(d){
+  if(OFF('t_bank'))return '';
   const list=d.bank_accounts||[];
   const rows=list.map(a=>[safe(a.iban.replace(/(.{4})/g,'$1 ').trim()),safe(a.holder||''),'<button class="button small" data-do="bank-remove" data-id="'+a.id+'">'+L('Remove','Verwijderen')+'</button>']);
   return box(L('Your bank accounts','Uw bankrekeningen'),L('The accounts you pay the rent from. Payments from these accounts are matched to your invoices automatically.','De rekeningen waarvan u de huur betaalt. Betalingen vanaf deze rekeningen worden automatisch aan uw facturen gekoppeld.'),
@@ -267,6 +272,7 @@
  // ---------- service agreement sent by the property manager: read, fill in, sign
  const OFFER_STATE={sent:['Ready to sign','amber'],returned:['Returned: please correct and sign again','amber'],signed:['Signed: waiting for approval','blue'],approved:['Approved','green'],declined:['Declined','red']};
  function contractorOffers(d){
+  if(OFF('c_agreements'))return '';
   return (d.agreement_offers||[]).filter(o=>o.status!=='declined'||true).map(o=>{
    const st=OFFER_STATE[o.status]||[o.status,'gray'],open=['sent','returned'].includes(o.status);
    const facts='<div class="sign-sum"><div><small>'+L('Hourly rate','Uurtarief')+'</small><strong>'+cash(o.hourly_cents)+'</strong><span>excl. btw</span></div><div><small>'+L('Call-out fee','Voorrijkosten')+'</small><strong>'+cash(o.callout_cents)+'</strong><span>'+L('Emergency surcharge ','Spoedtoeslag ')+o.emergency_percent+'%</span></div><div><small>'+L('Starts','Ingang')+'</small><strong>'+day(o.start_date)+'</strong><span>'+(o.end_date?L('Until ','Tot ')+day(o.end_date):L('Open-ended','Onbepaalde tijd'))+'</span></div><div><small>'+L('Payment term','Betaaltermijn')+'</small><strong>'+o.payment_days+L(' days',' dagen')+'</strong><span>'+L('Warranty ','Garantie ')+o.warranty_months+L(' months',' maanden')+'</span></div></div>';
@@ -303,10 +309,18 @@
   if(mode==='contractor'){
    root.innerHTML='<div class="portal-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">h</span><div>haven<small>WORK PARTNER</small></div></div><div class="portal-identity"><span class="avatar">'+safe(ini(S.me.name))+'</span><strong>'+safe(S.me.name)+'</strong><small>Assigned work only</small></div><div class="sidebar-footer"><button class="button" data-do="password">Change password</button><button class="button" data-do="logout">'+ic('exit')+'Sign out</button></div></aside><div class="workspace"><header class="topbar"><div class="breadcrumb">Work orders / <span>Your assignments</span></div></header><main id="portal-main">'+contractorPage(S.data)+'</main></div></div>';return;
   }
-  const nav=[['home','Your home','home'],['payments','Rent & payments','money'],['documents','Documents','folder'],['messages','Help & requests','message']];
+  const nav=[['home','Your home','home'],['payments','Rent & payments','money'],['documents','Documents','folder'],['messages','Help & requests','message']].filter(([id])=>!tabOff(id));
   const unreadFor=id=>(S.data.notifications||[]).filter(n=>!n.is_read&&(TAB_TARGETS[id]||[id]).includes(n.target)).length;
   root.innerHTML='<div class="portal-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">h</span><div>haven<small>RESIDENT SERVICES</small></div></div><div class="portal-identity"><span class="avatar">'+safe(ini(S.data.accounts?.[0]?.name||S.me.name))+'</span><strong>'+safe(S.data.accounts?.[0]?.name||S.me.name)+'</strong><small>'+safe(S.data.contracts?.[0]?.company_name||'Your home')+'</small></div><nav>'+nav.map(([id,name,sym])=>'<button class="nav-item '+((S.page===id||(id==='messages'&&HELP.includes(S.page)))?'active':'')+'" data-do="nav" data-page="'+id+'">'+ic(sym)+'<span>'+name+'</span>'+(unreadFor(id)?'<span class="count" aria-label="'+unreadFor(id)+' new">'+unreadFor(id)+'</span>':'')+'</button>').join('')+'</nav><div class="sidebar-footer"><button class="button" data-do="password">Change password</button><button class="button" data-do="logout">'+ic('exit')+'Sign out</button></div></aside><div class="workspace"><header class="topbar"><button class="icon-button mobile-menu" aria-label="Menu" data-do="menu">'+ic('menu')+'</button><div class="breadcrumb">Your home / <span>'+safe(S.data.contracts?.[0]?.property_name||'Tenancy')+'</span></div><span class="date-pill">'+new Date().toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long'})+'</span>'+bellButton()+'</header><main id="portal-main">'+tenantPage(S.data)+'</main></div></div>';
  }
+ const _shell=shell;
+ shell=()=>{
+  if(mode==='tenant'&&S.data&&(tabOff(S.page)||(['repairs','requests'].includes(S.page)&&OFF(TAB_OFF[S.page]))))S.page='home';
+  _shell();
+  const drop=(k,sel)=>{if(OFF(k))document.querySelectorAll(sel).forEach(x=>x.remove());};
+  drop('t_receipts','[data-do="proof"]');drop('t_paid','[data-do="paid"]');drop('c_quotes','[data-do="quote"]');
+  if(OFF('t_payments'))document.querySelectorAll('[data-do="nav-payments"],[data-do="proof"],[data-do="paid"],a[href*="/api/tenant/invoices/"]').forEach(x=>x.remove());
+ };
  async function start(){
   try{S.me=await call('/api/me');S.csrf=S.me.csrf;
    if(mode==='tenant'&&!S.me.tenant_access){login('This account does not have tenant access. Contact your property manager.');return;}
@@ -317,7 +331,7 @@
  }
  function modal(title,fields,submit,intro='',submitLabel='Submit'){
   const input=(name,label,type='text',opts={})=>'<div class="field '+(opts.wide?'wide':'')+'"><label>'+safe(label)+'</label>'+(type==='select'?'<select name="'+name+'" '+(opts.required===false?'':'required')+'>'+(opts.options||[]).map(([v,l])=>'<option value="'+safe(v)+'">'+safe(l)+'</option>').join('')+'</select>':type==='textarea'?'<textarea name="'+name+'" '+(opts.required===false?'':'required')+'></textarea>':'<input name="'+name+'" type="'+type+'" '+(opts.required===false?'':'required')+' '+(type==='file'?'accept="'+(opts.accept||'application/pdf,image/png,image/jpeg,image/webp')+'"'+(opts.multiple?' multiple data-max-files="'+opts.multiple+'"':'')+(opts.maxMb?' data-max-mb="'+opts.maxMb+'"':''):'')+' '+(opts.value?'value="'+safe(opts.value)+'"':'')+' '+(type==='number'?'min="0.01" step="0.01"':'')+' '+(type==='password'?'minlength="12"':'')+'></div>');
-  const dialog=document.querySelector('#modal');dialog.innerHTML='<div class="modal-header"><h2 id="modal-title">'+safe(title)+'</h2><button class="icon-button" data-do="close">×</button></div><div class="modal-body">'+(intro?'<p class="modal-note">'+safe(intro)+'</p>':'')+'<form id="pform"><div class="form-grid">'+fields.map(f=>input(...f)).join('')+'</div><p class="form-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-do="close">Cancel</button><button type="submit" class="button primary">'+safe(submitLabel)+'</button></div></form></div>';if(!dialog.open)dialog.showModal();
+  const dialog=document.querySelector('#modal');dialog.innerHTML='<div class="modal-header"><h2 id="modal-title">'+safe(title)+'</h2><button class="icon-button" data-do="close">×</button></div><div class="modal-body">'+(intro?'<p class="modal-note">'+safe(intro)+'</p>':'')+'<form id="pform"><div class="form-grid">'+fields.map(f=>input(...f)).join('')+'</div><p class="form-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-do="close">Cancel</button><button type="submit" class="button primary">'+safe(submitLabel)+'</button></div></form></div>';if(!dialog.open)dialog.showModal();if(OFF('t_videos'))dialog.querySelectorAll('input[name="video"]').forEach(x=>(x.closest('.field')||x).remove());
   document.querySelector('#pform').onsubmit=async ev=>{ev.preventDefault();const f=ev.currentTarget,b=f.querySelector('button[type="submit"]');b.disabled=true;try{const vals=new FormData(f);await submit(Object.fromEntries(vals),vals);dialog.close();S.data=mode==='tenant'?await call('/api/tenant/data'):await call('/api/contractor/data');shell();flash('Your update has been saved.');}catch(err){f.querySelector('.form-error').textContent=err.message;b.disabled=false;}};
  }
  // a video above the limit is refused before it is sent, so the tenant does not wait for a long upload

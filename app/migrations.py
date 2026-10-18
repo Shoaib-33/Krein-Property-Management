@@ -582,6 +582,14 @@ CREATE TABLE lease_offer_signers (
 ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
 '''
 
+# V39: the Developer's access matrix: a feature switched off for a role (no row = switched on, as before) (app/access.py)
+V39 = '''
+CREATE TABLE role_access (
+ feature TEXT NOT NULL, role TEXT NOT NULL, allowed INTEGER NOT NULL DEFAULT 1, updated_by INTEGER REFERENCES users(id), updated_at TEXT NOT NULL,
+ PRIMARY KEY(feature, role)
+);
+'''
+
 # V38: the automatic bank connection (Ponto, read-only): the company's permission and the accounts it covers (app/ponto.py)
 V38 = '''
 CREATE TABLE bank_connections (
@@ -931,6 +939,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (38, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=39').fetchone():
+            statement = ''
+            for line in V39.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (39, now()))
         conn.commit()
     except Exception:
         conn.rollback()

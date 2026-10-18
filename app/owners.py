@@ -431,7 +431,10 @@ def owner_data(user=Depends(current_user)):
     for a in accounts:
         db.audit_view(user['id'], a['company_id'], 'owner_portal', None)
     paid_ytd = sum(s['net_cents'] for s in statements if s['status'] == 'paid' and s['period'][:4] == today[:4])
-    return {'accounts': accounts, 'portfolios': portfolios, 'units': units, 'statements': statements, 'arrears': arrears, 'month_collected_cents': month_collected, 'paid_ytd_cents': paid_ytd, 'documents': documents, 'doc_categories': ['Insurance', 'Deed / title', 'Valuation', 'Energy label', 'Inspection report', 'Tax & levies', 'Other'], 'notifications': notifications, 'today': today}
+    from .access import off_map
+    with connect() as conn:
+        access_off = off_map(conn)['owner']
+    return {'access_off': access_off, 'accounts': accounts, 'portfolios': portfolios, 'units': units, 'statements': statements, 'arrears': arrears, 'month_collected_cents': month_collected, 'paid_ytd_cents': paid_ytd, 'documents': documents, 'doc_categories': ['Insurance', 'Deed / title', 'Valuation', 'Energy label', 'Inspection report', 'Tax & levies', 'Other'], 'notifications': notifications, 'today': today}
 
 
 @router.get('/api/owner/statements/{statement_id}/pdf')

@@ -75,7 +75,9 @@
       + `<section class="panel"><div class="panel-header"><div><h2>Send a document to your manager</h2><p>PDF, JPEG, PNG or WebP, up to 10 MB.</p></div></div><form id="owner-upload" class="panel-body"><div class="form-grid"><div class="field"><label for="cat">Category</label><select id="cat" name="category">${d.doc_categories.map(c => `<option>${esc(c)}</option>`).join('')}</select></div><div class="field"><label for="ttl">Title (optional)</label><input id="ttl" name="title" maxlength="150"></div><div class="field wide"><label for="fl">File</label><input id="fl" name="file" type="file" accept="application/pdf,image/png,image/jpeg,image/webp" required></div></div><p class="form-error" role="alert"></p><button class="button primary">${ic('down')} Upload</button></form></section>`;
   }
 
-  const nav = [['overview', 'Overview', 'home'], ['units', 'Units', 'building'], ['statements', 'Statements', 'file'], ['documents', 'Documents', 'folder']];
+  const OWNER_OFF = {units: 'o_units', statements: 'o_statements', documents: 'o_documents'};   // what the Developer switched off (app/access.py)
+  const NAV = [['overview', 'Overview', 'home'], ['units', 'Units', 'building'], ['statements', 'Statements', 'file'], ['documents', 'Documents', 'folder']];
+  const shown = () => NAV.filter(([id]) => !((S.data && S.data.access_off) || []).includes(OWNER_OFF[id]));
   // each tab counts its unread alerts; opening the tab marks them read
   const NAV_TARGETS = {overview: ['home', 'overview'], units: ['units'], statements: ['statements'], documents: ['documents']};
   const navUnread = id => ((S.data && S.data.notifications) || []).filter(n => !n.is_read && (NAV_TARGETS[id] || [id]).includes(n.target)).length;
@@ -87,6 +89,8 @@
     shell();
   }
   function shell() {
+    const nav = shown();
+    if (!nav.some(([id]) => id === S.page)) S.page = 'overview';
     const d = S.data;
     const unread = (d.notifications || []).filter(n => !n.is_read).length;
     const page = S.page === 'units' ? units(d) : S.page === 'statements' ? statements(d) : S.page === 'documents' ? documents(d) : overview(d);
@@ -118,7 +122,7 @@
       S.me = await call('/api/me'); S.csrf = S.me.csrf;
       if (!S.me.owner_access) { login('This account does not have owner access. Contact your property manager.'); return; }
       S.data = await call('/api/owner/data');
-      S.page = nav.some(n => n[0] === location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
+      S.page = NAV.some(n => n[0] === location.hash.slice(1)) ? location.hash.slice(1) : 'overview';
       shell();
     } catch (err) { login(err.message.includes('sign in') ? undefined : err.message); }
   }

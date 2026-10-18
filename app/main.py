@@ -126,6 +126,12 @@ async def security_headers(request, call_next):
         expected = str(request.base_url).rstrip('/')
         if origin and origin != expected:
             return JSONResponse({'detail': 'Cross-origin writes are not allowed.'}, status_code=403)
+    from .access import check_portal, request_path   # the Developer's access matrix (app/access.py)
+    request_path.set(request.url.path)
+    if request.url.path.startswith(('/api/tenant/', '/api/owner/', '/api/contractor/')):
+        blocked = check_portal(request.url.path)
+        if blocked:
+            return JSONResponse({'detail': blocked}, status_code=403)
     response = await call_next(request)
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
@@ -493,7 +499,10 @@ def me(user=Depends(current_user)):
         tenant_access = bool(conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
         contractor_access = bool(conn.execute('SELECT 1 FROM contractor_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
         owner_access = bool(conn.execute('SELECT 1 FROM owner_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
-    return {'id': user['id'], 'name': user['name'], 'email': user['email'], 'csrf': user['csrf'], 'global_admin': bool(user['global_admin']), 'companies': companies, 'tenant_access': tenant_access, 'contractor_access': contractor_access, 'owner_access': owner_access}
+        from .access import off_map
+        access_off = {} if user['global_admin'] else off_map(conn)   # what the Developer switched off per role (app/access.py)
+    return {'id': user['id'], 'name': user['name'], 'email': user['email'], 'csrf': user['csrf'], 'global_admin': bool(user['global_admin']), 'developer': bool(user['global_admin']),
+            'companies': companies, 'tenant_access': tenant_access, 'contractor_access': contractor_access, 'owner_access': owner_access, 'access_off': access_off}
 
 
 @app.get('/api/data')
@@ -639,6 +648,8 @@ def create_staff(data: dict, user=Depends(current_user)):
         if '@' not in email:
             raise HTTPException(422, 'Enter a valid email address.')
         role = choice(data, 'role', ('admin', 'manager', 'finance', 'property', 'inspector'))
+        if role == 'admin' and not user['global_admin']:
+            raise HTTPException(403, 'Only the developer can create an administrator.')
         if conn.execute('SELECT id FROM users WHERE email=?', (email,)).fetchone():
             raise HTTPException(409, 'That account already exists. Company access must be assigned by a system administrator through the CLI.')
         password = text_field(data, 'password', maximum=128)
@@ -2069,6 +2080,8 @@ from .contractor_agreements import router as contractor_agreements_router
 from .co_tenants import router as co_tenants_router
 from .ponto import router as ponto_router
 app.include_router(ponto_router)
+from .access import router as access_router
+app.include_router(access_router)
 app.include_router(co_tenants_router)
 app.include_router(contractor_agreements_router)
 app.include_router(portal_router)

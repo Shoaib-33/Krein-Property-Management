@@ -138,6 +138,8 @@ def update_role(staff_id:int,data:dict,user=Depends(current_user)):
         member=conn.execute('SELECT role FROM memberships WHERE user_id=? AND company_id=?',(staff_id,company_id)).fetchone()
         if not member:
             raise HTTPException(404,'Staff member not found.')
+        if (role=='admin' or member['role']=='admin') and role!=member['role'] and not user['global_admin']:
+            raise HTTPException(403,'Only the developer can make someone an administrator or change an administrator.')
         if member['role']=='admin' and role!='admin':
             count=conn.execute('SELECT COUNT(*) FROM memberships WHERE company_id=? AND role="admin"',(company_id,)).fetchone()[0]
             if count<=1:
@@ -352,7 +354,8 @@ def contractor_data(user=Depends(current_user)):
         for company_id in {a['company_id'] for a in accounts}:
             db.audit_view(user['id'],company_id,'contractor_portal',None)
         from .contractor_agreements import offers_for_contractor
-        return {'accounts':accounts,'jobs':jobs,'agreements':agreements,'agreement_offers':offers_for_contractor(conn,user['id']),'today':local_today().isoformat()}
+        from .access import off_map
+        return {'accounts':accounts,'jobs':jobs,'agreements':agreements,'agreement_offers':offers_for_contractor(conn,user['id']),'today':local_today().isoformat(),'access_off':off_map(conn)['contractor']}
 
 
 @router.post('/api/contractor/agreement')

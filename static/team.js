@@ -16,7 +16,7 @@
     modal('Invite a team member', `<form id="tm-invite" class="tm-form"><p class="modal-note">They get a link that is valid for 7 days. You send it yourself (email, chat). Haven never sees their password.</p>
       <div class="form-grid"><div class="field"><label for="tm-name">Name</label><input id="tm-name" name="name" type="text" maxlength="120" required></div>
       <div class="field"><label for="tm-email">Email</label><input id="tm-email" name="email" type="email" maxlength="254" required></div>
-      <div class="field wide"><label for="tm-role">Role in ${e(company().name)}</label><select id="tm-role" name="role">${ROLES.map(([v, l, d]) => `<option value="${v}" ${v === 'manager' ? 'selected' : ''}>${e(l)}: ${e(d)}</option>`).join('')}</select></div></div>
+      <div class="field wide"><label for="tm-role">Role in ${e(company().name)}</label><select id="tm-role" name="role">${ROLES.filter(([v]) => v !== 'admin' || (state.me && state.me.developer)).map(([v, l, d]) => `<option value="${v}" ${v === 'manager' ? 'selected' : ''}>${e(l)}: ${e(d)}</option>`).join('')}</select></div></div>
       <p class="form-error" id="tm-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="submit" class="button primary">Create invitation</button></div></form>`);
   }
   document.addEventListener('submit', async ev => {

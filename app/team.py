@@ -46,6 +46,8 @@ def invite_staff(data: dict, user=Depends(current_user)):
     email = text_field(data, 'email', maximum=254).lower()
     if '@' not in email:
         raise HTTPException(422, 'Enter a valid email address.')
+    if role == 'admin' and not user['global_admin']:
+        raise HTTPException(403, 'Only the developer can invite an administrator.')
     with transaction() as conn:
         authorize(conn, user, company_id, ('admin',))
         return new_invite(conn, user, company_id, name, email, role)
