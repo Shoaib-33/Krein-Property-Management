@@ -103,7 +103,7 @@
     ['body', 'Text. Use # for a heading, ## for a section, - for bullets and {{tenant.name}} style merge fields.', 'textarea', {value: t.body || '', wide: true}]];
 
   async function downloadPdf(path, body) {
-    const res = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': state.me.csrf}, body: JSON.stringify(body)});
+    const res = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json', 'X-CSRF-Token': state.me.csrf, ...(['/landlord', '/developer'].includes(location.pathname) ? {'X-Haven-Portal': location.pathname.slice(1)} : {})}, body: JSON.stringify(body)});
     if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(Array.isArray(d.detail) ? d.detail.map(x => x.msg).join('; ') : d.detail || 'Could not create the document.'); }
     const a = document.createElement('a');
     a.href = URL.createObjectURL(await res.blob());

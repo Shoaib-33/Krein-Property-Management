@@ -4,7 +4,7 @@
    The widget lives outside #app, so page renders never remove it. */
 (() => {
   const path = location.pathname;
-  const portal = path === '/tenant' ? 'tenant' : path === '/owner' ? 'owner' : path === '/contractor' ? 'contractor' : path === '/landlord' ? 'landlord' : '';
+  const portal = path === '/tenant' ? 'tenant' : path === '/owner' ? 'owner' : path === '/contractor' ? 'contractor' : path === '/landlord' ? 'landlord' : path === '/developer' ? 'developer' : '';
   const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
   const ICON_CHAT = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h6M9 14h4"/></svg>';
   const ICON_X = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';

@@ -38,6 +38,9 @@ class WorkflowTests(unittest.TestCase):
         self.temp.cleanup()
 
     def login(self, role):
+        self.client.headers.pop('X-Haven-Portal', None)
+        if role == 'developer':   # the developer signs in on its own page (/developer)
+            self.client.headers['X-Haven-Portal'] = 'developer'
         response = self.client.post('/api/login', json={'email': f'{role}@haven.local', 'password': 'HavenDemo!2026'})
         self.assertEqual(response.status_code, 200, response.text)
         self.csrf = response.json()['csrf']
@@ -556,6 +559,7 @@ class WorkflowTests(unittest.TestCase):
         response=self.client.get(f'/api/invoices/{inv["id"]}/pdf')
         self.assertEqual(response.status_code,200,response.text[:100])
         self.assertTrue(response.content.startswith(b'%PDF'))
+        self.login('developer')   # verifying the audit chain is the developer's
         audit=self.client.get('/api/audit/verify').json()
         self.assertTrue(audit['valid'])
         self.assertGreater(audit['entries'],0)
@@ -591,6 +595,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(removed.status_code,200,removed.text)
         proposals=self.client.get('/api/data?company_id=1').json()['rent_proposals']
         self.assertFalse(any(p['id']==pid for p in proposals))
+        self.login('developer')   # verifying the audit chain is the developer's
         audit=self.client.get('/api/audit/verify').json()
         self.assertTrue(audit['valid'])
 

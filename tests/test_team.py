@@ -26,7 +26,7 @@ class TeamTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.platform = self.login('admin@haven.local')
+        self.platform = self.login('developer@haven.local', portal='developer')
 
     def tearDown(self):
         for c in self.clients:
@@ -34,9 +34,11 @@ class TeamTests(unittest.TestCase):
         db.DATA_DIR = self.original_dir
         self.temp.cleanup()
 
-    def login(self, email, password=PASSWORD):
+    def login(self, email, password=PASSWORD, portal=None):
         client = TestClient(app)
         self.clients.append(client)
+        if portal:
+            client.headers['X-Haven-Portal'] = portal
         response = client.post('/api/login', json={'email': email, 'password': password})
         self.assertEqual(response.status_code, 200, response.text)
         client.headers['X-CSRF-Token'] = response.json()['csrf']
@@ -54,7 +56,7 @@ class TeamTests(unittest.TestCase):
         self.assertTrue(invite['path'].startswith('/join/') and not invite['existing'])
         token = invite['path'].split('/')[-1]
         with db.connect() as conn:
-            member = conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'admin@haven.local')).fetchone()
+            member = conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'developer@haven.local')).fetchone()
         self.assertIsNone(member)                                                                  # not a member ...
         self.assertEqual(self.platform.get(f'/api/data?company_id={company_id}').status_code, 200)  # ... but can still open it
         self.assertIn(company_id, [c['id'] for c in self.platform.get('/api/me').json()['companies']])
@@ -75,7 +77,7 @@ class TeamTests(unittest.TestCase):
     def test_add_me_keeps_the_platform_admin_as_member(self):
         company_id = self.new_company(add_me=True)['id']
         with db.connect() as conn:
-            self.assertTrue(conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'admin@haven.local')).fetchone())
+            self.assertTrue(conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'developer@haven.local')).fetchone())
 
     def test_one_person_can_join_a_second_company_but_only_as_themselves(self):
         company_id = self.new_company()['id']

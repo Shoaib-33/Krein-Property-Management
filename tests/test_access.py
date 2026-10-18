@@ -33,7 +33,7 @@ class AccessTests(unittest.TestCase):
             conn.execute("INSERT INTO memberships VALUES(?,1,'admin')", (uid,))
             conn.execute('UPDATE invoices SET released_at=COALESCE(released_at,?)', (db.now(),))
         self.clients = []
-        self.dev = self.login('admin@haven.local')
+        self.dev = self.login('developer@haven.local', 'developer')
         self.admin = self.login('ada@haven.local')
         self.manager = self.login('manager@haven.local')
 
@@ -68,6 +68,22 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(self.dev.post('/api/staff/invite', json={'company_id': 1, 'name': 'Z', 'email': 'z@example.com', 'role': 'admin'}).status_code, 200)
         self.assertEqual(self.admin.get('/api/access').status_code, 403)   # the matrix is the developer's
         self.assertEqual(self.admin.post('/api/access', json={'feature': 'invoices', 'role': 'manager', 'allowed': False}).status_code, 403)
+
+    def test_the_developer_has_an_own_sign_in_and_session(self):
+        plain = TestClient(app); self.clients.append(plain)
+        r = plain.post('/api/login', json={'email': 'developer@haven.local', 'password': PW})
+        self.assertEqual(r.status_code, 403)
+        self.assertIn('/developer', r.json()['detail'])
+        r = plain.post('/api/login', headers={'X-Haven-Portal': 'developer'}, json={'email': 'admin@haven.local', 'password': PW})
+        self.assertEqual(r.status_code, 403)                              # an administrator does not sign in at /developer
+        self.assertFalse(self.login('admin@haven.local').get('/api/me').json()['developer'])
+        # one browser, both signed in: the admin session and the developer session stay apart
+        both = TestClient(app); self.clients.append(both)
+        a = both.post('/api/login', json={'email': 'admin@haven.local', 'password': PW}).json()['csrf']
+        d = both.post('/api/login', headers={'X-Haven-Portal': 'developer'}, json={'email': 'developer@haven.local', 'password': PW}).json()['csrf']
+        self.assertEqual(both.get('/api/me').json()['email'], 'admin@haven.local')
+        self.assertEqual(both.get('/api/me', headers={'X-Haven-Portal': 'developer'}).json()['email'], 'developer@haven.local')
+        self.assertEqual(both.get('/developer').status_code, 200)
 
     def test_switched_off_staff_feature_is_refused_but_not_for_the_developer(self):
         self.assertEqual(self.manager.get('/api/invoices?company_id=1').status_code, 200)

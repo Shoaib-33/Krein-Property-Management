@@ -70,7 +70,8 @@ def demo():
             else:
                 print('Database already initialized. No records changed.')
             return
-        admin = insert(conn, 'users', {'name':'Alex Morgan', 'email':'admin@haven.local', 'password_hash':password_hash(DEMO_PASSWORD), 'global_admin':1})
+        admin = insert(conn, 'users', {'name':'Alex Morgan', 'email':'admin@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
+        insert(conn, 'users', {'name':'Dev Haven', 'email':'developer@haven.local', 'password_hash':password_hash(DEMO_PASSWORD), 'global_admin':1})   # the developer: own sign-in at /developer
         finance = insert(conn, 'users', {'name':'Sophie de Vries', 'email':'finance@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
         manager = insert(conn, 'users', {'name':'Daan Bakker', 'email':'manager@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
         company = insert(conn, 'companies', {'name':'Haven Residential BV','kvk':'DEMO-0001','address':'Keizersgracht 128, Amsterdam','payment_instructions':'DEMO ONLY. Contact your property manager for the agreed payment instructions. Include your invoice number as the reference.','created_at':now()})
@@ -119,12 +120,13 @@ def demo():
         demo_owners(conn,company,manager)
         audit(conn,admin,company,'demo_initialized','company',company,{'fictional':True})
     print('Fictional demonstration data created.')
-    print('Accounts: admin@haven.local, finance@haven.local, manager@haven.local')
+    print('Accounts: admin@haven.local, finance@haven.local, manager@haven.local · Developer (sign in at /developer): developer@haven.local')
     print('Tenant: tenant@haven.local · Contractor: contractor@haven.local · Owner: owner@haven.local')
     print('Demo password for all three: ' + ('(the one in HAVEN_DEMO_PASSWORD)' if os.environ.get('HAVEN_DEMO_PASSWORD') else DEMO_PASSWORD))
 
 
 def create_admin():
+    """Creates a DEVELOPER account (the platform level: every company, administrators, access matrix); it signs in at /developer."""
     db.init_db()
     name=input('Name: ').strip()
     email=input('Email: ').strip().lower()
@@ -133,17 +135,29 @@ def create_admin():
         raise SystemExit('A name, valid email, and password of at least 12 characters are required.')
     with transaction() as conn:
         conn.execute('INSERT INTO users(name,email,password_hash,global_admin) VALUES(?,?,?,1)',(name,email,password_hash(password)))
-    print('Administrator created. Sign in and create your first company.')
+    print('Developer account created. Sign in at /developer (not the normal sign-in page).')
 
 
 def main():
     parser=argparse.ArgumentParser(description='Haven local administration')
-    parser.add_argument('command',choices=['demo','init','create-admin','backup','privacy-erase'])
+    parser.add_argument('command',choices=['demo','init','create-admin','create-developer','developer-off','backup','privacy-erase'])
+    parser.add_argument('email',nargs='?',help='developer-off: the account that loses its developer rights (it keeps its company roles)')
     parser.add_argument('--apply',action='store_true',help='privacy-erase: really anonymise (without it, only list who would be)')
     args=parser.parse_args()
     if args.command=='demo': demo()
     elif args.command=='init': db.init_db(); print('Database initialized.')
-    elif args.command=='create-admin': create_admin()
+    elif args.command in ('create-admin','create-developer'): create_admin()
+    elif args.command=='developer-off':
+        db.init_db()
+        email=(args.email or '').strip().lower()
+        with transaction() as conn:
+            row=conn.execute('SELECT id FROM users WHERE email=? AND global_admin=1',(email,)).fetchone()
+            if not row: raise SystemExit(f'{email or "(no email given)"} is not a developer account.')
+            if conn.execute('SELECT COUNT(*) FROM users WHERE global_admin=1 AND active=1').fetchone()[0]<=1:
+                raise SystemExit('This is the only developer. Create another one first: python manage.py create-developer')
+            conn.execute('UPDATE users SET global_admin=0 WHERE id=?',(row['id'],))
+            conn.execute('DELETE FROM sessions WHERE user_id=?',(row['id'],))
+        print(f'{email} is no longer a developer. It keeps its normal company role and signs in on the normal page.')
     elif args.command=='privacy-erase':
         from app.privacy import retention_years, run_erasure
         db.init_db()

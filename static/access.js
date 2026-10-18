@@ -10,6 +10,31 @@
   const PAGE = {properties: 'properties', tenants: 'tenants', contracts: 'contracts', owners: 'owners', invoices: 'invoices', payments: 'payments', bank: 'bank', arrears: 'arrears',
     deposits: 'deposits', service: 'service', rent: 'rent', statements: 'statements', repairs: 'repairs', inspections: 'inspections', communications: 'communications',
     'portal-inbox': 'inbox', contractors: 'contractors', documents: 'documents', tasks: 'tasks', automation: 'automation', templates: 'templates', reports: 'reports', settings: 'settings'};
+  // ---------- /developer: the developer's own sign-in and console (its own session, next to an admin session in the same browser)
+  const DEV = location.pathname === '/developer';
+  if (DEV) {
+    const baseLogin = renderLogin;
+    const relabel = () => {
+      if (!document.getElementById('login-form')) return;
+      const set = (sel, html) => { const el = document.querySelector(sel); if (el) el.innerHTML = html; };
+      set('.login-story .brand small', 'DEVELOPER CONSOLE');
+      set('.login-story .eyebrow', 'DEVELOPER');
+      set('.login-story h1', 'Every company.<br>Every role.<br>One console.');
+      set('.login-story p', 'Administrators, the access matrix and everything an administrator can do, in one place.');
+      set('.login-form .eyebrow', 'DEVELOPER CONSOLE');
+      set('.login-form h2', 'Developer sign-in');
+      set('.login-form > p', 'Only for the developer account. Staff sign in on the normal page.');
+      set('.login-small', 'This page keeps its own session: you can stay signed in as an administrator in another tab.');
+    };
+    renderLogin = () => { baseLogin(); relabel(); };
+    relabel();   // the sign-in page may already be on screen before this file loads
+    const baseRenderAll = render;
+    render = () => {
+      const out = baseRenderAll();
+      const b = document.querySelector('.sidebar .brand small'); if (b && state.me) b.textContent = 'DEVELOPER CONSOLE';
+      return out;
+    };
+  }
   const admin = navGroups.find(g => g[1].some(n => n[0] === 'settings'));
   if (admin) admin[1].push(['access', 'Access control', 'shield']);
 

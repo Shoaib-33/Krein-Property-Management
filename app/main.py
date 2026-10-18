@@ -471,6 +471,12 @@ def login(data: dict, request: Request):
     if not valid:
         raise HTTPException(401, 'Email or password is incorrect.')
     response = JSONResponse({'csrf': csrf, 'name': user['name']})
+    portal = request.headers.get('X-Haven-Portal', '')
+    # the developer has an own sign-in (/developer) and an own session; nobody else signs in there
+    if (portal == 'developer') != bool(user['global_admin']) and portal in ('', 'developer'):
+        with transaction() as conn:
+            conn.execute('DELETE FROM sessions WHERE token_hash=?', (token_hash(token),))
+        raise HTTPException(403, 'This is a developer account: sign in at /developer.' if user['global_admin'] else 'This sign-in is for the developer only. Use the normal sign-in page.')
     cookie = 'haven_' + request.headers.get('X-Haven-Portal', '') + '_session' if request.headers.get('X-Haven-Portal', '') in PORTALS else 'haven_session'
     response.set_cookie(cookie, token, httponly=True, samesite='strict', secure=os.environ.get('HAVEN_SECURE_COOKIES') == '1', max_age=86400)
     return response
@@ -2121,6 +2127,7 @@ def landing():
 @app.get('/reset/{token}')
 @app.get('/tenant')
 @app.get('/owner')
+@app.get('/developer')
 @app.get('/landlord')
 @app.get('/contractor')
 def index(token: str = ''):
