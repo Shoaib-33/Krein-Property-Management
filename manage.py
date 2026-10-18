@@ -134,6 +134,9 @@ def create_admin():
     if len(password)<12 or not name or '@' not in email:
         raise SystemExit('A name, valid email, and password of at least 12 characters are required.')
     with transaction() as conn:
+        if conn.execute('SELECT 1 FROM users WHERE email=?',(email,)).fetchone():
+            raise SystemExit(f'{email} already has a Haven login (a staff, tenant, owner or contractor account). '
+                             'Use a separate email for the developer, for example name+dev@gmail.com.')
         conn.execute('INSERT INTO users(name,email,password_hash,global_admin) VALUES(?,?,?,1)',(name,email,password_hash(password)))
     print('Developer account created. Sign in at /developer (not the normal sign-in page).')
 
