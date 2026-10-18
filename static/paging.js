@@ -24,8 +24,8 @@
     },
     audit: {
       title: 'Audit trail', sub: 'Every recorded action for this company. Search by person, action or record.', endpoint: '/api/audit', placeholder: 'Search person, action or record number',
-      filters: [], head: ['When', 'Who', 'Action', 'Record', 'Hash'],
-      row: a => [e(a.created_at.replace('T', ' ').slice(0, 19)), e(a.user_name || 'Tenant'), e(a.action.replaceAll('_', ' ')), `${e(a.entity)} #${a.entity_id ?? '—'}`, `<small>${e(a.hash.slice(0, 20))}…</small>`],
+      filters: [], head: ['When', 'Who', 'Action', 'Record'],
+      row: a => [e(a.created_at.replace('T', ' ').slice(0, 19)), e(a.user_name || 'Tenant'), e(a.action.replaceAll('_', ' ')), `${e(a.entity.replaceAll('_', ' '))} #${a.entity_id ?? '—'}`],
       replace: ['Audit trail', null]
     }
   };

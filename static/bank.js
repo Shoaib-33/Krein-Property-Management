@@ -93,7 +93,7 @@
     const found = waiting.filter(n => n.found_line).length;
     const sub = `${receipts} receipt${receipts === 1 ? '' : 's'} to review` + (found ? ` · ${found} payment${found === 1 ? '' : 's'} found in a bank statement, waiting for your approval` : '') + (waiting.length - found ? ` · ${waiting.length - found} waiting for the bank statement` : '');
     return heading('Every payment, verified', 'Review the receipt. Confirm the funds. Keep a clear record.', button('Record a submission', 'staff-proof', '', 'primary'), 'PAYMENT VERIFICATION')
-      + notice('A receipt is evidence of a claimed payment. Confirm actual receipt independently before approving. A tenant who only says they paid is confirmed by the bank statement. Staff-submitted receipts require a different reviewer.')
+      + notice('Approve a receipt only after the money is in your account. A tenant who only says they paid is confirmed by the bank statement.')
       + periodBar('payments', periodValue('payments') ? `Bills for ${e(periodLabel('payments'))}` : '')
       + panel('Payment submissions', sub, filters(['All', 'Pending', 'Approved', 'Rejected', 'Reversed']) + table(['Tenant', 'Home', 'Invoice', 'Amount', 'Submitted', 'Status', ''], submissions(), 'Nothing in this list.'));
   };
@@ -132,7 +132,7 @@
     if (!ui.data || ui.company !== state.company) { setTimeout(load); return heading('Bank statements', 'Loading…', '', 'FINANCE'); }
     if (ui.data.error) return heading('Bank statements', '', '', 'FINANCE') + empty('Could not load the bank payments', ui.data.error);
     const c = ui.data.counts || {};
-    const upload = panel('Import a bank statement', 'Download the statement from your bank as CAMT.053 (.xml) or MT940 (.sta, .940, .txt) and upload it here. Only incoming payments are read.',
+    const upload = panel('Import a bank statement', 'Download the statement from your bank (CAMT.053 or MT940 file) and upload it here. Only incoming payments are read.',
       `<form id="bank-upload" class="panel-body">
         <fieldset class="bank-modes"><legend>How should Haven handle the payments it recognises?${ui.data.mode ? '' : ' <span class="late-text">Choose one</span>'}</legend>
           <label class="bank-mode ${ui.data.mode === 'auto' ? 'on' : ''}"><input type="radio" name="mode" value="auto" ${ui.data.mode === 'auto' ? 'checked' : ''} required><span><strong>Automatic</strong><small>A certain match is booked right away and the tenant gets "Payment received". Fastest.</small></span></label>
@@ -140,7 +140,7 @@
         </fieldset>
         <div class="bank-upload"><input type="file" name="file" accept=".xml,.sta,.940,.txt,.mt940,.swi" required aria-label="Statement file"><button type="submit" class="button primary">Import</button></div>
         <p class="form-error" role="alert"></p></form>
-        <div class="panel-body"><p class="subtitle"><strong>Certain match</strong> = the invoice number is in the description and the amount matches, or the payment comes from a bank account saved for the tenant and the amount equals an open invoice. Everything else always waits for you below. Uploading the same file again books nothing twice. Your choice is remembered for the next import.</p></div>`);
+        <div class="panel-body"><p class="subtitle">A payment is <strong>certain</strong> when it carries the invoice number with the right amount, or comes from the tenant's known bank account with the amount of an open invoice. Everything else waits for you below.</p></div>`);
     const tabs = `<div class="tabs bank-tabs" role="tablist">${[['check', `To check (${c.check || 0})`], ['booked', `Booked (${c.booked || 0})`], ['ignored', `Ignored (${c.ignored || 0})`]]
       .map(([k, l]) => `<button type="button" role="tab" class="tab ${ui.tab === k ? 'active' : ''}" aria-selected="${ui.tab === k}" data-bank="tab" data-id="${k}">${e(l)}</button>`).join('')}</div>`;
     const rowsHtml = (ui.data.items || []).map(l => {
@@ -158,7 +158,7 @@
     });
     const approveAll = ui.tab === 'check' && ui.data.to_approve ? `<div class="notice bank-approve-all"><span><strong>${ui.data.to_approve} match${ui.data.to_approve === 1 ? '' : 'es'} found, waiting for your approval.</strong> Check them with Show in statement, then approve one by one or all at once. The tenant is told only after approval.</span>${btn(`Approve all ${ui.data.to_approve}`, 'approve-all', '', 'small primary')}</div>` : '';
     const list = approveAll + panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : 'Ignored payments',
-      ui.tab === 'check' ? 'Confirm puts the payment on the invoice you choose (more than its balance goes to the same tenant\'s other open invoices). Ignore is for money that is not rent.' : '',
+      ui.tab === 'check' ? 'Confirm books the payment on the invoice you choose. Ignore is for money that is not rent.' : '',
       table(['Date', 'Payer', 'Amount', 'Description', 'Haven\'s match', ''], rowsHtml, ui.tab === 'check' ? 'Nothing to check. Every imported payment is booked or ignored.' : 'Nothing here yet.'));
     const imports = (ui.data.imports || []).length ? panel('Imported files', '', table(['File', 'Format', 'Payments', 'Booked automatically', 'By', 'When'],
       ui.data.imports.map(i => [e(i.filename), e(i.format), String(i.lines), String(i.booked), e(i.user_name || ''), e(dateLabel(i.created_at.slice(0, 10)))]))) : '';

@@ -94,7 +94,7 @@
       return [`<strong>${e(monthLabel(s.period))}</strong><small>${e(p.name || '')}</small>`, money(s.collected_cents), '−' + money(s.fee_cents), '−' + money(s.expenses_cents), `<strong>${money(s.net_cents)}</strong>`, badge(s.status[0].toUpperCase() + s.status.slice(1), statusTone[s.status]) + (s.paid_on ? `<small>${e(dateLabel(s.paid_on))} · ${e(s.payout_reference || '')}</small>` : ''), `<div class="actions">${actions.join('')}</div>`];
     });
     const expenses = rows('owner_expenses').slice(0, 25).map(x => [e(dateLabel(x.incurred_on)), e(byId('portfolios', x.portfolio_id).name || ''), e(x.category), e(x.description), money(x.amount_cents)]);
-    return heading('Owner statements', 'Rent is calculated from verified payments. A second person approves it before the owner sees it. Payouts are recorded by hand; Haven never moves money.', own('Add expense', 'new-expense', '', '') + own('Generate statement', 'generate', '', 'primary'), 'FINANCE')
+    return heading('Owner statements', 'Based on received rent. A second person approves each statement before the owner sees it.', own('Add expense', 'new-expense', '', '') + own('Generate statement', 'generate', '', 'primary'), 'FINANCE')
       + stats
       + panel('Statements', 'Frozen once created; fix mistakes by deleting a draft and generating it again', table(['Month', 'Collected', 'Fee', 'Expenses', 'Net to owner', 'Status', ''], list, 'No statements yet. Generate one for the last completed month.'))
       + panel('Expenses paid for owners', 'Included in the statement for the month they were incurred', table(['Date', 'Portfolio', 'Category', 'Description', 'Amount'], expenses, 'No expenses recorded.'));

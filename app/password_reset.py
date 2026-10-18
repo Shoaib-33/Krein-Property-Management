@@ -60,7 +60,7 @@ def forgot(data: dict, request: Request):
     settings = smtp_settings()
     answer = {'ok': True, 'email_ready': bool(settings),
               'message': 'If an account exists for this email address, a link to set a new password has been sent. It is valid for one hour.' if settings else
-                         'Email is not set up on this server. Ask your property manager or administrator for a reset link.'}
+                         'Ask your property manager or administrator for a reset link.'}
     if '@' not in email:
         return answer
     ip = client_ip(request)

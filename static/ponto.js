@@ -29,7 +29,7 @@
     if (s.error) return '';
     const head = (title, sub, body) => panel(title, sub, `<div class="panel-body pn-box">${body}</div>`);
     if (!s.configured) {
-      if (!manager()) return '';
+      if (!(state.me && state.me.developer)) return '';
       return head('Automatic bank connection', 'Off. Statements are uploaded by hand below.',
         `<p>Haven can read your business account (ING, Rabobank and most Dutch banks) through <strong>Ponto</strong>, read-only, and book tenants' transfers by itself every hour.</p>
          <p class="subtitle">To switch it on, put the Ponto keys in the server settings: <code>HAVEN_PONTO_CLIENT_ID</code> and <code>HAVEN_PONTO_CLIENT_SECRET</code> (and <code>HAVEN_PONTO_SANDBOX=1</code> while testing), then restart Haven.</p>`);

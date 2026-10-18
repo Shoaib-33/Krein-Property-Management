@@ -43,7 +43,7 @@
         const r = await call('/api/password/forgot', {email: box.querySelector('#forgot-email').value});
         done.hidden = false;
         done.textContent = r.email_ready ? T('If an account exists for this email address, we sent a link to set a new password. It is valid for one hour. Check your spam folder too.', 'Als er een account bij dit e-mailadres hoort, hebben we een link gestuurd om een nieuw wachtwoord te kiezen. Hij is een uur geldig. Kijk ook in uw spammap.')
-          : T('Email is not set up on this server. Ask your property manager or administrator for a reset link.', 'E-mail is op deze server niet ingesteld. Vraag uw beheerder of de beheerder van Haven om een herstellink.');
+          : T('Ask your property manager or administrator for a reset link.', 'Vraag uw beheerder om een herstellink.');
         b.hidden = true;
       } catch (e2) { err.textContent = e2.message; b.disabled = false; }
     });

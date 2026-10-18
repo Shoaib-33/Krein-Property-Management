@@ -19,3 +19,5 @@
 .pay-filter select{padding:6px 10px;border:1px solid #cfdcd6;border-radius:8px;background:#fff;font:inherit;font-size:13px}
 .pay-filter small{margin-left:auto;color:#6b7f77;font-size:12px}
 .pay-filter .button.active{background:#e6f3ec;border-color:#9cc9b2;color:#17573d}
+.rp-link{border:0;background:none;padding:0;font:inherit;color:inherit;font-weight:600;cursor:pointer;text-align:left}
+.rp-link:hover{text-decoration:underline}
