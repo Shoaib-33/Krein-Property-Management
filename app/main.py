@@ -2088,6 +2088,8 @@ from .ponto import router as ponto_router
 app.include_router(ponto_router)
 from .access import router as access_router
 app.include_router(access_router)
+from .developer import router as developer_router
+app.include_router(developer_router)
 app.include_router(co_tenants_router)
 app.include_router(contractor_agreements_router)
 app.include_router(portal_router)

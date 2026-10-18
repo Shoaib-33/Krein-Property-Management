@@ -85,6 +85,38 @@ class AccessTests(unittest.TestCase):
         self.assertEqual(both.get('/api/me', headers={'X-Haven-Portal': 'developer'}).json()['email'], 'developer@haven.local')
         self.assertEqual(both.get('/developer').status_code, 200)
 
+    def test_developer_creates_edits_resets_and_closes_administrators(self):
+        r = self.dev.post('/api/developer/admins', json={'company_id': 1, 'name': 'Bo Beheer', 'email': 'bo@haven.local', 'password': 'Bo-Password-2026!'})
+        self.assertEqual(r.status_code, 200, r.text)
+        bo = r.json()['id']
+        first = TestClient(app); self.clients.append(first)
+        first.post('/api/login', json={'email': 'bo@haven.local', 'password': 'Bo-Password-2026!'})
+        self.assertEqual(first.get('/api/me').json()['companies'][0]['role'], 'admin')
+        invite = self.dev.post('/api/developer/admins', json={'company_id': 1, 'name': 'Cas', 'email': 'cas@example.com'}).json()
+        self.assertTrue(invite['invite']['path'].startswith('/join/'))
+        staff = self.dev.get('/api/developer/staff').json()
+        self.assertIn('bo@haven.local', [p['email'] for p in staff['people']])
+        self.assertIn('cas@example.com', [i['email'] for i in staff['invites']])
+        # rename and new sign-in email
+        self.assertEqual(self.dev.patch(f'/api/developer/users/{bo}', json={'name': 'Bo de Beheerder', 'email': 'bo.new@haven.local'}).status_code, 200)
+        self.assertEqual(self.dev.patch(f'/api/developer/users/{bo}', json={'name': 'X', 'email': 'manager@haven.local'}).status_code, 409)   # taken
+        c = TestClient(app); self.clients.append(c)
+        self.assertEqual(c.post('/api/login', json={'email': 'bo.new@haven.local', 'password': 'Bo-Password-2026!'}).status_code, 200)
+        # a password link, closing and opening the login
+        self.assertTrue(self.dev.post(f'/api/developer/users/{bo}/reset-link', json={}).json()['path'].startswith('/reset/'))
+        self.assertEqual(self.dev.post(f'/api/developer/users/{bo}/active', json={'active': False}).status_code, 200)
+        self.assertEqual(TestClient(app).post('/api/login', json={'email': 'bo.new@haven.local', 'password': 'Bo-Password-2026!'}).status_code, 401)
+        self.assertEqual(self.dev.post(f'/api/developer/users/{bo}/active', json={'active': True}).status_code, 200)
+        # the last administrator of a company cannot be closed
+        with db.connect() as conn:
+            other_admin = conn.execute("SELECT m.user_id FROM memberships m WHERE m.company_id=2 AND m.role='admin'").fetchone()[0]
+        self.assertEqual(self.dev.post(f'/api/developer/users/{other_admin}/active', json={'active': False}).status_code, 409)
+        # all of this is the developer's
+        for call in (lambda: self.admin.get('/api/developer/staff'), lambda: self.admin.patch(f'/api/developer/users/{bo}', json={'name': 'Y', 'email': 'y@example.com'}),
+                     lambda: self.admin.post('/api/developer/admins', json={'company_id': 1, 'name': 'Z', 'email': 'z@example.com', 'password': 'Long-Password-2026'})):
+            r = call()
+            self.assertIn(r.status_code, (401, 403), r.text)   # developer paths only accept the developer session
+
     def test_switched_off_staff_feature_is_refused_but_not_for_the_developer(self):
         self.assertEqual(self.manager.get('/api/invoices?company_id=1').status_code, 200)
         self.switch('invoices', 'manager', False)
