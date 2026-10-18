@@ -161,12 +161,27 @@ function tenantsPage(){
  const found=active.filter(t=>!q||`${t.name} ${t.email} ${t.phone}`.toLowerCase().includes(q)),list=window.orderHouseholds?orderHouseholds(found):found;
  const homeOf=t=>{const cs=(window.contractsOfTenant?contractsOfTenant(t.id):rows('contracts').filter(c=>c.tenant_id===t.id));return cs.find(c=>['active','notice given'].includes(c.status)&&!(c.end_date&&c.end_date<today()))||cs[0];};
  const openOf=t=>{const mine=new Set((window.contractsOfTenant?contractsOfTenant(t.id):[]).map(c=>c.id));return rows('invoices').filter(i=>(mine.has(i.contract_id)||contract(i.contract_id).tenant_id===t.id)&&i.released_at&&balance(i)>0).reduce((s,i)=>{const own=window.personBill?personBill(i,t.id):null;return s+(own?own.open:balance(i));},0);};
- const body=list.map(t=>{const c=homeOf(t),a=rows('portal_accounts').find(a=>a.tenant_id===t.id),banks=rows('tenant_bank_accounts').filter(b=>b.tenant_id===t.id),r=c?rentFor(c.id):{},open=openOf(t);
-  const main=window.householdMain?householdMain(t):null;
-  return [`<div class="${main?'co-row':''}"><button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>${main?`<small class="co-with">Co-tenant · with ${e(byId('tenants',main).name)}</small>`:(window.householdNames&&householdNames(t).length?`<small class="co-with">Rents with ${e(householdNames(t).join(', '))}</small>`:'')}</div>`,c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)}${c.tenant_id!==t.id?' · co-tenant':''}</small>`:'<span class="muted">No tenancy</span>',
-   c?`<span class="amount">${money((r.basic_cents||0)+(r.service_cents||0))}</span>${window.partOfRent&&partOfRent(c.id,t.id,(r.basic_cents||0)+(r.service_cents||0))!=null?`<small>own part ${money(partOfRent(c.id,t.id,(r.basic_cents||0)+(r.service_cents||0)))}</small>`:''}`:'—',c?nextCell(c.id):'—',...(money_?[open?`<strong class="late-text">${money(open)}</strong>`:'<span class="muted">Nothing open</span>']:[]),
-   a?badge(a.enabled?'Portal active':'Paused',a.enabled?'green':'amber'):badge('No portal login','gray'),banks.length?badge(`${banks.length} bank account${banks.length===1?'':'s'}`,'blue'):'<span class="muted">No IBAN</span>',
-   `<button type="button" class="button small" data-tenant="${t.id}">Open</button>`];});
+ const portalOf=t=>{const a=rows('portal_accounts').find(a=>a.tenant_id===t.id);return a?badge(a.enabled?'Portal active':'Paused',a.enabled?'green':'amber'):badge('No portal login','gray');};
+ const bankOf=t=>{const n=rows('tenant_bank_accounts').filter(b=>b.tenant_id===t.id).length;return n?badge(`${n} bank account${n===1?'':'s'}`,'blue'):'<span class="muted">No IBAN</span>';};
+ const openCell=t=>{const open=openOf(t);return open?`<strong class="late-text">${money(open)}</strong>`:'<span class="muted">Nothing open</span>';};
+ // a household (a tenant and the partner / co-tenants who rent with them) is one row: the home once, each person's own details under each other
+ const households=[];
+ for(const t of list){const m=window.householdMain?householdMain(t):null,g=m&&households.find(h=>h[0].id===m);if(g)g.push(t);else households.push([t]);}
+ const body=households.map(g=>{
+  const t=g[0],c=homeOf(t),r=c?rentFor(c.id):{},total=(r.basic_cents||0)+(r.service_cents||0);
+  if(g.length===1){const main=window.householdMain?householdMain(t):null;
+   return [`<div class="${main?'co-row':''}"><button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>${main?`<small class="co-with">Co-tenant · with ${e(byId('tenants',main).name)}</small>`:''}</div>`,c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)}${c.tenant_id!==t.id?' · co-tenant':''}</small>`:'<span class="muted">No tenancy</span>',
+    c?`<span class="amount">${money(total)}</span>${window.partOfRent&&partOfRent(c.id,t.id,total)!=null?`<small>own part ${money(partOfRent(c.id,t.id,total))}</small>`:''}`:'—',c?nextCell(c.id):'—',...(money_?[openCell(t)]:[]),portalOf(t),bankOf(t),
+    `<button type="button" class="button small" data-tenant="${t.id}">Open</button>`];}
+  const stack=f=>`<div class="hh-stack">${g.map(x=>`<div class="hh-line">${f(x)}</div>`).join('')}</div>`;
+  const role=x=>c&&c.tenant_id===x.id?'Main tenant':(x.id===t.id?'Main tenant':'Co-tenant');
+  const parts=c&&window.partOfRent?g.map(x=>[x,partOfRent(c.id,x.id,total)]).filter(([,v])=>v!=null):[];
+  return [stack(x=>`<button type="button" class="tenant-link" data-tenant="${x.id}">${tenantCell(x)}</button><small class="co-with">${role(x)}</small>`),
+   c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)} · shared by ${g.length}</small>`:'<span class="muted">No tenancy yet</span><small>household of '+g.length+'</small>',
+   c?`<span class="amount">${money(total)}</span>${parts.length?`<small>${parts.map(([x,v])=>`${e(x.name.split(' ')[0])} ${money(v)}`).join(' · ')}</small>`:'<small>not split</small>'}`:'—',
+   c?nextCell(c.id):'—',...(money_?[stack(x=>`<span class="hh-who">${e(x.name.split(' ')[0])}</span>${openCell(x)}`)]:[]),stack(portalOf),stack(bankOf),
+   stack(x=>`<button type="button" class="button small" data-tenant="${x.id}">Open ${e(x.name.split(' ')[0])}</button>`)];
+ });
  const search=`<div class="toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email or phone" value="${e(state.tenantSearch||'')}" aria-label="Search tenants"><span class="result-count">${list.length} of ${active.length} tenants</span></div>`;
  return heading('Your tenants','Click a tenant to see everything about them: tenancies, invoices, payments and how they paid, bank accounts, requests and documents.',button('Add tenant','form','data-kind="tenants"','primary'),'TENANTS')
   +panel('Tenants',`${active.length} people in this company`,search+table(['Tenant','Home','Rent / month','Next payment',...(money_?['Open balance']:[]),'Portal','Bank account',''],body,'No tenants yet. Add the first one.'))
