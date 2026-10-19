@@ -50,7 +50,7 @@ class FakePonto:
         if url.endswith('/oauth2/revoke'):
             return {}
         if url.endswith('/accounts'):
-            return {'data': [{'id': 'acc-ing', 'attributes': {'reference': 'NL20INGB0001234567', 'description': 'Huurrekening', 'holderName': 'Haven Residential BV',
+            return {'data': [{'id': 'acc-ing', 'attributes': {'reference': 'NL20INGB0001234567', 'description': 'Huurrekening', 'holderName': 'Krein Residential BV',
                                                               'authorizationExpirationExpectedAt': self.expires}}]}
         if url.endswith('/synchronizations'):
             return {'data': {'id': 'sync-1'}}

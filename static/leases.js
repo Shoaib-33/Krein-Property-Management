@@ -45,7 +45,7 @@
     const sel = (name, label, list, cur, cls = '') => `<div class="field ${cls}"><label for="ls-${name}">${label}</label><select id="ls-${name}" name="${name}" required>${list.map(([v, l]) => `<option value="${e(v)}" ${String(cur) === String(v) ? 'selected' : ''}>${e(l)}</option>`).join('')}</select></div>`;
     const inp = (name, label, type, cur, extra = '') => `<div class="field"><label for="ls-${name}">${label}</label><input id="ls-${name}" name="${name}" type="${type}" ${extra} value="${e(cur ?? '')}"></div>`;
     const ask = ASK.map(([key, label, , on]) => { const was = (d.asks || {})[key]; const checked = was ? true : d.asks ? false : !!on; return `<div class="lf-field"><input type="checkbox" id="ask-${key}" name="ask-${key}" ${checked ? 'checked' : ''}><label for="ask-${key}">${e(label)}</label><select name="req-${key}" aria-label="Required or optional"><option value="1" ${!was || was.required ? 'selected' : ''}>Required</option><option value="0" ${was && !was.required ? 'selected' : ''}>Optional</option></select></div>`; }).join('');
-    modal('Send contract for signature', `<form id="ls-form" class="lf-form">${hasSig === false ? `<div class="notice"><span><strong>Your signature is not set up yet.</strong> The contract will go out without it and you sign when you approve. To put your signature on every contract as it is sent, add it in <a href="#settings" data-action="navigate" data-page="settings">Settings</a>.</span></div>` : hasSig ? `<p class="lf-ok">${icon('check')} Your signature will be placed on the contract when it is sent.</p>` : ''}<p class="modal-note">Step 1 of 2. Haven fills the contract from your template. Next you can read it and edit the wording for this tenant, then send it to their portal.</p>
+    modal('Send contract for signature', `<form id="ls-form" class="lf-form">${hasSig === false ? `<div class="notice"><span><strong>Your signature is not set up yet.</strong> The contract will go out without it and you sign when you approve. To put your signature on every contract as it is sent, add it in <a href="#settings" data-action="navigate" data-page="settings">Settings</a>.</span></div>` : hasSig ? `<p class="lf-ok">${icon('check')} Your signature will be placed on the contract when it is sent.</p>` : ''}<p class="modal-note">Step 1 of 2. Krein fills the contract from your template. Next you can read it and edit the wording for this tenant, then send it to their portal.</p>
       <div class="form-grid">${sel('tenant_id', 'Tenant', tenants.map(t => [t.id, t.name + (hasLogin(t.id) ? '' : ' (no portal login yet)')]), d.tenant_id, 'wide')}
       ${sel('property_id', 'Property', rows('properties').map(p => [p.id, p.name + (activeContract(p.id) ? ' (occupied)' : '')]), d.property_id)}${sel('template_id', 'Contract template', templates.map(t => [t.id, t.name]), d.template_id)}
       <div class="field wide lf-warn" id="ls-prop-warn" role="alert" hidden></div>
@@ -101,7 +101,7 @@
     try { r = await api('/api/lease-offers/preview', {method: 'POST', body: payload(d)}); } catch (err) { document.getElementById('ls-error').textContent = err.message; return; }
     const c = company();
     const asks = [...Object.entries(d.asks).map(([key, v]) => ({label: (ASK.find(a => a[0] === key) || [key, key])[1], required: v.required})), ...[d.custom1, d.custom2].filter(Boolean).map(label => ({label, required: true}))];
-    modal('Read and edit the contract', `<div class="de-note">Step 2 of 2. This is how the contract will look to the tenant. Click a pencil to change a sentence. The yellow boxes are details Haven does not know yet. Your template stays as it is.</div>
+    modal('Read and edit the contract', `<div class="de-note">Step 2 of 2. This is how the contract will look to the tenant. Click a pencil to change a sentence. The yellow boxes are details Krein does not know yet. Your template stays as it is.</div>
       <div class="de-wrap"><div id="de-host"></div></div>
       <div class="de-bar"><span class="de-status" id="de-status"></span><p class="form-error" id="ls-error" role="alert"></p><button type="button" class="button" data-ls="back">Back</button><button type="button" class="button primary" id="ls-go">${e(signersOf(d).length > 1 ? `Send to ${signersOf(d).join(" and ")}` : "Send to tenant")}</button></div>`);
     const dlg = document.getElementById('modal');
@@ -150,7 +150,7 @@
   renderPage = () => {
     const html = baseRenderPage();
     if (state.page !== 'settings' || !state.company || !canSend()) return html;
-    const panelHtml = panel('Your signature on contracts', 'Set it once. Haven places it on every tenancy agreement when you send it, so the tenant receives a contract you have already signed.',
+    const panelHtml = panel('Your signature on contracts', 'Set it once. Krein places it on every tenancy agreement when you send it, so the tenant receives a contract you have already signed.',
       '<div class="panel-body" id="sig-panel"><p class="subtitle">Loading…</p></div>');
     return html.replace('<div class="section-stack">', () => '<div class="section-stack">' + panelHtml);
   };

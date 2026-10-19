@@ -21,7 +21,7 @@
   };
   new MutationObserver(() => { if (isLandlord()) tidy(); }).observe(document.body, {childList: true, subtree: true});
   const baseRender = render;
-  const none = () => `<main class="public-page"><header class="public-header"><div class="brand"><span class="brand-mark">h</span>haven</div></header><section class="panel"><div class="panel-body"><h1>No property assigned yet</h1><p class="subtitle">You are signed in as ${e(state.me.name)}, but no property has been added to your portfolio yet. Ask your property manager to add one, then sign in again.</p><button type="button" class="button primary" data-action="logout">Sign out</button></div></section></main>`;
+  const none = () => `<main class="public-page"><header class="public-header"><div class="brand"><span class="brand-mark">k</span>krein</div></header><section class="panel"><div class="panel-body"><h1>No property assigned yet</h1><p class="subtitle">You are signed in as ${e(state.me.name)}, but no property has been added to your portfolio yet. Ask your property manager to add one, then sign in again.</p><button type="button" class="button primary" data-action="logout">Sign out</button></div></section></main>`;
   render = () => {
     mark();
     if (location.pathname === '/landlord' && state.me && !state.me.global_admin && !(state.me.companies || []).length) { $('#app').innerHTML = none(); return; }

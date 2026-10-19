@@ -41,7 +41,7 @@ def main():
                 page.goto('http://127.0.0.1:8765')
                 page.locator('#email').fill('admin@haven.local')
                 page.locator('#password').fill('HavenDemo!2026')
-                page.get_by_role('button',name='Sign in to Haven').click()
+                page.get_by_role('button',name='Sign in to Krein').click()
                 page.locator('.summary-grid').wait_for()
                 out=ROOT/'test-results'
                 out.mkdir(exist_ok=True)

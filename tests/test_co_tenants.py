@@ -106,7 +106,7 @@ class CoTenantTests(unittest.TestCase):
         self.assertEqual(after['balance_cents'], rest)
         self.assertEqual(after['my_due_cents'], 0)
         self.assertEqual({s['name']: s['paid_cents'] for s in after['shares']}['Lucas Bakker'], half)
-        # the main tenant pays her part with the invoice number from an account Haven does not know yet
+        # the main tenant pays her part with the invoice number from an account Krein does not know yet
         r = self.finance.post('/api/bank/import', data={'company_id': '1', 'auto': '1'}, files={'file': ('s2.xml', camt([(f'{rest / 100:.2f}', 'E JANSEN', OTHER_IBAN, f"Huur {inv['number']}", 'P2')]), 'text/xml')}).json()
         self.assertEqual(r['booked'], 1, r)
         self.assertNotIn(inv['id'], [i['id'] for i in partner.get('/api/tenant/data').json()['invoices'] if i['balance_cents'] > 0])

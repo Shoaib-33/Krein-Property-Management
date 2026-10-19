@@ -1,6 +1,6 @@
 """Automatic bank statements through Ponto (Isabel Group, a licensed PSD2 account-information service).
 
-Tenants keep paying by ordinary bank transfer. Haven reads the company's business account(s) through Ponto, read-only, and
+Tenants keep paying by ordinary bank transfer. Krein reads the company's business account(s) through Ponto, read-only, and
 feeds the incoming payments into the same matching as an uploaded statement (app/banking.py ingest): with "Automatic"
 a certain match is booked as approved and the tenant is told; anything else waits under "Please check".
 
@@ -8,12 +8,12 @@ It switches itself on when the server settings hold the Ponto keys:
   HAVEN_PONTO_CLIENT_ID, HAVEN_PONTO_CLIENT_SECRET   the integration created in the Ponto dashboard
   HAVEN_PONTO_SANDBOX=1                               while testing with Ponto's sandbox banks (default 0 = live)
   HAVEN_PONTO_CERT, HAVEN_PONTO_KEY(, _PASSWORD)      the certificate files Ponto gives for the integration, when it does
-  HAVEN_PONTO_SYNC_MINUTES                            how often Haven looks for new payments (default 60)
+  HAVEN_PONTO_SYNC_MINUTES                            how often Krein looks for new payments (default 60)
 Without them everything works as before (statement upload).
 
 Flow: an administrator clicks Connect -> logs in at the bank through Ponto and picks the account(s) -> Ponto returns to
-/api/ponto/callback with a code -> Haven swaps it for tokens (OAuth 2 with PKCE) -> every hour Haven asks Ponto for new
-transactions. Banks want the permission renewed every 90-180 days; Haven reminds the administrators a week before.
+/api/ponto/callback with a code -> Krein swaps it for tokens (OAuth 2 with PKCE) -> every hour Krein asks Ponto for new
+transactions. Banks want the permission renewed every 90-180 days; Krein reminds the administrators a week before.
 """
 import base64
 import hashlib
@@ -192,7 +192,7 @@ def sync_company(company_id):
             accounts = http('GET', API + '/accounts', cfg=cfg, token=token).get('data') or []
         except PontoError as e:
             _failed(connection, e)
-            raise HTTPException(502, 'Ponto could not be reached. Haven tries again later.')
+            raise HTTPException(502, 'Ponto could not be reached. Krein tries again later.')
         results = []
         with transaction() as conn:
             for acc in accounts:
@@ -214,7 +214,7 @@ def sync_company(company_id):
                 lines = [x for x in (to_line(t) for t in _pages(cfg, token, f'{API}/accounts/{ponto_id}/transactions?page%5Blimit%5D=100', old)) if x]
             except PontoError as e:
                 _failed(connection, e)
-                raise HTTPException(502, 'Ponto could not be reached. Haven tries again later.')
+                raise HTTPException(502, 'Ponto could not be reached. Krein tries again later.')
             results.append(_ingest(company_id, connection, acc, lines))
         with transaction() as conn:
             conn.execute("UPDATE bank_connections SET last_sync_at=?,last_error=NULL WHERE id=?", (now(), connection['id']))
@@ -240,7 +240,7 @@ def _ingest(company_id, connection, acc, lines):
 def _failed(connection, e):
     logging.warning('Ponto sync for company %s failed: %s', connection['company_id'], e)
     with transaction() as conn:
-        conn.execute('UPDATE bank_connections SET last_error=? WHERE id=?', (f'Ponto could not be reached ({e.status}). Haven tries again later.'[:300], connection['id']))
+        conn.execute('UPDATE bank_connections SET last_error=? WHERE id=?', (f'Ponto could not be reached ({e.status}). Krein tries again later.'[:300], connection['id']))
 
 
 def _remind_if_expiring(conn, connection):

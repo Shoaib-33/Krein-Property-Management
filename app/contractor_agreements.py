@@ -242,7 +242,7 @@ def approve(offer_id: int, data: dict, user=Depends(current_user)):
         conn.execute("UPDATE contractor_offers SET status='approved',reviewed_by=?,reviewed_at=?,final_document_id=? WHERE id=?", (user['id'], now(), doc_id, offer_id))
         conn.execute('UPDATE contractors SET agreement_document_id=? WHERE id=?', (doc_id, offer['contractor_id']))
         insert(conn, 'contractor_agreement_submissions', {'company_id': offer['company_id'], 'contractor_id': offer['contractor_id'], 'document_id': doc_id, 'status': 'approved',
-                                                          'submitted_at': offer['signed_at'], 'reviewed_by': user['id'], 'reviewed_at': now(), 'review_note': 'Signed electronically in Haven.'})
+                                                          'submitted_at': offer['signed_at'], 'reviewed_by': user['id'], 'reviewed_at': now(), 'review_note': 'Signed electronically in Krein.'})
         values = json.loads(offer['form_values'] or '{}')
         if values.get('phone') and not contractor['phone']:
             conn.execute('UPDATE contractors SET phone=? WHERE id=?', (values['phone'], contractor['id']))

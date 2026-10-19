@@ -1,5 +1,5 @@
 """One definition of "today". Servers usually run on UTC, which is behind the local calendar for part of the day,
-so set HAVEN_TIMEZONE (for example Europe/Amsterdam) to make Haven use that country's date."""
+so set HAVEN_TIMEZONE (for example Europe/Amsterdam) to make Krein use that country's date."""
 import os
 from datetime import date, datetime
 

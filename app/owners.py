@@ -1,7 +1,7 @@
 """Owners, portfolios and monthly owner statements (the tenant -> manager -> owner money flow).
 
-Haven never touches a bank. Statements are calculated from the verified ledger, approved by a
-second person, and the manager records the payout manually once it has been made outside Haven.
+Krein never touches a bank. Statements are calculated from the verified ledger, approved by a
+second person, and the manager records the payout manually once it has been made outside Krein.
 """
 import calendar
 import io
@@ -327,7 +327,7 @@ def mark_paid(statement_id: int, data: dict, user=Depends(current_user)):
         if paid_on > local_today().isoformat():
             raise HTTPException(422, 'The payout date cannot be in the future.')
         if s['net_cents'] > 0 and data.get('confirmed') is not True:
-            raise HTTPException(422, 'Confirm that you made the payout outside Haven.')
+            raise HTTPException(422, 'Confirm that you made the payout outside Krein.')
         conn.execute('UPDATE owner_statements SET status="paid",paid_on=?,payout_reference=?,paid_by=? WHERE id=?', (paid_on, reference, user['id'], statement_id))
         portfolio = conn.execute('SELECT owner_id FROM portfolios WHERE id=?', (s['portfolio_id'],)).fetchone()
         ids = [r[0] for r in conn.execute('SELECT user_id FROM owner_accounts WHERE owner_id=? AND enabled=1', (portfolio['owner_id'],))]

@@ -1,6 +1,6 @@
 """Privacy (AVG/GDPR) for tenants.
 
-- Export: everything Haven holds about one tenant, as a ZIP with data.json plus the files of their tenancies (right of access, art. 15/20).
+- Export: everything Krein holds about one tenant, as a ZIP with data.json plus the files of their tenancies (right of access, art. 15/20).
 - Erasure after the retention period: a former tenant whose last tenancy ended more than HAVEN_RETENTION_YEARS years ago
   (default 7, the Dutch fiscal retention period) and who owes nothing is anonymised. Amounts, dates and invoice numbers stay,
   so the books still add up; names, contact details, messages, form answers, signatures and uploaded files are removed.
@@ -68,7 +68,7 @@ def export_zip(conn, tenant_id):
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('data.json', json.dumps(data, indent=2, ensure_ascii=False, default=str))
-        z.writestr('README.txt', 'All data Haven holds about this tenant. data.json lists every record; the files folder holds the documents of the tenancies.\n'
+        z.writestr('README.txt', 'All data Krein holds about this tenant. data.json lists every record; the files folder holds the documents of the tenancies.\n'
                                  'Amounts are in euro cents.\n')
         for d in data['documents']:
             row = conn.execute('SELECT file_key,name FROM documents WHERE id=?', (d['id'],)).fetchone()

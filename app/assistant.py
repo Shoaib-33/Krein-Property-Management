@@ -112,7 +112,7 @@ GUIDE = {
     ],
 }
 GREETING = {
-    'staff': 'Hi! I can show you where things are in Haven. Try: "How do I verify a receipt?" or "Where are tenant messages?"',
+    'staff': 'Hi! I can show you where things are in Krein. Try: "How do I verify a receipt?" or "Where are tenant messages?"',
     'tenant': 'Hi! I can help you find your way around. Try: "How do I report a repair?" or "How do I pay my rent?"',
     'owner': 'Hi! Ask me where to find your statements, units or documents.',
     'contractor': 'Hi! Ask me how to update a job, send a quote or report completion.',
@@ -126,7 +126,7 @@ SUGGESTIONS = {
 
 
 HELLO = 'Hello! What would you like help finding?'
-THANKS = 'You are welcome! Ask me anything else about finding your way around Haven.'
+THANKS = 'You are welcome! Ask me anything else about finding your way around Krein.'
 
 
 def audience(request: Request):
@@ -139,7 +139,7 @@ DUTCH_RULE = ('Answer in Dutch (Nederlands). The app screens are shown in Dutch,
 
 HOW = {
     'staff': (
-        'How things work in Haven (use this, do not invent steps): '
+        'How things work in Krein (use this, do not invent steps): '
         'To add a tenant: Tenants > Add tenant (name and email). To give them portal access: open the tenant and press Invite to portal (or Settings > Tenant access > Create link), then share the link yourself. '
         'To start a tenancy: Contracts > Send contract for signature. Choose tenant, property, template, dates and amounts, tick the details the tenant must fill in, read and edit the contract text, then send. '
         'Your own signature is saved once in Settings > Your signature on contracts, so every contract goes out signed by you. '
@@ -148,7 +148,7 @@ HOW = {
         'Tenant requests, complaints and repairs are Tickets (open one, reply, Mark resolved). Personal conversations are in Inbox. '
         'Receipts tenants upload are approved under Payment verification. Company logo and payment instructions are in Settings. '),
     'tenant': (
-        'How things work in Haven (use this, do not invent steps): '
+        'How things work in Krein (use this, do not invent steps): '
         'If your landlord sent a contract, a banner on Your home says it is ready to sign: read it, fill in your details, sign by drawing, typing or uploading, and your landlord confirms it. '
         'Pay rent: Rent & payments, then Submit payment proof after paying. Repairs, messages to your manager and formal requests are under Help & requests. '),
     'owner': '',
@@ -159,11 +159,11 @@ HOW = {
 def system_prompt(who: str, page: str, lang: str = 'en'):
     pages = '\n'.join(f'- {k}: {v}' for k, v in PAGES[who].items()) or '- (single page with assigned jobs)'
     return (
-        'You are Haven Help, the guide built into Haven, a Dutch property-management web app. '
+        'You are Krein Help, the guide built into Krein, a Dutch property-management web app. '
         f'You are talking to a {who} user' + (f' who is currently on the "{page}" page' if page else '') + '.\n'
-        'Your job is to explain what Haven offers, where things are and how to do tasks inside it; if asked what Haven or its resident service is, give a short overview built from the page list below. Be brief: at most 4 short sentences, plain language, no markdown headings.\n'
+        'Your job is to explain what Krein offers, where things are and how to do tasks inside it; if asked what Krein or its resident service is, give a short overview built from the page list below. Be brief: at most 4 short sentences, plain language, no markdown headings.\n'
         'You cannot see or change any data, accounts, invoices or messages. Never ask for passwords or personal data. '
-        'If asked about anything else (legal or tax advice, other software, general chat) say you can only help with using Haven.\n'
+        'If asked about anything else (legal or tax advice, other software, general chat) say you can only help with using Krein.\n'
         + (DUTCH_RULE if lang == 'nl' else '')
         + 'To offer a button that opens a page, add a tag like [[go:payments|Open Rent & payments]] at the end. Use only these page ids:\n'
         + pages + '\n' + HOW.get(who, '') + '\nWrite plain sentences. You may put a page name in **double asterisks** to bold it, but use no headings, lists or other markdown. '

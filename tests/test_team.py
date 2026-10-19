@@ -131,15 +131,15 @@ class TeamTests(unittest.TestCase):
     def test_group_overview_shows_every_company_of_the_user_and_hides_money_from_property_staff(self):
         everything = self.platform.get('/api/group/overview').json()
         names = {c['name'] for c in everything['companies']}
-        self.assertEqual(names, {'Haven Residential BV', 'Canal House BV'})
-        haven = next(c for c in everything['companies'] if c['name'] == 'Haven Residential BV')
+        self.assertEqual(names, {'Krein Residential BV', 'Canal House BV'})
+        haven = next(c for c in everything['companies'] if c['name'] == 'Krein Residential BV')
         self.assertEqual(haven['houses'], haven['occupied'] + haven['reserved'] + haven['vacant'])
         self.assertGreater(haven['rent_roll_cents'], 0)
         self.assertEqual(everything['totals']['houses'], sum(c['houses'] for c in everything['companies']))
         data = self.platform.get('/api/data?company_id=1').json()
         self.assertEqual(haven['houses'], len(data['properties']))
         manager = self.login('manager@haven.local').get('/api/group/overview').json()
-        self.assertEqual([c['name'] for c in manager['companies']], ['Haven Residential BV'])
+        self.assertEqual([c['name'] for c in manager['companies']], ['Krein Residential BV'])
         # property staff see counts only
         token = self.platform.post('/api/staff/invite', json={'company_id': 1, 'name': 'Pim', 'email': 'pim@example.com', 'role': 'property'}).json()['path'].split('/')[-1]
         TestClient(app).post(f'/api/join/{token}', json={'password': 'PimStrongPass-2026'})

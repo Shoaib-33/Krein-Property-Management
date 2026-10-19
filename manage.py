@@ -71,10 +71,10 @@ def demo():
                 print('Database already initialized. No records changed.')
             return
         admin = insert(conn, 'users', {'name':'Alex Morgan', 'email':'admin@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
-        insert(conn, 'users', {'name':'Dev Haven', 'email':'developer@haven.local', 'password_hash':password_hash(DEMO_PASSWORD), 'global_admin':1})   # the developer: own sign-in at /developer
+        insert(conn, 'users', {'name':'Dev Krein', 'email':'developer@haven.local', 'password_hash':password_hash(DEMO_PASSWORD), 'global_admin':1})   # the developer: own sign-in at /developer
         finance = insert(conn, 'users', {'name':'Sophie de Vries', 'email':'finance@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
         manager = insert(conn, 'users', {'name':'Daan Bakker', 'email':'manager@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
-        company = insert(conn, 'companies', {'name':'Haven Residential BV','kvk':'DEMO-0001','address':'Keizersgracht 128, Amsterdam','payment_instructions':'DEMO ONLY. Contact your property manager for the agreed payment instructions. Include your invoice number as the reference.','created_at':now()})
+        company = insert(conn, 'companies', {'name':'Krein Residential BV','kvk':'DEMO-0001','address':'Keizersgracht 128, Amsterdam','payment_instructions':'DEMO ONLY. Contact your property manager for the agreed payment instructions. Include your invoice number as the reference.','created_at':now()})
         other = insert(conn, 'companies', {'name':'Canal House BV','kvk':'DEMO-0002','address':'Rotterdam','payment_instructions':'Contact the property manager for payment details.','created_at':now()})
         for uid, cid, role in [(admin,company,'admin'),(admin,other,'admin'),(finance,company,'finance'),(manager,company,'manager')]:
             conn.execute('INSERT INTO memberships VALUES(?,?,?)',(uid,cid,role))
@@ -135,14 +135,14 @@ def create_admin():
         raise SystemExit('A name, valid email, and password of at least 12 characters are required.')
     with transaction() as conn:
         if conn.execute('SELECT 1 FROM users WHERE email=?',(email,)).fetchone():
-            raise SystemExit(f'{email} already has a Haven login (a staff, tenant, owner or contractor account). '
+            raise SystemExit(f'{email} already has a Krein login (a staff, tenant, owner or contractor account). '
                              'Use a separate email for the developer, for example name+dev@gmail.com.')
         conn.execute('INSERT INTO users(name,email,password_hash,global_admin) VALUES(?,?,?,1)',(name,email,password_hash(password)))
     print('Developer account created. Sign in at /developer (not the normal sign-in page).')
 
 
 def main():
-    parser=argparse.ArgumentParser(description='Haven local administration')
+    parser=argparse.ArgumentParser(description='Krein local administration')
     parser.add_argument('command',choices=['demo','init','create-admin','create-developer','developer-off','backup','privacy-erase'])
     parser.add_argument('email',nargs='?',help='developer-off: the account that loses its developer rights (it keeps its company roles)')
     parser.add_argument('--apply',action='store_true',help='privacy-erase: really anonymise (without it, only list who would be)')

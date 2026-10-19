@@ -1,5 +1,5 @@
 'use strict';
-/* Finance > Bank statements: upload the CAMT.053 / MT940 file from the bank, see what Haven booked by itself,
+/* Finance > Bank statements: upload the CAMT.053 / MT940 file from the bank, see what Krein booked by itself,
    and confirm or ignore the payments it could not place with certainty. Server side: app/banking.py. */
 (() => {
   if (typeof navGroups === 'undefined' || typeof renderPage !== 'function') return;
@@ -134,9 +134,9 @@
     const c = ui.data.counts || {};
     const upload = panel('Import a bank statement', 'Download the statement from your bank (CAMT.053 or MT940 file) and upload it here. Only incoming payments are read.',
       `<form id="bank-upload" class="panel-body">
-        <fieldset class="bank-modes"><legend>How should Haven handle the payments it recognises?${ui.data.mode ? '' : ' <span class="late-text">Choose one</span>'}</legend>
+        <fieldset class="bank-modes"><legend>How should Krein handle the payments it recognises?${ui.data.mode ? '' : ' <span class="late-text">Choose one</span>'}</legend>
           <label class="bank-mode ${ui.data.mode === 'auto' ? 'on' : ''}"><input type="radio" name="mode" value="auto" ${ui.data.mode === 'auto' ? 'checked' : ''} required><span><strong>Automatic</strong><small>A certain match is booked right away and the tenant gets "Payment received". Fastest.</small></span></label>
-          <label class="bank-mode ${ui.data.mode === 'review' ? 'on' : ''}"><input type="radio" name="mode" value="review" ${ui.data.mode === 'review' ? 'checked' : ''} required><span><strong>Review first</strong><small>Haven shows each match, marked in the statement PDF. Nothing is booked or sent to the tenant until you press Approve.</small></span></label>
+          <label class="bank-mode ${ui.data.mode === 'review' ? 'on' : ''}"><input type="radio" name="mode" value="review" ${ui.data.mode === 'review' ? 'checked' : ''} required><span><strong>Review first</strong><small>Krein shows each match, marked in the statement PDF. Nothing is booked or sent to the tenant until you press Approve.</small></span></label>
         </fieldset>
         <div class="bank-upload"><input type="file" name="file" accept=".xml,.sta,.940,.txt,.mt940,.swi" required aria-label="Statement file"><button type="submit" class="button primary">Import</button></div>
         <p class="form-error" role="alert"></p></form>
@@ -159,10 +159,10 @@
     const approveAll = ui.tab === 'check' && ui.data.to_approve ? `<div class="notice bank-approve-all"><span><strong>${ui.data.to_approve} match${ui.data.to_approve === 1 ? '' : 'es'} found, waiting for your approval.</strong> Check them with Show in statement, then approve one by one or all at once. The tenant is told only after approval.</span>${btn(`Approve all ${ui.data.to_approve}`, 'approve-all', '', 'small primary')}</div>` : '';
     const list = approveAll + panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : 'Ignored payments',
       ui.tab === 'check' ? 'Confirm books the payment on the invoice you choose. Ignore is for money that is not rent.' : '',
-      table(['Date', 'Payer', 'Amount', 'Description', 'Haven\'s match', ''], rowsHtml, ui.tab === 'check' ? 'Nothing to check. Every imported payment is booked or ignored.' : 'Nothing here yet.'));
+      table(['Date', 'Payer', 'Amount', 'Description', 'Krein\'s match', ''], rowsHtml, ui.tab === 'check' ? 'Nothing to check. Every imported payment is booked or ignored.' : 'Nothing here yet.'));
     const imports = (ui.data.imports || []).length ? panel('Imported files', '', table(['File', 'Format', 'Payments', 'Booked automatically', 'By', 'When'],
       ui.data.imports.map(i => [e(i.filename), e(i.format), String(i.lines), String(i.booked), e(i.user_name || ''), e(dateLabel(i.created_at.slice(0, 10)))]))) : '';
-    return heading('Match bank payments to invoices', 'Upload the statement from your bank. Haven recognises who paid by the invoice number in the description or the tenant\'s bank account, and books it.', '', 'FINANCE')
+    return heading('Match bank payments to invoices', 'Upload the statement from your bank. Krein recognises who paid by the invoice number in the description or the tenant\'s bank account, and books it.', '', 'FINANCE')
       + `<div class="section-stack">${upload}${periodBar('bank', periodValue('bank') ? `Bank payments of ${e(periodLabel('bank'))}` : '')}${tabs}${list}${imports}</div>`;
   }
 

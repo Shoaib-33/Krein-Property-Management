@@ -1,5 +1,5 @@
 ---
-title: Haven property management demo
+title: Krein property management demo
 emoji: 🏠
 colorFrom: green
 colorTo: gray
@@ -7,7 +7,7 @@ sdk: docker
 app_port: 7860
 ---
 
-# Haven property management
+# Krein property management
 
 A local property-management application adapted from the supplied Dutch blueprint. Payments are made outside the application. Tenants submit receipts through expiring links and finance verifies actual receipt before updating balances.
 
@@ -29,21 +29,21 @@ Alternatively, after installing dependencies, run `powershell -ExecutionPolicy B
 
 ## Automatic monthly bills
 
-When the server is running, Haven automatically creates the next month's invoice for each active tenancy on the 15th of the month and adds an in-app bill alert for tenants with an activated portal account. When SMTP is configured, Haven also emails each newly issued invoice to the tenant as a PDF attachment. It retries during the rest of the month without creating duplicate invoices. If the server was unavailable around the run date, it catches up for the current month during the first three days. The invoice is due on the first day of its billing month and appears in the **Rent & payments** page with a PDF download.
+When the server is running, Krein automatically creates the next month's invoice for each active tenancy on the 15th of the month and adds an in-app bill alert for tenants with an activated portal account. When SMTP is configured, Krein also emails each newly issued invoice to the tenant as a PDF attachment. It retries during the rest of the month without creating duplicate invoices. If the server was unavailable around the run date, it catches up for the current month during the first three days. The invoice is due on the first day of its billing month and appears in the **Rent & payments** page with a PDF download.
 
 Set HAVEN_RENT_BILL_DAY to a day from 1 to 28 to change the monthly run date. The default is 15. Bills appear in the tenant portal. Overdue bills create an in-portal alert and staff follow-up task; optional SMTP can also send friendly overdue emails on day 1 and day 8. These are not statutory notices. Bank collection and payment matching are not configured; tenants still pay externally and upload proof for staff verification.
 
 #### SMTP invoice and arrears email
 
-For local use, copy `.env.example` to `.env` in the project folder and fill in your SMTP provider's values. Haven loads `.env` automatically when it starts; values already set by the operating system or deployment take precedence. Keep `.env` private and out of source control. On Hugging Face, set the same names in Space Variables and Secrets. SMTP needs `HAVEN_SMTP_HOST`, `HAVEN_SMTP_FROM`, and `HAVEN_PUBLIC_URL`; set `HAVEN_SMTP_PORT` (default `587`), `HAVEN_SMTP_USERNAME`, `HAVEN_SMTP_PASSWORD`, and optionally `HAVEN_SMTP_STARTTLS` (default `1`) or `HAVEN_SMTP_SSL` (default `0`) for your provider. If SMTP is not configured, Haven continues using in-portal invoices and alerts and staff tasks. Emails go out on their own background loop every 2 minutes (buttons never wait for the mail server). Failed deliveries retry after 5, 15, 60 and 180 minutes, up to five times; finance staff can retry failed invoice or reminder emails from the relevant page. Invoice emails are queued even while SMTP is not set up yet and go out once it is (invoice emails older than 30 days are then skipped); the Invoices page shows a notice while email is not set up or when deliveries failed. Invoice messages include the PDF invoice; overdue messages are friendly reminders only. Haven does not automatically send a formal 14-day notice or postal letters.
+For local use, copy `.env.example` to `.env` in the project folder and fill in your SMTP provider's values. Krein loads `.env` automatically when it starts; values already set by the operating system or deployment take precedence. Keep `.env` private and out of source control. On Hugging Face, set the same names in Space Variables and Secrets. SMTP needs `HAVEN_SMTP_HOST`, `HAVEN_SMTP_FROM`, and `HAVEN_PUBLIC_URL`; set `HAVEN_SMTP_PORT` (default `587`), `HAVEN_SMTP_USERNAME`, `HAVEN_SMTP_PASSWORD`, and optionally `HAVEN_SMTP_STARTTLS` (default `1`) or `HAVEN_SMTP_SSL` (default `0`) for your provider. If SMTP is not configured, Krein continues using in-portal invoices and alerts and staff tasks. Emails go out on their own background loop every 2 minutes (buttons never wait for the mail server). Failed deliveries retry after 5, 15, 60 and 180 minutes, up to five times; finance staff can retry failed invoice or reminder emails from the relevant page. Invoice emails are queued even while SMTP is not set up yet and go out once it is (invoice emails older than 30 days are then skipped); the Invoices page shows a notice while email is not set up or when deliveries failed. Invoice messages include the PDF invoice; overdue messages are friendly reminders only. Krein does not automatically send a formal 14-day notice or postal letters.
 
 ### Demo accounts
 
 | Email | Role | Password |
 |---|---|---|
 | `admin@haven.local` | Administrator; both companies | `HavenDemo!2026` |
-| `finance@haven.local` | Finance; Haven Residential only | `HavenDemo!2026` |
-| `manager@haven.local` | Manager; Haven Residential only | `HavenDemo!2026` |
+| `finance@haven.local` | Finance; Krein Residential only | `HavenDemo!2026` |
+| `manager@haven.local` | Manager; Krein Residential only | `HavenDemo!2026` |
 | `tenant@haven.local` | Fictional tenant; only Emma's tenancy | `HavenDemo!2026` |
 | `contractor@haven.local` | Fictional contractor; one assigned repair only | `HavenDemo!2026` |
 
@@ -57,7 +57,7 @@ The staff portal is `/` and the tenant portal is `/tenant` on the same Space URL
 
 To enable arrears email on the Space, add `HAVEN_SMTP_HOST`, `HAVEN_SMTP_PORT`, `HAVEN_SMTP_FROM`, and `HAVEN_PUBLIC_URL` as variables, and add `HAVEN_SMTP_USERNAME` / `HAVEN_SMTP_PASSWORD` as secrets if your provider requires authentication. Use the Space's HTTPS URL for `HAVEN_PUBLIC_URL`. Set either `HAVEN_SMTP_STARTTLS=1` (default) or `HAVEN_SMTP_SSL=1` according to the provider. Email remains disabled until the required host, sender, and public URL are set.
 
-Tenant portal: **http://127.0.0.1:8000/tenant**. Contractor portal: **http://127.0.0.1:8000/contractor**. The first `demo` startup initializes sample portal accounts. On an existing fictional Haven demo database, running `python manage.py demo` once adds the sample accounts and one fictional assigned repair; it does not reset existing data. For real tenants, staff use **Settings → Tenant access → Create link** and send the one-use, 7-day activation link through their existing secure communication channel.
+Tenant portal: **http://127.0.0.1:8000/tenant**. Contractor portal: **http://127.0.0.1:8000/contractor**. The first `demo` startup initializes sample portal accounts. On an existing fictional Krein demo database, running `python manage.py demo` once adds the sample accounts and one fictional assigned repair; it does not reset existing data. For real tenants, staff use **Settings → Tenant access → Create link** and send the one-use, 7-day activation link through their existing secure communication channel.
 
 Invitation-generated URLs for tenants and contractors are for account activation. Ask each account holder to bookmark the matching `/tenant` or `/contractor` sign-in page after activation. Tenant and contractor passwords can be changed from their portal.
 
@@ -85,9 +85,9 @@ Staff can register contractors in **Contractors** and attach a signed data-proce
 
 In **Tenants & contracts**, use **Import portfolio CSV** to download the example template, preview up to 1,000 rows, then confirm the all-or-nothing import. Rows can add properties, tenants, or tenancies with their rent and deposit. Imports match existing property names and tenant email addresses and do not overwrite existing records. Use ISO dates (`YYYY-MM-DD`) and keep one tenant/property tenancy per row.
 
-To record a manually signed agreement, have the landlord and tenant sign the PDF outside Haven, then upload the completed copy under **Documents** with category **Contract**. Choose **Record signed contract** under **Tenants & contracts**, enter the tenancy and rent details, select the signed PDF, and confirm that both parties have signed. Haven activates the tenancy and shares the signed PDF in that tenant's Documents portal. The confirmation records the landlord's attestation; it does not verify signatures or provide legal e-signing.
+To record a manually signed agreement, have the landlord and tenant sign the PDF outside Krein, then upload the completed copy under **Documents** with category **Contract**. Choose **Record signed contract** under **Tenants & contracts**, enter the tenancy and rent details, select the signed PDF, and confirm that both parties have signed. Krein activates the tenancy and shares the signed PDF in that tenant's Documents portal. The confirmation records the landlord's attestation; it does not verify signatures or provide legal e-signing.
 
-On **Rent & valuations**, **Calculate indexation** applies the landlord-entered percentage to the current basic rent and creates a dated rent proposal. A second authorized person must review it; approval records a new rent version from the effective date. Service-charge advance is unchanged. Haven does not decide whether a percentage or notice complies with current rent rules, so verify the applicable requirements before proposing it.
+On **Rent & valuations**, **Calculate indexation** applies the landlord-entered percentage to the current basic rent and creates a dated rent proposal. A second authorized person must review it; approval records a new rent version from the effective date. Service-charge advance is unchanged. Krein does not decide whether a percentage or notice complies with current rent rules, so verify the applicable requirements before proposing it.
 
 ## Modules
 
@@ -141,11 +141,11 @@ This is an expanded local implementation, **not a certified production deploymen
 
 Legal rules are not certified. Stored reference rules are informational, not an executable legal engine. Service-charge settlement currently allocates costs to individual units by occupancy days. It produces tenant-specific downloadable statements but does not implement all Dutch statutory allocation methods or independently verify costs. Deposit intervals and repair targets need legal review. Tenancy exports are summaries and document indexes, not merged and redacted tribunal bundles. The application must not be represented as automatically ensuring legal compliance.
 
-For an HTTPS deployment, configure `HAVEN_SECURE_COOKIES=1`, a trusted reverse proxy and separate runtime secrets. Behind a reverse proxy set `HAVEN_TRUSTED_PROXY_HOPS` to the number of proxies in front of Haven (the Docker image sets 1, right for Render); the visitor's address for the login limit is then read from the part of `X-Forwarded-For` that your own proxy wrote, so it cannot be forged. Set it to 0 when Haven is reached directly. Sign-in is limited to 8 failed attempts per account and address, and 30 per address, for 15 minutes. Do not expose the demo server publicly.
+For an HTTPS deployment, configure `HAVEN_SECURE_COOKIES=1`, a trusted reverse proxy and separate runtime secrets. Behind a reverse proxy set `HAVEN_TRUSTED_PROXY_HOPS` to the number of proxies in front of Krein (the Docker image sets 1, right for Render); the visitor's address for the login limit is then read from the part of `X-Forwarded-For` that your own proxy wrote, so it cannot be forged. Set it to 0 when Krein is reached directly. Sign-in is limited to 8 failed attempts per account and address, and 30 per address, for 15 minutes. Do not expose the demo server publicly.
 
 ## Owners, portfolios and statements
 - **Owners & portfolios** (staff): group units into portfolios, set a management fee, invite the owner to `/owner`.
-- **Owner statements** (finance/manager): generate a month from verified ledger payments, subtract fee and recorded expenses, a second person approves, then record the payout by hand. No bank connection exists anywhere in Haven.
+- **Owner statements** (finance/manager): generate a month from verified ledger payments, subtract fee and recorded expenses, a second person approves, then record the payout by hand. No bank connection exists anywhere in Krein.
 - **Landing page** at `/welcome` (Dutch/English). **Installable app**: manifest + service worker (API calls are never cached).
 - Demo owner login: `owner@haven.local` / `HavenDemo!2026` (run `python manage.py demo`).
 
@@ -168,7 +168,7 @@ Two-pane chat for tenants: searchable conversation list with unread/answered/sol
 
 ## Help assistant (chat bubble)
 
-Every signed-in screen (landlord, tenant, owner, contractor) has a **Help** bubble in the bottom-right corner. It explains where things are in Haven and offers buttons that open the right page.
+Every signed-in screen (landlord, tenant, owner, contractor) has a **Help** bubble in the bottom-right corner. It explains where things are in Krein and offers buttons that open the right page.
 
 - **With Groq (tried first):** put a free key from https://console.groq.com/keys in `.env` as `GROQ_API_KEY=...` and restart. The model defaults to `openai/gpt-oss-20b`; override it with `HAVEN_GROQ_MODEL`.
 - **With Gemini (fallback):** put a free key from https://aistudio.google.com/apikey in `.env` as `GEMINI_API_KEY=...` and restart. The model defaults to `gemini-flash-latest` (Google's alias for the newest Flash model); override it with `HAVEN_GEMINI_MODEL`.
@@ -178,10 +178,10 @@ Every signed-in screen (landlord, tenant, owner, contractor) has a **Help** bubb
 
 ## Contracts for signature
 
-Instead of recording a contract signed on paper, send it through Haven:
+Instead of recording a contract signed on paper, send it through Krein:
 
-1. **Tenants & contracts > Send contract for signature.** Pick the tenant, property, a *Lease* template (Templates & fields) and the rent, deposit and dates. Haven fills the agreement and freezes it as a PDF. The tenant needs a portal login first.
-2. The tenant sees a **Contract ready to sign** card on their home page and under Documents. They open the PDF, type their full name (it must match their record) and tick that they agree. Haven stores the time, IP address and a SHA-256 fingerprint of the text.
+1. **Tenants & contracts > Send contract for signature.** Pick the tenant, property, a *Lease* template (Templates & fields) and the rent, deposit and dates. Krein fills the agreement and freezes it as a PDF. The tenant needs a portal login first.
+2. The tenant sees a **Contract ready to sign** card on their home page and under Documents. They open the PDF, type their full name (it must match their record) and tick that they agree. Krein stores the time, IP address and a SHA-256 fingerprint of the text.
 3. Staff see **signed contracts waiting for approval**. *Approve* creates the tenancy, the rent history and the move-in tasks, and puts the signed agreement (with both signatures and the fingerprint) in the tenant's Documents. *Return* sends it back with a note, and the tenant signs again. *Withdraw* cancels it, and the tenant can also *Decline*.
 
 A unit cannot have two contracts out for signature in overlapping dates, and approval re-checks that the unit is still free. "Signed on paper? Record it" is still available. This is a simple electronic signature (typed name plus audit trail), not a qualified e-signature.
@@ -219,7 +219,7 @@ For a demo you can show to others, deploy the included Docker setup to [Render](
 | `HAVEN_DEMO_SEED` | `1` loads the fictional sample data when the service starts |
 | `HAVEN_SECURE_COOKIES` | `1` (Render serves HTTPS) |
 | `HAVEN_DATA_DIR` | `/data` |
-| `HAVEN_TIMEZONE` | the timezone whose date Haven shows, e.g. `Europe/Amsterdam` or `Asia/Dhaka`. Servers run on UTC, so without it the date can be a day behind your own |
+| `HAVEN_TIMEZONE` | the timezone whose date Krein shows, e.g. `Europe/Amsterdam` or `Asia/Dhaka`. Servers run on UTC, so without it the date can be a day behind your own |
 | `HAVEN_DEMO_PASSWORD` | your own password for all demo logins (12+ characters). Without it the public default is used, so always set it online |
 | `HAVEN_PUBLIC_URL` | your Render address |
 | `GROQ_API_KEY` | optional, for the AI Help chat |
@@ -242,14 +242,14 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 
 ### Edit before sending
 
-- **Contracts:** step 2 of "Send contract for signature" shows the contract as a document, laid out like the PDF. Click a pencil to change any sentence, add or remove paragraphs, and fill the yellow boxes for details Haven does not know yet. Only then is it sent.
+- **Contracts:** step 2 of "Send contract for signature" shows the contract as a document, laid out like the PDF. Click a pencil to change any sentence, add or remove paragraphs, and fill the yellow boxes for details Krein does not know yet. Only then is it sent.
 - **Invoices:** every invoice can be edited in place (Invoices > Manage). Turn on Settings > "Review invoices before sending" and new invoices are created as drafts. The tenant gets nothing (portal, alert or email) until you open the draft, check or edit it, and press Send to tenant (or Send all to tenants).
 
 ### Companies, admins and the all-companies overview
 
 - **Platform administrator** (the account made with `python manage.py create-admin`): can open every company and create companies. In **Settings > Add company** you enter the company and its **first administrator** (name and email). That person gets a setup link, valid for 7 days, and chooses their own password. You are not added to the company unless you tick the box, but you can still open it.
 - **Company admin**: **Settings > Add staff member** creates an invitation link for a team member with a role (administrator, manager, finance, property, inspector). Pending invitations are listed in Settings and can be cancelled.
-- **One login, several companies**: if the invited person already has a Haven login, they sign in, open the link and accept. The company is then added to their company picker. Nobody is added to a company without accepting.
+- **One login, several companies**: if the invited person already has a Krein login, they sign in, open the link and accept. The company is then added to their company picker. Nobody is added to a company without accepting.
 - **All companies** (menu): key figures of every company the user can open: houses, occupancy, rent roll, open and overdue invoices, tickets and approvals. Money figures are shown to admin, manager and finance roles only.
 - Removing someone's last company closes their login; a new invitation opens it again with a new password. A company always keeps at least one administrator.
 
@@ -261,7 +261,7 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 
 ### Privacy (AVG/GDPR)
 
-- **Tenant data export:** Tenants & contracts > Tenant directory > **Export data** downloads a ZIP with everything Haven holds about that tenant (data.json plus the files of their tenancies).
+- **Tenant data export:** Tenants & contracts > Tenant directory > **Export data** downloads a ZIP with everything Krein holds about that tenant (data.json plus the files of their tenancies).
 - **Erasure after the retention period:** `python manage.py privacy-erase` lists former tenants whose last tenancy ended more than `HAVEN_RETENTION_YEARS` years ago (default 7) and who owe nothing; `python manage.py privacy-erase --apply` anonymises them (name, contact details, messages, form answers, signatures and files are removed; amounts and invoice numbers stay). Run it, for example, once a month.
 - See `docs/PRIVACY.md` for the processors (hosting, email provider, Groq/Google for the help chat) and text for your privacy statement.
 
@@ -279,7 +279,7 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 
 ### Bank-statement import and matching
 
-Tenants pay into the company's bank account. **Finance > Bank statements**: download the statement from your bank as **CAMT.053** (.xml) or **MT940** (.sta/.940/.txt) and upload it. Haven reads the incoming payments (date, amount, payer name, IBAN, description) and:
+Tenants pay into the company's bank account. **Finance > Bank statements**: download the statement from your bank as **CAMT.053** (.xml) or **MT940** (.sta/.940/.txt) and upload it. Krein reads the incoming payments (date, amount, payer name, IBAN, description) and:
 
 - **books them automatically** when the invoice number (HVN-...) is in the description and the amount matches, or when the payment comes from a bank account saved for the tenant and the amount equals an open invoice (or all of them);
 - **suggests** a match when it is likely (known account or invoice number with another amount, or name and amount), and lists the rest as **not recognised**. Staff confirm (choose the invoice; more than its balance goes to the tenant's other open invoices, oldest first) or ignore (not rent);
@@ -291,10 +291,10 @@ Tenants' bank accounts: the **contract form always asks for the IBAN and account
 ### "I have paid" and landlords who collect the rent themselves
 
 - **Tenant:** under Rent and payments, each open invoice has **I have paid** (amount, date, and optionally the account it was paid from) next to **Submit proof**. No receipt is needed. Staff see it under Payment verification > *Tenants who said they paid* and get an alert. When the payment shows up in an imported bank statement it is confirmed automatically, and each bank payment shows its trail: *Tenant said paid*, *Receipt uploaded*, *Confirmed by bank*. A notice that names the paying account is booked by itself; one without an account makes the bank payment a suggestion for staff to confirm.
-- **A landlord who collects the rent into his own account:** an administrator presses **Rent to owner's own account** for that owner in Owners & portfolios. With management access he then has **Bank statements** in his `/landlord` menu: he uploads his own statement, and Haven only books payments onto invoices of his own tenants. The company no longer books those tenants' payments and does not see his bank lines (only the resulting payments in the ledger, marked "Landlord bank"). He can take his own bookings back.
+- **A landlord who collects the rent into his own account:** an administrator presses **Rent to owner's own account** for that owner in Owners & portfolios. With management access he then has **Bank statements** in his `/landlord` menu: he uploads his own statement, and Krein only books payments onto invoices of his own tenants. The company no longer books those tenants' payments and does not see his bank lines (only the resulting payments in the ledger, marked "Landlord bank"). He can take his own bookings back.
 
 ### Contractor service agreements (signed electronically)
 
-**Contractors > Service agreements > Send agreement**: choose a contractor who has a portal login, the start (and optional end) date and the rates (hourly rate, call-out fee, emergency surcharge, quote threshold, payment term, warranty). Haven fills in a Dutch framework agreement for services (raamovereenkomst van opdracht, art. 7:400 BW; text in `app/contractor_starter.py`, Dutch with English under each clause): work orders and response times, rates and quotes, invoicing requirements, quality and warranty, independence (Wet DBA), liability insurance, tenants and access, privacy (AVG) and confidentiality, subcontracting, Dutch law. Your stored signature (Settings > Your signature on contracts) is put on it as it is sent.
+**Contractors > Service agreements > Send agreement**: choose a contractor who has a portal login, the start (and optional end) date and the rates (hourly rate, call-out fee, emergency surcharge, quote threshold, payment term, warranty). Krein fills in a Dutch framework agreement for services (raamovereenkomst van opdracht, art. 7:400 BW; text in `app/contractor_starter.py`, Dutch with English under each clause): work orders and response times, rates and quotes, invoicing requirements, quality and warranty, independence (Wet DBA), liability insurance, tenants and access, privacy (AVG) and confidentiality, subcontracting, Dutch law. Your stored signature (Settings > Your signature on contracts) is put on it as it is sent.
 
 The contractor opens it in the contractor portal, fills in KvK, btw number, address, contact person, IBAN, insurer and policy number (checked: 8-digit KvK, NL btw format, IBAN check digits) and signs by drawing, typing or uploading a signature. Staff check the details and signature and **approve** (signing then if the company signature was not on it yet), **return** it with a note, or **withdraw** it. The approved PDF, with both signatures and the electronic signature record (time, IP, SHA-256 fingerprint), becomes the contractor's agreement. Have the starter text reviewed by a legal professional before real use.

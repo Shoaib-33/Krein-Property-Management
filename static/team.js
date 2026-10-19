@@ -1,5 +1,5 @@
 'use strict';
-/* Team and companies: invite a team member with a link (they set their own password, or a person who already has a Haven login
+/* Team and companies: invite a team member with a link (they set their own password, or a person who already has a Krein login
    signs in and accepts, which gives them one more company), see and cancel pending invitations, and add a company together with
    its first administrator. Plugs into app.js without editing it. */
 (() => {
@@ -13,7 +13,7 @@
 
   // ---------- invite a team member
   function inviteForm() {
-    modal('Invite a team member', `<form id="tm-invite" class="tm-form"><p class="modal-note">They get a link that is valid for 7 days. You send it yourself (email, chat). Haven never sees their password.</p>
+    modal('Invite a team member', `<form id="tm-invite" class="tm-form"><p class="modal-note">They get a link that is valid for 7 days. You send it yourself (email, chat). Krein never sees their password.</p>
       <div class="form-grid"><div class="field"><label for="tm-name">Name</label><input id="tm-name" name="name" type="text" maxlength="120" required></div>
       <div class="field"><label for="tm-email">Email</label><input id="tm-email" name="email" type="email" maxlength="254" required></div>
       <div class="field wide"><label for="tm-role">Role in ${e(company().name)}</label><select id="tm-role" name="role">${ROLES.filter(([v]) => v !== 'admin' || (state.me && state.me.developer)).map(([v, l, d]) => `<option value="${v}" ${v === 'manager' ? 'selected' : ''}>${e(l)}: ${e(d)}</option>`).join('')}</select></div></div>
@@ -27,7 +27,7 @@
       try {
         const r = await api('/api/staff/invite', {method: 'POST', body: {company_id: state.company, name: f.name.value, email: f.email.value, role: f.role.value}});
         modal('Invitation ready', `<div class="tm-done"><p><strong>${e(f.name.value)}</strong> (${e(r.email)}) is invited as <strong>${e(f.role.value)}</strong> of ${e(company().name)}.</p>
-          ${linkBox(r.path, r.existing ? 'This person already has a Haven login. They open the link, sign in with that login and accept, and the company then appears in their company list.' : 'They open the link and choose their own password. The link works once and expires in 7 days.')}
+          ${linkBox(r.path, r.existing ? 'This person already has a Krein login. They open the link, sign in with that login and accept, and the company then appears in their company list.' : 'They open the link and choose their own password. The link works once and expires in 7 days.')}
           <div class="modal-footer"><button type="button" class="button primary" data-action="close-modal">Done</button></div></div>`);
         await refresh();
       } catch (ex) { err.textContent = ex.message; btn.disabled = false; }

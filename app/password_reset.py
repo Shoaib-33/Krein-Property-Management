@@ -1,7 +1,7 @@
 """Forgotten passwords.
 
 - Anyone can ask for a reset link on a login page. If the email belongs to an active login and email (SMTP) is set up,
-  Haven emails a one-time link that is valid for one hour. The answer is always the same, so nobody can find out
+  Krein emails a one-time link that is valid for one hour. The answer is always the same, so nobody can find out
   which email addresses have an account. Requests are limited per address and per IP.
 - Without email, a company admin (for staff) or a manager / property manager / the unit's landlord (for tenants, owners,
   contractors) creates the link and passes it on. Nobody can create a link for the platform administrator, or for a person
@@ -43,10 +43,10 @@ def _send(email, name, url):
     from .email_delivery import send_plain
     def run():
         try:
-            send_plain(email, 'Reset your Haven password / Wachtwoord opnieuw instellen',
-                       f'Hello {name},\n\nSomeone asked to reset the password of your Haven account. Open this link within {VALID_MINUTES} minutes to choose a new password:\n\n{url}\n\n'
+            send_plain(email, 'Reset your Krein password / Wachtwoord opnieuw instellen',
+                       f'Hello {name},\n\nSomeone asked to reset the password of your Krein account. Open this link within {VALID_MINUTES} minutes to choose a new password:\n\n{url}\n\n'
                        'If you did not ask for this, ignore this email; your password stays the same.\n\n'
-                       f'---\n\nBeste {name},\n\nEr is gevraagd om het wachtwoord van uw Haven-account opnieuw in te stellen. Open deze link binnen {VALID_MINUTES} minuten om een nieuw wachtwoord te kiezen:\n\n{url}\n\n'
+                       f'---\n\nBeste {name},\n\nEr is gevraagd om het wachtwoord van uw Krein-account opnieuw in te stellen. Open deze link binnen {VALID_MINUTES} minuten om een nieuw wachtwoord te kiezen:\n\n{url}\n\n'
                        'Heeft u dit niet gevraagd? Negeer dan deze e-mail; uw wachtwoord blijft hetzelfde.')
         except Exception:
             logging.exception('Password reset email could not be sent.')
@@ -158,10 +158,10 @@ def staff_reset_link(data: dict, user=Depends(current_user)):
         # a link must never reach beyond this company: not for the platform administrator, not for someone who also works elsewhere
         if u['global_admin'] or conn.execute('SELECT 1 FROM memberships WHERE user_id=? AND company_id<>?', (uid, company_id)).fetchone() or (
                 kind != 'staff' and conn.execute('SELECT 1 FROM memberships WHERE user_id=? AND company_id=?', (uid, company_id)).fetchone()):
-            raise HTTPException(409, 'This person also has another role or company in Haven. They must use "Forgot password" on the sign-in page themselves.')
+            raise HTTPException(409, 'This person also has another role or company in Krein. They must use "Forgot password" on the sign-in page themselves.')
         for table in ('portal_accounts', 'owner_accounts', 'contractor_accounts'):
             if conn.execute(f'SELECT 1 FROM {table} WHERE user_id=? AND company_id<>?', (uid, company_id)).fetchone():
-                raise HTTPException(409, 'This person also has a login with another company in Haven. They must use "Forgot password" on the sign-in page themselves.')
+                raise HTTPException(409, 'This person also has a login with another company in Krein. They must use "Forgot password" on the sign-in page themselves.')
         path = new_link(conn, uid, user['id'])
         audit(conn, user['id'], company_id, 'reset_link_created', kind, target_id, {'user_id': uid})
     return {'path': path, 'valid_minutes': VALID_MINUTES, 'email': u['email']}

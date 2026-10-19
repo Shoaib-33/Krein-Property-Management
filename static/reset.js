@@ -54,7 +54,7 @@
   if (location.pathname.startsWith('/reset/')) {
     const token = location.pathname.split('/').pop();
     const root = () => document.getElementById('app');
-    const shell = html => { root().innerHTML = `<main class="public-page"><div class="brand"><span class="brand-mark">h</span>haven</div><section class="panel reset-panel">${html}</section></main>`; };
+    const shell = html => { root().innerHTML = `<main class="public-page"><div class="brand"><span class="brand-mark">k</span>krein</div><section class="panel reset-panel">${html}</section></main>`; };
     const start = async () => {
       if (!root()) return setTimeout(start, 30);
       try {

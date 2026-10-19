@@ -26,8 +26,8 @@ class AgreementDoc(BaseDocTemplate):
     def __init__(self, filename):
         super().__init__(filename, pagesize=A4, leftMargin=20*mm, rightMargin=20*mm,
                          topMargin=22*mm, bottomMargin=19*mm,
-                         title='Residential Tenancy Agreement — Haven Demo Template',
-                         author='Haven Property Management')
+                         title='Residential Tenancy Agreement — Krein Demo Template',
+                         author='Krein Property Management')
         frame = Frame(self.leftMargin, self.bottomMargin, self.width, self.height,
                       id='main', leftPadding=0, rightPadding=0, topPadding=2, bottomPadding=0)
         self.addPageTemplates(PageTemplate(id='agreement', frames=[frame], onPage=self.page_chrome))

@@ -1,7 +1,7 @@
 """Bank-statement import and payment matching.
 
 Tenants pay rent into the company's bank account. Staff download the statement from the bank (CAMT.053 XML or MT940)
-and upload it here. Haven reads every incoming payment (date, amount, payer name, payer IBAN, description) and links it
+and upload it here. Krein reads every incoming payment (date, amount, payer name, payer IBAN, description) and links it
 to an invoice:
 
 1. the invoice number (HVN-1-202611-0004) is in the description and the amount equals what is open  -> booked
@@ -10,7 +10,7 @@ to an invoice:
 4. nothing fits -> staff pick the invoice or ignore the line
 
 "Booked" means a payment entry in the ledger, exactly like an approved receipt. A line is stored with the bank's own
-reference, so uploading the same file twice books nothing twice. Confirming a line teaches Haven the payer's IBAN.
+reference, so uploading the same file twice books nothing twice. Confirming a line teaches Krein the payer's IBAN.
 Tenants can still upload a receipt by hand; a pending receipt for the same invoice and amount is approved by the bank line.
 """
 import hashlib
@@ -76,14 +76,14 @@ def cents(text):
     try:
         value = Decimal(str(text).strip().replace(',', '.'))
     except InvalidOperation:
-        raise HTTPException(422, f'The statement contains an amount Haven cannot read: {text}')
+        raise HTTPException(422, f'The statement contains an amount Krein cannot read: {text}')
     return int((value * 100).to_integral_value())
 
 
 def parse_camt(raw):
     """ISO 20022 CAMT.053 (and CAMT.052/054) account statements: every incoming (credit) transaction."""
     if b'<!DOCTYPE' in raw[:4096].upper() or b'<!ENTITY' in raw.upper():
-        raise HTTPException(422, 'This statement file contains constructs Haven does not accept.')
+        raise HTTPException(422, 'This statement file contains constructs Krein does not accept.')
     try:
         root = ET.fromstring(raw)
     except ET.ParseError:
@@ -588,7 +588,7 @@ def approve_all(data: dict, user=Depends(current_user)):
 
 @router.get('/api/bank/lines/{line_id}/statement.pdf')
 def statement_pdf(line_id: int, user=Depends(current_user)):
-    """The imported statement as a PDF, with this payment highlighted and what Haven matched it to written next to it."""
+    """The imported statement as a PDF, with this payment highlighted and what Krein matched it to written next to it."""
     from fastapi.responses import Response
     with connect() as conn:
         line, reach, _ = line_for(conn, line_id, user)
@@ -619,10 +619,10 @@ def statement_pdf_bytes(company, imp, rows_, line_id):
     story = [Paragraph(f'<b>{escape(company)}</b> · bank statement {escape(imp["filename"])} ({escape(imp["format"])})', ParagraphStyle('h', parent=st['Title'], fontSize=14, alignment=0, textColor=ink)),
              p(f'Imported {imp["created_at"][:16].replace("T", " ")} by {imp.get("user_name") or ""}. Incoming payments read from the file. The highlighted row is the payment you are checking.'), Spacer(1, 8)]
     if target:
-        what = (f'Haven matched it to invoice {target["invoice_number"]} of {target["tenant_name"]}. ' if target['invoice_number'] else 'Haven found no invoice for it. ') + (target['reason'] or '')
-        story += [Table([[p('Payment checked', bold), p(f'{target["booked_on"]} · EUR {target["amount_cents"] / 100:,.2f} · {target["name"]} {pretty_iban(target["iban"]) if target["iban"] else ""} · "{target["description"]}"'), ], [p('Haven\'s match', bold), p(what)]],
+        what = (f'Krein matched it to invoice {target["invoice_number"]} of {target["tenant_name"]}. ' if target['invoice_number'] else 'Krein found no invoice for it. ') + (target['reason'] or '')
+        story += [Table([[p('Payment checked', bold), p(f'{target["booked_on"]} · EUR {target["amount_cents"] / 100:,.2f} · {target["name"]} {pretty_iban(target["iban"]) if target["iban"] else ""} · "{target["description"]}"'), ], [p('Krein\'s match', bold), p(what)]],
                         colWidths=[35 * mm, 230 * mm], style=TableStyle([('BACKGROUND', (0, 0), (-1, -1), mark), ('BOX', (0, 0), (-1, -1), 1, colors.HexColor('#e0b400')), ('VALIGN', (0, 0), (-1, -1), 'TOP'), ('PADDING', (0, 0), (-1, -1), 5)])), Spacer(1, 10)]
-    head = [p(h, bold) for h in ('Date', 'Payer', 'IBAN', 'Amount', 'Description', 'Bank reference', 'Haven')]
+    head = [p(h, bold) for h in ('Date', 'Payer', 'IBAN', 'Amount', 'Description', 'Bank reference', 'Krein')]
     status = lambda r: {'booked': 'Booked', 'ignored': 'Ignored', 'unmatched': 'Not recognised'}.get(r['status'], 'Match found, to approve' if r['certain'] else 'To check')
     body = [[p(r['booked_on']), p(r['name']), p(pretty_iban(r['iban']) if r['iban'] else ''), p(f'EUR {r["amount_cents"] / 100:,.2f}'), p(r['description']), p(r['bank_ref']),
              p((status(r) + (f' · {r["invoice_number"]} · {r["tenant_name"]}' if r['invoice_number'] else '')))] for r in rows_]

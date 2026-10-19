@@ -28,7 +28,7 @@
   }
 
   function login(message = 'Sign in to see your portfolio.') {
-    root.innerHTML = `<main class="public-page"><header class="public-header"><a href="/" class="brand"><span class="brand-mark">h</span>haven</a><small>OWNER ACCESS</small></header>
+    root.innerHTML = `<main class="public-page"><header class="public-header"><a href="/" class="brand"><span class="brand-mark">k</span>krein</a><small>OWNER ACCESS</small></header>
       <section class="panel"><div class="eyebrow">YOUR PROPERTIES, TRANSPARENTLY</div><h1>Owner portal</h1><p class="subtitle">${esc(message)}</p>
       <form id="owner-login"><div class="field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required></div>
       <div class="field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
@@ -94,7 +94,7 @@
     const d = S.data;
     const unread = (d.notifications || []).filter(n => !n.is_read).length;
     const page = S.page === 'units' ? units(d) : S.page === 'statements' ? statements(d) : S.page === 'documents' ? documents(d) : overview(d);
-    root.innerHTML = `<div class="portal-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">h</span><div>haven<small>OWNER PORTAL</small></div></div>
+    root.innerHTML = `<div class="portal-shell"><aside class="sidebar"><div class="brand"><span class="brand-mark">k</span><div>krein<small>OWNER PORTAL</small></div></div>
       <div class="portal-identity"><span class="avatar">${esc((S.me.name || '?').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase())}</span><strong>${esc(S.me.name)}</strong><small>${esc(d.accounts[0]?.company_name || '')}</small></div>
       <nav>${nav.map(([id, label, i]) => { const n = navUnread(id); return `<a href="#${id}" class="nav-item ${S.page === id ? 'active' : ''}" data-nav="${id}">${ic(i)}<span>${label}</span>${n ? `<span class="count">${n}</span>` : ''}</a>`; }).join('')}</nav>
       <div class="sidebar-footer"><button class="button" data-do="logout">${ic('logout')} Sign out</button></div></aside>

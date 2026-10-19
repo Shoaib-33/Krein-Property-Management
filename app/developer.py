@@ -48,7 +48,7 @@ def staff_overview(user=Depends(current_user)):
 @router.post('/api/developer/admins')
 def create_admin(data: dict, user=Depends(current_user)):
     """A new administrator for a company: with a password (the login works straight away) or, without one, an invitation link
-    (the person chooses their own password; someone who already has a Haven login accepts it with that login)."""
+    (the person chooses their own password; someone who already has a Krein login accepts it with that login)."""
     require_developer(user)
     from .main import insert, integer, text_field
     company_id = integer(data, 'company_id')
@@ -65,7 +65,7 @@ def create_admin(data: dict, user=Depends(current_user)):
             if len(password) < 12:
                 raise HTTPException(422, 'Use a password of at least 12 characters.')
             if existing:
-                raise HTTPException(409, 'This email already has a Haven login. Leave the password empty to send an invitation they accept with their own login.')
+                raise HTTPException(409, 'This email already has a Krein login. Leave the password empty to send an invitation they accept with their own login.')
             uid = insert(conn, 'users', {'name': name, 'email': email, 'password_hash': password_hash(password)})
             conn.execute("INSERT INTO memberships VALUES(?,?,'admin')", (uid, company_id))
             audit(conn, user['id'], company_id, 'created', 'staff', uid, {'email': email, 'role': 'admin', 'by': 'developer'})
@@ -86,7 +86,7 @@ def edit_user(user_id: int, data: dict, user=Depends(current_user)):
     with transaction() as conn:
         u = _staff_user(conn, user_id)
         if email != u['email'] and conn.execute('SELECT 1 FROM users WHERE email=? AND id<>?', (email, user_id)).fetchone():
-            raise HTTPException(409, 'Another Haven login already uses this email.')
+            raise HTTPException(409, 'Another Krein login already uses this email.')
         conn.execute('UPDATE users SET name=?,email=? WHERE id=?', (name, email, user_id))
         _audit_all(conn, user['id'], 'profile_changed', user_id, {'name': [u['name'], name], 'email': [u['email'], email]})
     return {'ok': True}

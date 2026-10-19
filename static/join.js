@@ -1,6 +1,6 @@
 'use strict';
 /* The page behind a staff invitation link (/join/<token>): a new person chooses a password, a person who already has a
-   Haven login signs in first and then accepts. Nobody is added to a company without their own action. */
+   Krein login signs in first and then accepts. Nobody is added to a company without their own action. */
 (() => {
   if (!location.pathname.startsWith('/join/')) return;
   const token = location.pathname.split('/').pop();
@@ -14,7 +14,7 @@
     if (!res.ok) throw new Error(data.detail || 'Something went wrong.');
     return data;
   };
-  const shell = body => { root.innerHTML = `<main class="public-page"><a href="/" class="brand"><span class="brand-mark">h</span>haven</a><section class="panel">${body}</section></main>`; };
+  const shell = body => { root.innerHTML = `<main class="public-page"><a href="/" class="brand"><span class="brand-mark">k</span>krein</a><section class="panel">${body}</section></main>`; };
   const ROLE = {admin: 'administrator', manager: 'manager', finance: 'finance', property: 'property staff', inspector: 'inspector'};
 
   (async () => {
@@ -37,14 +37,14 @@
     let me = null;
     try { me = await call('/api/me'); } catch { /* not signed in */ }
     if (me && me.email.toLowerCase() === i.email.toLowerCase()) {
-      shell(`${head}<p>You already have a Haven login. Accept to add ${esc(i.company)} to your companies.</p><p class="form-error" role="alert"></p><button class="button primary" id="accept">Accept invitation</button>`);
+      shell(`${head}<p>You already have a Krein login. Accept to add ${esc(i.company)} to your companies.</p><p class="form-error" role="alert"></p><button class="button primary" id="accept">Accept invitation</button>`);
       document.getElementById('accept').onclick = async ev => {
         const btn = ev.currentTarget; btn.disabled = true;
         try { await call('/api/join/' + encodeURIComponent(token), {method: 'POST', csrf: me.csrf, body: {}}); location.href = '/'; }
         catch (err) { document.querySelector('.form-error').textContent = err.message; btn.disabled = false; }
       };
     } else {
-      shell(`${head}<p>${me ? `You are signed in as ${esc(me.email)}, but this invitation is for ${esc(i.email)}.` : 'You already have a Haven login.'} Sign in as <strong>${esc(i.email)}</strong>, then open this link again to accept.</p><p><a class="button primary" href="/">Go to sign in</a></p>`);
+      shell(`${head}<p>${me ? `You are signed in as ${esc(me.email)}, but this invitation is for ${esc(i.email)}.` : 'You already have a Krein login.'} Sign in as <strong>${esc(i.email)}</strong>, then open this link again to accept.</p><p><a class="button primary" href="/">Go to sign in</a></p>`);
     }
   })();
 })();

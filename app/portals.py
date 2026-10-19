@@ -43,7 +43,7 @@ def invite_account(data: dict, user=Depends(current_user)):
             require_own_tenant(conn, target['id'])
         email = target['email'].strip().lower()
         existing = conn.execute('SELECT id,active FROM users WHERE email=?', (email,)).fetchone()
-        # A person who already has a Haven login (staff elsewhere, a tenant of another unit, an owner...) gets an invitation too;
+        # A person who already has a Krein login (staff elsewhere, a tenant of another unit, an owner...) gets an invitation too;
         # opening it they confirm with their OWN password, so an invitation can never take over somebody else's login.
         account_table, target_key = {'tenant': ('portal_accounts', 'tenant_id'), 'contractor': ('contractor_accounts', 'contractor_id'), 'owner': ('owner_accounts', 'owner_id')}[kind]
         if conn.execute(f'SELECT 1 FROM {account_table} WHERE {target_key}=?', (target['id'],)).fetchone():
@@ -87,7 +87,7 @@ def accept_invitation(token: str,data: dict):
         if not verify_password(password,has_login['password_hash']):
             with transaction() as conn:   # stored on its own, so the refusal below does not undo it
                 conn.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)',(key_,(tries['attempts'] if tries else 0)+1,_time.time()+3600))
-            raise HTTPException(401,'This is not the password of your existing Haven login. Use Forgot password on the sign-in page if you do not remember it.')
+            raise HTTPException(401,'This is not the password of your existing Krein login. Use Forgot password on the sign-in page if you do not remember it.')
     with transaction() as conn:
         i=invitation(conn,token)
         table, key = {'tenant': ('portal_accounts','tenant_id'), 'contractor': ('contractor_accounts','contractor_id'), 'owner': ('owner_accounts','owner_id')}[i['kind']]
@@ -108,7 +108,7 @@ def accept_invitation(token: str,data: dict):
         insert(conn,table,{'user_id':uid,key:i['target_id'],'company_id':i['company_id'],'created_at':now()})
         conn.execute('UPDATE account_invitations SET used_at=? WHERE id=?',(now(),i['id']))
         audit(conn,uid,i['company_id'],'activated',i['kind'],i['target_id'],{})
-        notify(conn,i['company_id'],[uid],'Welcome to Haven','Your account is ready.','home')
+        notify(conn,i['company_id'],[uid],'Welcome to Krein','Your account is ready.','home')
     return {'ok':True,'email':i['email']}
 
 

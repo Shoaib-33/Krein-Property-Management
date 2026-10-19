@@ -1,4 +1,4 @@
-"""Initialize an empty Haven workspace for a Hugging Face demo Space."""
+"""Initialize an empty Krein workspace for a Hugging Face demo Space."""
 import os
 
 from app import db
@@ -53,14 +53,14 @@ def bootstrap_admin():
         if conn.execute('SELECT 1 FROM users LIMIT 1').fetchone():
             return
         name = os.environ.get('HAVEN_BOOTSTRAP_ADMIN_NAME', 'Workspace administrator').strip()
-        company_name = os.environ.get('HAVEN_BOOTSTRAP_COMPANY_NAME', 'Haven Demo Workspace').strip()
+        company_name = os.environ.get('HAVEN_BOOTSTRAP_COMPANY_NAME', 'Krein Demo Workspace').strip()
         user_id = conn.execute(
             'INSERT INTO users(name,email,password_hash,global_admin) VALUES(?,?,?,1)',
             (name or 'Workspace administrator', email, password_hash(password)),
         ).lastrowid
         company_id = conn.execute(
             'INSERT INTO companies(name,created_at) VALUES(?,?)',
-            (company_name or 'Haven Demo Workspace', now()),
+            (company_name or 'Krein Demo Workspace', now()),
         ).lastrowid
         conn.execute('INSERT INTO memberships(user_id,company_id,role) VALUES(?,?,?)',
                      (user_id, company_id, 'admin'))

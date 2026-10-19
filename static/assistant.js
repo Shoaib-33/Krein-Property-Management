@@ -116,9 +116,9 @@
     const wrap = el('div', 'hh-wrap');
     const launcher = el('button', 'hh-launcher'); launcher.type = 'button';
     launcher.setAttribute('aria-label', 'Open help chat'); launcher.setAttribute('aria-expanded', 'false'); launcher.innerHTML = ICON_CHAT + '<span>Help</span>';
-    const panel = el('section', 'hh-panel'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Haven Help chat');
+    const panel = el('section', 'hh-panel'); panel.setAttribute('role', 'dialog'); panel.setAttribute('aria-label', 'Krein Help chat');
     const head = el('header', 'hh-head');
-    const title = el('div', 'hh-title'); title.append(el('strong', '', 'Haven Help'));
+    const title = el('div', 'hh-title'); title.append(el('strong', '', 'Krein Help'));
     const badge = el('small', '', 'Ask me where to find things'); title.append(badge);
     const closeBtn = el('button', 'hh-close'); closeBtn.type = 'button'; closeBtn.setAttribute('aria-label', 'Close help chat'); closeBtn.innerHTML = ICON_X;
     head.append(title, closeBtn);

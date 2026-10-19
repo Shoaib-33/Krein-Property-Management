@@ -48,7 +48,7 @@ async def lifespan(app):
 
 # the interactive API pages (/docs, /redoc, /openapi.json) are off unless HAVEN_API_DOCS=1 (handy while developing)
 _docs = os.environ.get('HAVEN_API_DOCS') == '1'
-app = FastAPI(title='Haven property management', version='1.0.0', lifespan=lifespan,
+app = FastAPI(title='Krein property management', version='1.0.0', lifespan=lifespan,
               docs_url='/docs' if _docs else None, redoc_url='/redoc' if _docs else None, openapi_url='/openapi.json' if _docs else None)
 
 
@@ -141,7 +141,7 @@ async def security_headers(request, call_next):
     if os.environ.get('HAVEN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     if response.headers.get('content-type', '').startswith(('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'video/')):
-        # only Haven's own pages may show a PDF or a receipt photo inside the portal viewer
+        # only Krein's own pages may show a PDF or a receipt photo inside the portal viewer
         response.headers['X-Frame-Options'] = 'SAMEORIGIN'
         response.headers['Content-Security-Policy'] = response.headers['Content-Security-Policy'].replace("frame-ancestors 'none'", "frame-ancestors 'self'")
     return response
@@ -359,7 +359,7 @@ def process_overdue_invoices(company_id=None):
                     created+=1
                     active=conn.execute('SELECT 1 FROM portal_accounts a JOIN contract_people c ON c.tenant_id=a.tenant_id AND c.company_id=a.company_id WHERE c.contract_id=? AND a.enabled=1',(inv['contract_id'],)).fetchone()
                     if active:
-                        notify_tenant(conn,inv['contract_id'],'Rent payment reminder',f'Invoice {inv["number"]} still has an outstanding balance. Please pay using your agreed payment method, submit proof in Haven, or contact your property manager. Balance: {euros(balance)}.','payments')
+                        notify_tenant(conn,inv['contract_id'],'Rent payment reminder',f'Invoice {inv["number"]} still has an outstanding balance. Please pay using your agreed payment method, submit proof in Krein, or contact your property manager. Balance: {euros(balance)}.','payments')
                         insert(conn,'arrears_events',{'company_id':company,'case_id':case_id,'step':'friendly_reminder_sent','occurred_on':today.isoformat(),'note':'In-app reminder sent. External payment methods remain unchanged.','created_at':now()})
                     else:
                         task(conn,company,inv['contract_id'],f'Send friendly rent reminder for invoice {inv["number"]}',today.isoformat(),'Arrears','Finance team')
@@ -434,7 +434,7 @@ async def bank_connection_loop():
 
 @app.get('/api/health')
 def health():
-    return {'status': 'ok', 'app': 'Haven', 'payment_mode': 'manual verification'}
+    return {'status': 'ok', 'app': 'Krein', 'payment_mode': 'manual verification'}
 
 
 @app.post('/api/login')
@@ -1254,7 +1254,7 @@ def revoke_document_sharing(document_id: int, user=Depends(current_user)):
 
 @app.post('/api/contracts/manual')
 def create_manually_signed_contract(data: dict, user=Depends(current_user)):
-    """Record a tenancy after the parties have signed a PDF outside Haven."""
+    """Record a tenancy after the parties have signed a PDF outside Krein."""
     company_id = integer(data, 'company_id')
     prop_id, tenant_id = integer(data, 'property_id'), integer(data, 'tenant_id')
     if data.get('confirm_signed') is not True:
@@ -1912,7 +1912,7 @@ def pdf_response(title, lines, filename, company=None):
         else:
             story.append(Paragraph(escape(text).replace('\n','<br/>'),styles['ReportBody']))
     def page_chrome(canvas,doc):
-        width,height=A4;canvas.saveState();canvas.setFillColor(green);canvas.rect(0,height-5*mm,width,5*mm,stroke=0,fill=1);canvas.setStrokeColor(line_color);canvas.line(20*mm,14*mm,width-20*mm,14*mm);canvas.setFont('Helvetica',8);canvas.setFillColor(muted);canvas.drawString(20*mm,8*mm,str(company or 'Haven').upper()[:50]);canvas.drawRightString(width-20*mm,8*mm,f'Page {doc.page}');canvas.restoreState()
+        width,height=A4;canvas.saveState();canvas.setFillColor(green);canvas.rect(0,height-5*mm,width,5*mm,stroke=0,fill=1);canvas.setStrokeColor(line_color);canvas.line(20*mm,14*mm,width-20*mm,14*mm);canvas.setFont('Helvetica',8);canvas.setFillColor(muted);canvas.drawString(20*mm,8*mm,str(company or 'Krein').upper()[:50]);canvas.drawRightString(width-20*mm,8*mm,f'Page {doc.page}');canvas.restoreState()
     document.build(story,onFirstPage=page_chrome,onLaterPages=page_chrome)
     return Response(stream.getvalue(), media_type='application/pdf', headers={'Content-Disposition': f'attachment; filename="{filename}"'})
 
@@ -1940,7 +1940,7 @@ def invoice_pdf_bytes(inv, snap):
     from xml.sax.saxutils import escape
 
     stream=io.BytesIO()
-    document=SimpleDocTemplate(stream,pagesize=A4,rightMargin=20*mm,leftMargin=20*mm,topMargin=19*mm,bottomMargin=18*mm,title=f'Rent invoice {inv["number"]}',author=snap.get('company_name','Haven'))
+    document=SimpleDocTemplate(stream,pagesize=A4,rightMargin=20*mm,leftMargin=20*mm,topMargin=19*mm,bottomMargin=18*mm,title=f'Rent invoice {inv["number"]}',author=snap.get('company_name','Krein'))
     ink=colors.HexColor('#173b32');green=colors.HexColor('#176b55');muted=colors.HexColor('#687b74');line=colors.HexColor('#dce7e1');pale=colors.HexColor('#f1f6f3')
     styles=getSampleStyleSheet()
     styles.add(ParagraphStyle(name='Brand',parent=styles['Normal'],fontName='Helvetica-Bold',fontSize=18,leading=22,textColor=green))
@@ -1953,7 +1953,7 @@ def invoice_pdf_bytes(inv, snap):
     esc=lambda value:escape(str(value or '')).replace('\n','<br/>')
     para=lambda value,style='Info':Paragraph(esc(value),styles[style])
     rich=lambda value,style='Info':Paragraph(value,styles[style])
-    brand_cell=para(snap.get('company_name','Haven'),'Brand')
+    brand_cell=para(snap.get('company_name','Krein'),'Brand')
     try:
         from .invoice_tools import logo_bytes
         logo=logo_bytes(inv['company_id'])
@@ -1980,7 +1980,7 @@ def invoice_pdf_bytes(inv, snap):
         canvas.saveState();width,height=A4
         canvas.setFillColor(green);canvas.rect(0,height-5*mm,width,5*mm,stroke=0,fill=1)
         canvas.setStrokeColor(line);canvas.line(20*mm,13*mm,width-20*mm,13*mm)
-        canvas.setFont('Helvetica',8);canvas.setFillColor(muted);canvas.drawString(20*mm,8*mm,str(snap.get('company_name') or 'Haven').upper()[:50]);canvas.drawRightString(width-20*mm,8*mm,f'{inv["number"]}  ·  Page {doc.page}')
+        canvas.setFont('Helvetica',8);canvas.setFillColor(muted);canvas.drawString(20*mm,8*mm,str(snap.get('company_name') or 'Krein').upper()[:50]);canvas.drawRightString(width-20*mm,8*mm,f'{inv["number"]}  ·  Page {doc.page}')
         canvas.restoreState()
     document.build(story,onFirstPage=page_chrome,onLaterPages=page_chrome)
     return stream.getvalue()

@@ -60,7 +60,7 @@ def portal_of(request: Request):
 
 def client_ip(request: Request):
     """The visitor's real IP address. Behind a reverse proxy (Render, a load balancer, Caddy/nginx) set
-    HAVEN_TRUSTED_PROXY_HOPS to the number of proxies in front of Haven (usually 1): the address is then read from the
+    HAVEN_TRUSTED_PROXY_HOPS to the number of proxies in front of Krein (usually 1): the address is then read from the
     right-hand end of X-Forwarded-For, the part our own proxy wrote. The left-hand part is whatever the visitor sent and is
     never trusted. Without a proxy leave it at 0 (the default), then the header is ignored completely."""
     try:

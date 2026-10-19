@@ -1,4 +1,4 @@
-"""An invitation for an email that already has a Haven login: the person links it with their own password."""
+"""An invitation for an email that already has a Krein login: the person links it with their own password."""
 import contextlib
 import io
 import tempfile

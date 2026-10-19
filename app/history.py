@@ -19,7 +19,7 @@ def months():
 
 
 def cutoff():
-    """The oldest created_at that is still sent (ISO text, compared as text like every timestamp in Haven)."""
+    """The oldest created_at that is still sent (ISO text, compared as text like every timestamp in Krein)."""
     return (local_today() - timedelta(days=round(months() * 30.5))).isoformat()
 
 

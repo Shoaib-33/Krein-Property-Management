@@ -34,7 +34,7 @@ def cpi_annual_rate(period: str):
         raise CBSDataError('Choose a valid CBS reference month.')
     year, month = map(int, period.split('-'))
     # CBS publishes an initial figure, then a final figure later. Keep a two-full-month
-    # buffer so Haven does not use the flash estimate or the most recent provisional data.
+    # buffer so Krein does not use the flash estimate or the most recent provisional data.
     today = local_today()
     cutoff_year, cutoff_month = today.year, today.month - 2
     if cutoff_month <= 0:

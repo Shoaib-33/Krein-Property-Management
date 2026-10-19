@@ -56,10 +56,10 @@
 
   /* ---------- Automation ---------- */
   const TRIGGER_TEXT = {invoice_overdue: n => `an invoice is ${n} or more days overdue`, invoice_due_soon: n => `an invoice falls due within ${n} days`, contract_ending: n => `a tenancy ends within ${n} days`, repair_open: n => `a repair has been open for ${n} days`, proof_pending: n => `a payment receipt has waited ${n} days for review`};
-  const ACTION_TEXT = {create_task: r => `create a task for ${r.owner}`, notify_staff: () => 'notify the team in Haven', notify_tenant: () => 'send the tenant an in-app notice'};
+  const ACTION_TEXT = {create_task: r => `create a task for ${r.owner}`, notify_staff: () => 'notify the team in Krein', notify_tenant: () => 'send the tenant an in-app notice'};
   const PRESETS = [
     ['Rent nudge: call the tenant at 5 days late', {trigger: 'invoice_overdue', days: 5, action: 'create_task', title: 'Call {tenant} about {invoice} ({amount} open, {days} days late)', owner: 'Finance team'}],
-    ['Friendly in-app reminder at 3 days late', {trigger: 'invoice_overdue', days: 3, action: 'notify_tenant', title: 'Rent reminder', body: 'Invoice {invoice} still shows {amount} open. Please pay, or send your proof of payment in Haven.'}],
+    ['Friendly in-app reminder at 3 days late', {trigger: 'invoice_overdue', days: 3, action: 'notify_tenant', title: 'Rent reminder', body: 'Invoice {invoice} still shows {amount} open. Please pay, or send your proof of payment in Krein.'}],
     ['Heads-up 3 days before rent is due', {trigger: 'invoice_due_soon', days: 3, action: 'notify_tenant', title: 'Rent due soon', body: 'Invoice {invoice} for {amount} is due on {date}.'}],
     ['Plan the move-out 60 days before a lease ends', {trigger: 'contract_ending', days: 60, action: 'create_task', title: 'Plan move-out for {tenant} at {property} (ends {date})', owner: 'Property team'}],
     ['Flag repairs open for 14 days', {trigger: 'repair_open', days: 14, action: 'notify_staff', title: 'Repair still open after {days} days: {invoice}', body: '{tenant} at {property} is still waiting.'}],

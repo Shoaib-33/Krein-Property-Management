@@ -1,4 +1,4 @@
-"""Send a tenancy agreement for signature inside Haven.
+"""Send a tenancy agreement for signature inside Krein.
 
 Flow: staff send an offer (the agreement is rendered from a Lease template, can be edited for this tenant, and is then frozen),
 the tenant reads it, fills in the form the landlord asked for and signs by drawing, typing or uploading a signature, staff review

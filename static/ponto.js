@@ -1,5 +1,5 @@
 'use strict';
-/* Finance > Bank statements: the automatic bank connection (Ponto, read-only). Tenants pay by ordinary transfer; Haven fetches the
+/* Finance > Bank statements: the automatic bank connection (Ponto, read-only). Tenants pay by ordinary transfer; Krein fetches the
    company account's payments every hour and books the certain matches by itself. Server: app/ponto.py. Without the Ponto keys in the
    server settings the panel only says how to switch it on, and statement upload works as before. */
 (() => {
@@ -31,14 +31,14 @@
     if (!s.configured) {
       if (!(state.me && state.me.developer)) return '';
       return head('Automatic bank connection', 'Off. Statements are uploaded by hand below.',
-        `<p>Haven can read your business account (ING, Rabobank and most Dutch banks) through <strong>Ponto</strong>, read-only, and book tenants' transfers by itself every hour.</p>
-         <p class="subtitle">To switch it on, put the Ponto keys in the server settings: <code>HAVEN_PONTO_CLIENT_ID</code> and <code>HAVEN_PONTO_CLIENT_SECRET</code> (and <code>HAVEN_PONTO_SANDBOX=1</code> while testing), then restart Haven.</p>`);
+        `<p>Krein can read your business account (ING, Rabobank and most Dutch banks) through <strong>Ponto</strong>, read-only, and book tenants' transfers by itself every hour.</p>
+         <p class="subtitle">To switch it on, put the Ponto keys in the server settings: <code>HAVEN_PONTO_CLIENT_ID</code> and <code>HAVEN_PONTO_CLIENT_SECRET</code> (and <code>HAVEN_PONTO_SANDBOX=1</code> while testing), then restart Krein.</p>`);
     }
     const c = s.connection, sandbox = s.sandbox ? `<p class="pn-sandbox">${badge('Sandbox: test banks, not your real account', 'amber')}</p>` : '';
     if (!c || ['revoked', 'replaced'].includes(c.status)) {
       return head('Automatic bank connection', 'Not connected yet.',
-        `${sandbox}<p>Connect the business account tenants pay their rent into. You log in <strong>at your own bank</strong> (ING, Rabobank…) and tick the account; Haven only gets read access, never your password, and cannot make payments.</p>
-         <p class="subtitle">After that Haven fetches new payments every ${s.every_minutes} minutes. With <strong>Automatic</strong> below, certain matches are booked as approved and the tenant is told; the rest waits under Please check. Your bank asks you to approve the link again every 90–180 days; Haven reminds you a week before.</p>
+        `${sandbox}<p>Connect the business account tenants pay their rent into. You log in <strong>at your own bank</strong> (ING, Rabobank…) and tick the account; Krein only gets read access, never your password, and cannot make payments.</p>
+         <p class="subtitle">After that Krein fetches new payments every ${s.every_minutes} minutes. With <strong>Automatic</strong> below, certain matches are booked as approved and the tenant is told; the rest waits under Please check. Your bank asks you to approve the link again every 90–180 days; Krein reminds you a week before.</p>
          ${manager() ? '<button type="button" class="button primary" data-pn="connect">Connect bank account</button>' : '<p class="subtitle">An administrator or manager can connect the account.</p>'}`);
     }
     const expired = c.status === 'expired';
@@ -76,7 +76,7 @@
         await refresh();
       }
       if (b.dataset.pn === 'disconnect') {
-        if (!confirm('Disconnect the bank account? Haven stops fetching payments; you can upload statements by hand again.')) return;
+        if (!confirm('Disconnect the bank account? Krein stops fetching payments; you can upload statements by hand again.')) return;
         await api('/api/ponto/disconnect', {method: 'POST', body: {company_id: state.company}});
         toast('Bank account disconnected.');
       }
@@ -88,7 +88,7 @@
   const back = new URLSearchParams(location.search).get('bank');
   if (back) {
     history.replaceState(null, '', location.pathname + '#bank');
-    const msg = {connected: 'Bank account connected. Haven now fetches payments automatically.', cancelled: 'Connecting the bank account was cancelled.', expired: 'That link had expired. Click Connect bank account again.', failed: 'The bank could not be connected. Try again, or check the Ponto keys.'}[back];
+    const msg = {connected: 'Bank account connected. Krein now fetches payments automatically.', cancelled: 'Connecting the bank account was cancelled.', expired: 'That link had expired. Click Connect bank account again.', failed: 'The bank could not be connected. Try again, or check the Ponto keys.'}[back];
     if (msg) setTimeout(() => toast(msg), 1500);
   }
 })();

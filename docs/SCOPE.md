@@ -1,4 +1,4 @@
-# Haven property management
+# Krein property management
 
 This implementation adapts the supplied Dutch property management blueprint to manual payment verification. There are no bank connections, payment gateways, direct debits, or automatic bank matching.
 

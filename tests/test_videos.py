@@ -82,7 +82,7 @@ class VideoTests(unittest.TestCase):
         doc = self.manager.get(f"/api/documents/{update['document_id']}/file")
         self.assertEqual(doc.status_code, 200)
         self.assertEqual(doc.headers['content-type'], 'video/mp4')
-        self.assertEqual(doc.headers['x-frame-options'], 'SAMEORIGIN')   # it plays inside Haven's viewer
+        self.assertEqual(doc.headers['x-frame-options'], 'SAMEORIGIN')   # it plays inside Krein's viewer
         self.assertEqual(self.tenant.get(f"/api/tenant/documents/{update['document_id']}/file").status_code, 200)
         self.assertEqual(self.repair(MOV, 'clip.mov').status_code, 200)
 

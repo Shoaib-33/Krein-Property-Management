@@ -1,6 +1,6 @@
 'use strict';
 /* The contract as a document you edit in place, set up like the PDF: letterhead with the logo, key-facts table, articles with the
-   English translation under each clause, signature block. Every part has a pencil. Details Haven does not know yet are inputs right
+   English translation under each clause, signature block. Every part has a pencil. Details Krein does not know yet are inputs right
    in the text. HavenDoc.mount(host, options) -> {text(), missing(), complete()}. */
 (() => {
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));

@@ -1,7 +1,7 @@
 """Team and company administration.
 
 - Staff invitations: a company admin invites a person; a new person follows a link and sets their own password, a person who already
-  has a Haven login signs in and accepts, which gives them a role in one more company. One login can therefore work in several companies.
+  has a Krein login signs in and accepts, which gives them a role in one more company. One login can therefore work in several companies.
 - Group overview: one screen with the key figures of every company the user can access (all companies for the platform administrator).
 """
 import secrets

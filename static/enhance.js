@@ -1,5 +1,5 @@
 'use strict';
-/* Haven UI enhancement layer: command palette, smart insights, sortable/filterable tables,
+/* Krein UI enhancement layer: command palette, smart insights, sortable/filterable tables,
    keyboard shortcuts and live data refresh. Loaded after app.js and works on top of its state. */
 (() => {
   const ready = () => typeof state !== 'undefined' && typeof navGroups !== 'undefined' && !['/tenant', '/contractor', '/owner'].includes(location.pathname) && state.me && document.querySelector('.sidebar') && document.getElementById('main');
@@ -89,7 +89,7 @@
       </button>`).join('') : `<div class="insight green"><span class="insight-icon">${icon('check')}</span><span class="insight-text"><strong>Everything is on track</strong><small>No overdue rent, late repairs or waiting receipts.</small></span></div>`;
     const el = document.createElement('section');
     el.id = 'insights'; el.className = 'panel insights-panel';
-    el.innerHTML = `<div class="panel-header"><div><h2>Smart insights</h2><p>Haven checked your company. Here is what deserves attention first.</p></div><button type="button" class="button small" data-open-palette>${icon('search')} Quick actions <kbd>Ctrl K</kbd></button></div><div class="insight-list">${body}</div>`;
+    el.innerHTML = `<div class="panel-header"><div><h2>Smart insights</h2><p>Krein checked your company. Here is what deserves attention first.</p></div><button type="button" class="button small" data-open-palette>${icon('search')} Quick actions <kbd>Ctrl K</kbd></button></div><div class="insight-list">${body}</div>`;
     (main.querySelector('.period-bar') || heading).after(el);
     el.querySelectorAll('.insight').forEach((n, i) => n.style.setProperty('--i', i));
   }

@@ -1,12 +1,12 @@
-"""The Developer's access matrix: which role may use which part of Haven.
+"""The Developer's access matrix: which role may use which part of Krein.
 
 The Developer (users.global_admin) can do everything in every company, is the only one who creates, promotes or removes
 administrators, and decides per feature and role whether it is switched on. Every box starts ticked: with no saved choices
-Haven behaves exactly as before. A switched-off feature is hidden from that role AND refused by the server (403).
+Krein behaves exactly as before. A switched-off feature is hidden from that role AND refused by the server (403).
 
 The matrix only switches parts OFF (or back on) inside what a role is built for. It never grants a role something it was not
 designed to do (invoices for an inspector, Settings for a tenant): those cells are shown as not applicable, because each part
-of Haven relies on its own role checks for safety.
+of Krein relies on its own role checks for safety.
 
 Enforcement: a middleware remembers the request path; authorize() (every staff endpoint) and the portal middleware check
 the path against FEATURES below. Data that several features share (the dashboard payload, documents behind a contract or a

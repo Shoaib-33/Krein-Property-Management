@@ -1,5 +1,5 @@
 'use strict';
-/* Every file field in Haven (staff, tenant, owner and contractor screens): a file that is too large, or the wrong kind,
+/* Every file field in Krein (staff, tenant, owner and contractor screens): a file that is too large, or the wrong kind,
    is refused the moment it is chosen, with a clear message, before anything is uploaded. The server checks again.
    Limits: videos HAVEN_MAX_VIDEO_MB (data-max-mb on the field, default 50), the company logo 1 MB, everything else 10 MB. */
 (() => {

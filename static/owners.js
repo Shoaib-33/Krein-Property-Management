@@ -178,12 +178,12 @@
       if (!activePortfolios().length) return needPortfolio();
       formModal('Generate owner statement', [selectField('portfolio_id', 'Portfolio', activePortfolios().map(p => [p.id, p.name])), ['period', 'Month', 'month', {value: lastMonth(), max: lastMonth()}]],
         d => api('/api/owner-statements/generate', {method: 'POST', body: {company_id: state.company, portfolio_id: Number(d.portfolio_id), period: d.period}}),
-        {submit: 'Calculate draft', intro: 'Haven adds up payments verified in that month, subtracts the management fee and recorded expenses, and saves a draft for a second person to approve.'});
+        {submit: 'Calculate draft', intro: 'Krein adds up payments verified in that month, subtracts the management fee and recorded expenses, and saves a draft for a second person to approve.'});
     },
     'publish': id => formModal('Approve and publish', [['confirmed', 'I checked the collected rent, expenses and management fee.', 'checkbox']], () => api(`/api/owner-statements/${id}/publish`, {method: 'POST', body: {confirmed: true}}), {submit: 'Publish to owner', intro: 'The owner is notified and can download the PDF. Figures are frozen from this moment. Someone other than the person who generated it must approve.', success: 'Statement published.'}),
     'paid': id => {
       const s = byId('owner_statements', id);
-      formModal('Record payout', [dayField('paid_on', 'Date paid'), ['reference', 'Your payment reference', 'text'], ['confirmed', `I paid ${money(Math.max(0, s.net_cents))} to the owner outside Haven.`, 'checkbox', {required: s.net_cents > 0}]], d => api(`/api/owner-statements/${id}/paid`, {method: 'POST', body: {paid_on: d.paid_on, reference: d.reference, confirmed: !!d.confirmed}}), {submit: 'Mark as paid', success: 'Payout recorded.'});
+      formModal('Record payout', [dayField('paid_on', 'Date paid'), ['reference', 'Your payment reference', 'text'], ['confirmed', `I paid ${money(Math.max(0, s.net_cents))} to the owner outside Krein.`, 'checkbox', {required: s.net_cents > 0}]], d => api(`/api/owner-statements/${id}/paid`, {method: 'POST', body: {paid_on: d.paid_on, reference: d.reference, confirmed: !!d.confirmed}}), {submit: 'Mark as paid', success: 'Payout recorded.'});
     },
     'delete-draft': id => { if (confirm('Delete this draft? You can generate it again afterwards.')) api(`/api/owner-statements/${id}`, {method: 'DELETE'}).then(refresh).then(() => toast('Draft deleted.')); },
     'new-expense': () => {
