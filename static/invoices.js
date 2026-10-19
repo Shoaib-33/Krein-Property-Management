@@ -6,7 +6,8 @@
   if (typeof showInvoice !== 'function' || typeof modal !== 'function') return;
   const canEdit = () => ['admin', 'manager', 'finance'].includes(company().role);
   const canBrand = () => ['admin', 'manager'].includes(company().role);
-  const logoUrl = c => c && c.logo_version ? `/api/companies/${c.id}/logo?v=${encodeURIComponent(c.logo_version)}` : '';
+  // every document is sent by Krein Property Management: its logo heads the invoice, as on the PDF
+  const logoUrl = () => '/static/brand/krein-logo.png';
   const brandMark = (c, cls = '') => {
     const url = logoUrl(c);
     return url ? `<img class="inv-logo ${cls}" src="${e(url)}" alt="${e(c.name)} logo">` : `<span class="inv-logo-fallback ${cls}" aria-hidden="true">${e(initials(c ? c.name : 'H'))}</span>`;
@@ -73,8 +74,8 @@
       ${d.released ? '' : `<div class="inv-draftbar"><span>${icon('edit')} <strong>Draft.</strong> The tenant has not received this invoice yet. Check it, change anything with the pencils, then send it.</span>${canEdit() ? `<button type="button" class="button primary" data-inv="send" data-id="${d.id}">Send to tenant</button>` : ''}</div>`}
       <div class="inv-docbar"><span class="inv-number">${e(d.number)}</span>${d.released ? badge(status) : badge('Draft', 'amber')}${editable() ? '<span class="inv-hint">Click a pencil to edit that part of the invoice.</span>' : ''}</div>
       <header class="inv-top"><div class="inv-logo-wrap">${url ? `<img class="inv-logo big" src="${e(url)}" alt="${e(c.name)} logo">` : `<span class="inv-logo-fallback big">${e(initials(f.company_name || c.name))}</span>`}
-          ${canBrand() ? `<label class="ef-pen floating" tabindex="0" aria-label="Change the logo">${icon('edit')}<input type="file" id="logo-file" accept="image/png,image/jpeg" hidden></label>` : ''}</div>
-        <div class="inv-from"><strong>${field('company_name', f.company_name, {label: 'company name'})}</strong>${field('company_address', f.company_address, {multiline: true, place: 'Company address', label: 'company address'})}</div></header>
+</div>
+        <div class="inv-from"><strong>Krein Property Management</strong><small class="inv-behalf">On behalf of ${field('company_name', f.company_name, {label: 'company name'})}</small>${field('company_address', f.company_address, {multiline: true, place: 'Company address', label: 'company address'})}</div></header>
       <section class="inv-to">${field('tenant_name', f.tenant_name, {label: 'recipient name'})}${field('address', f.address, {multiline: true, place: 'Recipient address', label: 'recipient address'})}</section>
       <section class="inv-kvs">
         ${row('Invoice date', field('invoice_date', f.invoice_date, {kind: 'date', show: dateShow(f.invoice_date), label: 'invoice date'}))}
@@ -127,13 +128,7 @@
   }
 
   // ---------- company logo in Settings and on the invoices page
-  function logoPanel() {
-    const c = company(), url = logoUrl(c);
-    return panel('Company logo', 'Shown at the top of every invoice, in the invoice preview and in the PDF.',
-      `<div class="panel-body logo-panel"><div class="logo-stage">${url ? `<img class="inv-logo big" src="${e(url)}" alt="${e(c.name)} logo">` : `<span class="inv-logo-fallback big">${e(initials(c.name))}</span><small>No logo yet. Initials are shown instead.</small>`}</div>
-        <div class="logo-actions">${canBrand() ? `<label class="button primary">${icon('upload')} ${url ? 'Replace logo' : 'Upload logo'}<input type="file" id="logo-file" accept="image/png,image/jpeg" hidden></label>${url ? '<button type="button" class="button" data-inv="logo-remove">Remove</button>' : ''}` : '<small>Ask a manager to upload the logo.</small>'}
-        <small>PNG or JPEG, up to 1 MB. A wide logo on a white or transparent background looks best.</small></div></div>`);
-  }
+
   function reviewPanel() {
     const c = company(), on = !!c.review_invoices;
     return panel('Review invoices before sending', 'When on, "Run monthly invoices" creates drafts. Nothing reaches the tenant (portal, alert or email) until you open the invoice, check or edit it and press Send to tenant.',
@@ -143,7 +138,7 @@
   renderPage = () => {
     const html = baseRender();
     if (!state.company || !state.me) return html;
-    if (state.page === 'settings') return html.replace('<div class="section-stack">', () => '<div class="section-stack">' + reviewPanel() + logoPanel());
+    if (state.page === 'settings') return html.replace('<div class="section-stack">', () => '<div class="section-stack">' + reviewPanel());
     if (state.page === 'invoices') {
       const c = company();
       const drafts = rows('invoices').filter(i => !i.released_at).length;
@@ -151,7 +146,7 @@
       const mail = state.data.email_status;
       const mailBanner = mail && !mail.configured ? `<div class="notice inv-drafts"><span>${icon('clock')} <strong>Invoice emails are not switched on yet.</strong> Tenants still see their invoices in the portal. ${mail.waiting ? `${mail.waiting} email${mail.waiting === 1 ? ' is' : 's are'} waiting and will be sent as soon as email is switched on.` : ''}</span></div>`
         : mail && mail.failed ? `<div class="notice inv-drafts"><span>${icon('clock')} <strong>${mail.failed} email${mail.failed === 1 ? '' : 's'} could not be delivered.</strong> See Arrears &gt; Invoice email delivery to retry.</span></div>` : '';
-      return html.replace(/(<div class="page-heading">)/, m => mailBanner + draftBanner + `<div class="inv-strip">${brandMark(c)}<div><strong>${e(c.name)}</strong><small>${e(c.address || '')}</small></div>${canBrand() && !c.logo_version ? '<button type="button" class="button small" data-action="navigate" data-page="settings">Add your logo</button>' : ''}</div>` + m);
+      return html.replace(/(<div class="page-heading">)/, m => mailBanner + draftBanner + `<div class="inv-strip">${brandMark(c)}<div><strong>${e(c.name)}</strong><small>${e(c.address || '')}</small></div></div>` + m);
     }
     return html;
   };

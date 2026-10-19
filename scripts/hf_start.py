@@ -19,7 +19,7 @@ def seed_branding():
     import app.main  # loads the app first (the template module depends on it)
     from app.templates_docs import STARTERS
     static = Path(__file__).resolve().parent.parent / 'static' / 'brand'
-    logo, signature = static / 'haven-residential-logo.png', static / 'landlord-signature-demo.png'
+    logo, signature = static / 'krein-logo.png', static / 'landlord-signature-demo.png'
     with transaction() as conn:
         company = conn.execute('SELECT id FROM companies WHERE kvk=?', ('DEMO-0001',)).fetchone()
         admin = conn.execute('SELECT id,name FROM users WHERE email=?', ('admin@haven.local',)).fetchone()
@@ -53,7 +53,7 @@ def bootstrap_admin():
         if conn.execute('SELECT 1 FROM users LIMIT 1').fetchone():
             return
         name = os.environ.get('HAVEN_BOOTSTRAP_ADMIN_NAME', 'Workspace administrator').strip()
-        company_name = os.environ.get('HAVEN_BOOTSTRAP_COMPANY_NAME', 'Krein Demo Workspace').strip()
+        company_name = os.environ.get('HAVEN_BOOTSTRAP_COMPANY_NAME', 'Krein Property Management').strip()
         user_id = conn.execute(
             'INSERT INTO users(name,email,password_hash,global_admin) VALUES(?,?,?,1)',
             (name or 'Workspace administrator', email, password_hash(password)),

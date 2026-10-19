@@ -31,10 +31,7 @@ def fields_of(inv, snap):
     return out
 
 
-def logo_bytes(company_id):
-    with connect() as conn:
-        row = conn.execute('SELECT data FROM company_logos WHERE company_id=?', (company_id,)).fetchone()
-    return bytes(row['data']) if row else None
+from .brand import BRAND, logo_bytes, on_behalf  # noqa: F401  (documents import these from here too)
 
 
 @router.get('/api/companies/{company_id}/logo')

@@ -143,7 +143,7 @@ def publish_statements(settlement_id:int,data:dict,user=Depends(current_user)):
             filename=f'service-charge-{settlement["year"]}-{line["contract_id"]}.pdf'
             company_row=conn.execute('SELECT name,address,kvk,payment_instructions FROM companies WHERE id=?',(settlement['company_id'],)).fetchone()
             prop_row=conn.execute('SELECT p.name,p.address,p.city FROM contracts ct JOIN properties p ON p.id=ct.property_id WHERE ct.id=?',(line['contract_id'],)).fetchone()
-            from .invoice_tools import logo_bytes
+            from .brand import logo_bytes
             pdf=service_charge_statement_pdf_bytes(tenant['company'],tenant['name'],tenant['address'],settlement['year'],line['days'],period_days,allocations,total,advance,balance,filename,
                 company=dict(company_row),property_label=f"{prop_row['name']}, {prop_row['address']}, {prop_row['city']}",reference=f"SA-{settlement['year']}-{settlement_id:03d}-{line['contract_id']:04d}",issued_on=local_today().isoformat(),logo=logo_bytes(settlement['company_id']))
             doc_id=save_document(conn,settlement['company_id'],line['contract_id'],user['id'],'Service-charge statement',(pdf,'application/pdf','.pdf',filename))

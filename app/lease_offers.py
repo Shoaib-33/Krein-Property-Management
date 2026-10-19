@@ -155,7 +155,7 @@ BLANK_SIGN_LINE = re.compile(r'^\s*Signed (for the landlord|by the tenant):.*$',
 
 def agreement_file(conn, offer, offer_id, stamp=''):
     """The agreement as a PDF: the (edited) contract text, the tenant's details and the signature block with whoever has signed so far."""
-    from .invoice_tools import logo_bytes
+    from .brand import logo_bytes
     company = dict(conn.execute('SELECT name,address,kvk FROM companies WHERE id=?', (offer['company_id'],)).fetchone())
     defs = json.loads(offer['form_fields']) if offer['form_fields'] else []
     values = json.loads(offer['form_values']) if offer['form_values'] else {}

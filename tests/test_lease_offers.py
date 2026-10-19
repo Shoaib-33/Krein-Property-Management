@@ -206,14 +206,14 @@ class LeaseOfferTests(unittest.TestCase):
         self.assertIn('Alex Morgan', draft_text)
         self.assertIn('Director', draft_text)
         self.assertIn('Te ondertekenen door de huurder', draft_text)
-        self.assertEqual(sum(len(page.get_image_info()) for page in draft), 1)       # the landlord's signature only
+        self.assertEqual(sum(len(page.get_image_info()) for page in draft), 2)       # the Krein logo and the landlord's signature
         self.assertTrue(next(o for o in self.staff.get('/api/data?company_id=1').json()['lease_offers'] if o['id'] == oid)['landlord_signed'])
         self.assertEqual(self.sign(oid).status_code, 200)
         # approving needs no second landlord signature
         approved = self.staff.post(f'/api/lease-offers/{oid}/approve', json={'confirmed': True})
         self.assertEqual(approved.status_code, 200, approved.text)
         final = fitz.open(stream=self.staff.get(f'/api/lease-offers/{oid}/file').content)
-        self.assertEqual(sum(len(page.get_image_info()) for page in final), 1)       # an older-style tenant has typed their name, so there is no tenant image
+        self.assertEqual(sum(len(page.get_image_info()) for page in final), 2)       # the Krein logo and the landlord's signature; an older-style tenant has typed their name, so there is no tenant image
         self.assertEqual(self.staff.delete('/api/companies/1/signature').status_code, 200)
         self.assertFalse(self.staff.get('/api/companies/1/signature').json()['set'])
 

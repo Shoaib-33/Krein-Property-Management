@@ -1940,7 +1940,7 @@ def invoice_pdf_bytes(inv, snap):
     from xml.sax.saxutils import escape
 
     stream=io.BytesIO()
-    document=SimpleDocTemplate(stream,pagesize=A4,rightMargin=20*mm,leftMargin=20*mm,topMargin=19*mm,bottomMargin=18*mm,title=f'Rent invoice {inv["number"]}',author=snap.get('company_name','Krein'))
+    document=SimpleDocTemplate(stream,pagesize=A4,rightMargin=20*mm,leftMargin=20*mm,topMargin=19*mm,bottomMargin=18*mm,title=f'Rent invoice {inv["number"]}',author='Krein Property Management')
     ink=colors.HexColor('#173b32');green=colors.HexColor('#176b55');muted=colors.HexColor('#687b74');line=colors.HexColor('#dce7e1');pale=colors.HexColor('#f1f6f3')
     styles=getSampleStyleSheet()
     styles.add(ParagraphStyle(name='Brand',parent=styles['Normal'],fontName='Helvetica-Bold',fontSize=18,leading=22,textColor=green))
@@ -1953,16 +1953,17 @@ def invoice_pdf_bytes(inv, snap):
     esc=lambda value:escape(str(value or '')).replace('\n','<br/>')
     para=lambda value,style='Info':Paragraph(esc(value),styles[style])
     rich=lambda value,style='Info':Paragraph(value,styles[style])
-    brand_cell=para(snap.get('company_name','Krein'),'Brand')
+    from .brand import BRAND,on_behalf
+    brand_cell=[para(BRAND,'Brand'),para(on_behalf(snap.get('company_name','')),'SmallMuted')]
     try:
-        from .invoice_tools import logo_bytes
+        from .brand import logo_bytes
         logo=logo_bytes(inv['company_id'])
         if logo:
             from reportlab.lib.utils import ImageReader
             from reportlab.platypus import Image
             iw,ih=ImageReader(io.BytesIO(logo)).getSize()
             scale=min(54*mm/iw,20*mm/ih)
-            brand_cell=[Image(io.BytesIO(logo),width=iw*scale,height=ih*scale,hAlign='LEFT'),Spacer(1,4),para(snap.get('company_name',''),'SmallMuted')]
+            brand_cell=[Image(io.BytesIO(logo),width=iw*scale,height=ih*scale,hAlign='LEFT'),Spacer(1,4),para(on_behalf(snap.get('company_name','')),'SmallMuted')]
     except Exception:
         pass  # a broken logo must never stop an invoice from being produced
     story=[Table([[brand_cell,rich('RENT INVOICE<br/><font size="9" color="#687b74">HUURFACTUUR</font>','InvoiceTitle')]],colWidths=[88*mm,82*mm],style=TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('ALIGN',(1,0),(1,0),'RIGHT'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0),('BOTTOMPADDING',(0,0),(-1,-1),7)])),para(snap.get('company_address',''),'SmallMuted'),Spacer(1,11),HRFlowable(width='100%',thickness=1,color=line),Spacer(1,14)]

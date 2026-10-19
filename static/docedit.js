@@ -65,8 +65,8 @@
       }
       const company = o.company || {};
       host.innerHTML = `<div class="de-sheet">
-        <header class="de-head"><div class="de-logo">${o.logo ? `<img src="${esc(o.logo)}" alt="${esc(company.name)} logo">` : `<strong>${esc(company.name)}</strong>`}</div>
-          <div class="de-company"><strong>${esc(company.name)}</strong><br>${esc(company.address)}${company.kvk ? `<br>KvK ${esc(company.kvk)}` : ''}<br>Kenmerk / Reference: <b>assigned when sent</b></div></header>
+        <header class="de-head"><div class="de-logo">${o.logo ? `<img src="${esc(o.logo)}" alt="Krein Property Management logo">` : `<strong>Krein Property Management</strong>`}</div>
+          <div class="de-company"><strong>Krein Property Management</strong><br>${company.name && company.name.trim().toLowerCase() !== 'krein property management' ? `Namens / On behalf of ${esc(company.name)}<br>` : ''}${esc(company.address)}${company.kvk ? `<br>KvK ${esc(company.kvk)}` : ''}<br>Kenmerk / Reference: <b>assigned when sent</b></div></header>
         <div class="de-rule"></div>
         ${out.join('')}
         ${askRows ? `<div class="de-block de-appendix"><h2>Bijlage: gegevens huurder</h2><p class="de-h2en">Appendix: tenant details, filled in by the tenant before signing</p><ul>${askRows}</ul></div>` : ''}

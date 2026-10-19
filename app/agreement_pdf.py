@@ -84,7 +84,7 @@ def agreement_pdf_bytes(text, *, company, logo=None, reference='', signatures=No
     esc = lambda value: escape(str(value or ''))
     stream = io.BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=A4, leftMargin=22 * mm, rightMargin=22 * mm, topMargin=18 * mm, bottomMargin=24 * mm,
-                            title=subject or 'Huurovereenkomst woonruimte', author=company.get('name', ''), subject=reference)
+                            title=subject or 'Huurovereenkomst woonruimte', author='Krein Property Management', subject=reference)
     story = []
 
     # ---- masthead: logo left, reference right, a green rule
@@ -94,10 +94,12 @@ def agreement_pdf_bytes(text, *, company, logo=None, reference='', signatures=No
             scale = min(52 * mm / iw, 17 * mm / ih)
             left = Image(io.BytesIO(logo), width=iw * scale, height=ih * scale, hAlign='LEFT')
         except Exception:
-            left = Paragraph(esc(company.get('name')), st['brand'])
+            left = Paragraph('Krein Property Management', st['brand'])
     else:
-        left = Paragraph(esc(company.get('name')), st['brand'])
-    right = Paragraph(f'<b>{esc(company.get("name"))}</b><br/>{esc(company.get("address"))}<br/>KvK {esc(company.get("kvk"))}' + (f'<br/>Kenmerk / Reference: <b>{esc(reference)}</b>' if reference else ''), st['meta'])
+        left = Paragraph('Krein Property Management', st['brand'])
+    from .brand import BRAND, on_behalf
+    behalf = on_behalf(company.get('name'))
+    right = Paragraph(f'<b>{BRAND}</b><br/>' + (f'{esc(behalf)}<br/>' if behalf else '') + f'{esc(company.get("address"))}<br/>KvK {esc(company.get("kvk"))}' + (f'<br/>Kenmerk / Reference: <b>{esc(reference)}</b>' if reference else ''), st['meta'])
     story += [Table([[left, right]], colWidths=[84 * mm, 82 * mm], style=TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0)])),
               Spacer(1, 6), HRFlowable(width='100%', thickness=2.2, color=GREEN), Spacer(1, 14)]
 

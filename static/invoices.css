@@ -51,6 +51,7 @@
 .inv-logo-wrap{position:relative;display:inline-block;padding:6px 40px 6px 0}
 .inv-from{text-align:right;display:flex;flex-direction:column;align-items:flex-end;gap:3px;max-width:320px}
 .inv-from strong{font-size:15px}
+.inv-behalf{color:var(--muted);font-size:12.5px}
 .inv-to{display:flex;flex-direction:column;gap:3px;margin-bottom:26px;max-width:340px}
 .inv-kvs{display:grid;gap:7px;margin-bottom:26px;padding:16px 0;border-top:1px solid var(--line,#e3ece7);border-bottom:1px solid var(--line,#e3ece7)}
 .inv-kv{display:grid;grid-template-columns:140px 14px 1fr;align-items:center;font-size:14px}

@@ -66,7 +66,7 @@ def appendix(values):
 
 def offer_pdf(conn, offer, stamp=''):
     from .agreement_pdf import agreement_pdf_bytes
-    from .invoice_tools import logo_bytes
+    from .brand import logo_bytes
     company = dict(conn.execute('SELECT name,address,kvk FROM companies WHERE id=?', (offer['company_id'],)).fetchone())
     values = json.loads(offer['form_values']) if offer['form_values'] else {}
     client = {'label': 'Opdrachtgever / Client', 'image': bytes(offer['client_signature']) if offer['client_signature'] else None,
