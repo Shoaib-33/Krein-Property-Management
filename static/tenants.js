@@ -52,17 +52,34 @@
       ['overdue', 'Overdue', people.filter(x => x.status === 'Overdue').length], ['in', 'Moved in', people.filter(x => x.movedIn).length], ['out', 'Moving out', people.filter(x => x.movingOut).length]];
     const shown = people.filter(x => f === 'all' || (f === 'paid' && x.status === 'Paid') || (f === 'unpaid' && ['Open', 'Partly paid', 'Overdue'].includes(x.status)) || (f === 'overdue' && x.status === 'Overdue') || (f === 'in' && x.movedIn) || (f === 'out' && x.movingOut));
     const tone = {Paid: 'green', Overdue: 'red', 'Partly paid': 'amber', Open: 'blue', 'Not invoiced': 'gray'};
-    const body = shown.map(x => {
+    // a household is one row: the home and the bill once, each person's own part, status and payment under each other
+    const groups = [];
+    for (const x of shown) { const m = householdMain(x.t), g = m && groups.find(g => g[0].t.id === m); if (g) g.push(x); else groups.push([x]); }
+    const statusCell = x => badge(x.household && x.status === 'Paid' && x.household.open > 0 ? 'Own part paid' : x.status, tone[x.status]);
+    const openCell = x => x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>';
+    const lastCell = x => x.pays[0] ? `<strong>${e(dateLabel(x.pays[0].created_at.slice(0, 10)))}</strong><small>${e(howPaid(x.pays[0]))} · ${money(-x.pays[0].amount_cents)}</small>` : '<span class="muted">No payment</span>';
+    const first = n => e(n.split(' ')[0]);
+    const body = groups.map(g => {
+      if (g.length === 1) return single(g[0]);
+      const x0 = g[0], stack = f => `<div class="hh-stack">${g.map(x => `<div class="hh-line">${f(x)}</div>`).join('')}</div>`;
+      const inv = [...new Map(g.flatMap(x => x.inv).map(i => [i.id, i])).values()], total = inv.reduce((s, i) => s + i.total_cents, 0);
+      return [stack(x => `<button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button><small class="co-with">${householdMain(x.t) ? 'Co-tenant' : 'Main tenant'}</small>`),
+        `<strong>${e(x0.cs.map(c => propertyFor(c.id).name).join(', '))}</strong><small>${x0.movedIn ? 'moved in ' + e(dateLabel(x0.cs.find(c => inPeriod(key, c.start_date)).start_date)) : ''}${x0.movingOut ? (x0.movedIn ? ' · ' : '') + 'leaves ' + e(dateLabel(x0.cs.find(c => c.end_date && inPeriod(key, c.end_date)).end_date)) : ''}${x0.movedIn || x0.movingOut ? ' · ' : ''}shared by ${g.length}</small>`,
+        ...(money_ ? [inv.length ? `<span class="amount">${money(total)}</span><small>${g.map(x => `${first(x.t.name)} ${money(x.billed)}`).join(' · ')}</small><small>${inv.map(i => e(i.number)).join(', ')}</small>` : '<span class="muted">—</span>',
+          stack(x => `<span class="hh-who">${first(x.t.name)}</span>${statusCell(x)}`), stack(x => `<span class="hh-who">${first(x.t.name)}</span>${openCell(x)}`), stack(lastCell)] : []),
+        stack(x => `<button type="button" class="button small" data-tenant="${x.t.id}">Open ${first(x.t.name)}</button>`)];
+    });
+    function single(x) {
       const c = x.cs[0], last = x.pays[0];
       const main = householdMain(x.t);
       return [`<div class="${main ? 'co-row' : ''}"><button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>${main ? `<small class="co-with">Co-tenant · with ${e(byId('tenants', main).name)}</small>` : householdNames(x.t).length ? `<small class="co-with">Rents with ${e(householdNames(x.t).join(', '))}</small>` : ''}</div>`,
         `<strong>${e(x.cs.map(c => propertyFor(c.id).name).join(', '))}</strong><small>${x.movedIn ? 'moved in ' + e(dateLabel(x.cs.find(c => inPeriod(key, c.start_date)).start_date)) : ''}${x.movingOut ? (x.movedIn ? ' · ' : '') + 'leaves ' + e(dateLabel(x.cs.find(c => c.end_date && inPeriod(key, c.end_date)).end_date)) : ''}</small>`,
         ...(money_ ? [x.inv.length ? `<span class="amount">${money(x.billed)}</span><small>${x.household ? `own part of ${money(x.household.billed)} · ` : ''}${x.inv.map(i => e(i.number)).join(', ')}</small>` : '<span class="muted">—</span>',
-          badge(x.household && x.status === 'Paid' ? 'Own part paid' : x.status, tone[x.status]) + (x.household && x.household.open > 0 && x.status === 'Paid' ? `<small class="co-by">waiting for ${e([...new Set(x.household.others)].join(', '))}</small>` : ''),
+          badge(x.household && x.status === 'Paid' && x.household.open > 0 ? 'Own part paid' : x.status, tone[x.status]) + (x.household && x.household.open > 0 && x.status === 'Paid' ? `<small class="co-by">waiting for ${e([...new Set(x.household.others)].join(', '))}</small>` : ''),
           (x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>') + (x.household && x.household.open > 0 ? `<small>household ${money(x.household.open)} open</small>` : ''),
           last ? `<strong>${e(dateLabel(last.created_at.slice(0, 10)))}</strong><small>${e(howPaid(last))} · ${money(-last.amount_cents)}</small>` : '<span class="muted">No payment</span>'] : []),
         `<button type="button" class="button small" data-tenant="${x.t.id}">Open</button>`];
-    });
+    }
     const head = ['Tenant', 'Home', ...(money_ ? ['Billed', 'Status', 'Still open', 'Last payment'] : []), ''];
     const filterChips = `<div class="filters tf-chips">${chips.map(([k, l, n]) => `<button type="button" class="filter-button ${f === k ? 'active' : ''}" data-tf-chip="${k}">${e(l)} <span>${n}</span></button>`).join('')}</div>`;
     const search = `<div class="toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email or phone" value="${e(state.tenantSearch || '')}" aria-label="Search tenants">${filterChips}</div>`;
