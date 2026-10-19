@@ -1,5 +1,5 @@
 'use strict';
-const CACHE = 'haven-shell-v95';
+const CACHE = 'haven-shell-v97';
 const SHELL = ['/', '/static/index.html', '/static/styles.css', '/static/portal.css', '/static/enhance.css', '/static/polish.css', '/static/invoices.css', '/static/signature.css', '/static/docedit.css', '/static/pdfview.css', '/static/team.css', '/static/theme.css', '/static/favicon.svg'];
 
 self.addEventListener('install', event => {

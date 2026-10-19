@@ -294,11 +294,17 @@
   }
   const modal = document.getElementById('modal');
   if (modal) {
+    // focus the first field once when new content opens, not on every small change: a summary line updating while a
+    // button is being pressed would otherwise pull the focus to the top and scroll the button away mid-click
+    let focusedFor = null;
     new MutationObserver(() => {
-      if (!modal.open) return;
+      if (!modal.open) { focusedFor = null; return; }
+      const content = modal.querySelector('form') || modal.firstElementChild;
+      if (!content || content === focusedFor) return;
+      focusedFor = content;
       const first = modal.querySelector('input:not([type=hidden]):not([disabled]),select,textarea');
       if (first && !modal.contains(document.activeElement)) first.focus();
-    }).observe(modal, {childList: true, subtree: true});
+    }).observe(modal, {childList: true, subtree: true, attributes: true, attributeFilter: ['open']});
     modal.addEventListener('keydown', ev => {
       if ((ev.ctrlKey || ev.metaKey) && ev.key === 'Enter') modal.querySelector('form')?.requestSubmit();
     });

@@ -80,6 +80,9 @@
   const clock = iso => new Intl.DateTimeFormat('en-GB', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}).format(new Date(iso));
   const staffName = id => (rows('staff').find(s => s.id === id) || {}).name || '';
   const tenantUser = tenantId => (rows('portal_accounts').find(a => a.tenant_id === tenantId) || {}).user_id;
+  // the logins of everyone renting the home (main tenant and co-tenants): their messages are the tenant side, never "You"
+  const homeUsers = contractId => new Set([tenantFor(contractId).id, ...rows('co_tenants').filter(x => x.contract_id === contractId && !x.removed_at).map(x => x.tenant_id)].map(tenantUser).filter(u => u !== undefined));
+  const writer = (contractId, userId) => { const t = byId('tenants', (rows('portal_accounts').find(a => a.user_id === userId) || {}).tenant_id); return t.id ? t : tenantFor(contractId); };
   const firstName = n => String(n || '').split(' ')[0];
 
   function buildItems() {
@@ -100,34 +103,34 @@
     for (const [id, list] of threads) {
       if (hidden.has(id)) { const r = hidden.get(id); followUps.set(r.id, (followUps.get(r.id) || []).concat(list)); continue; }
       if (!inbox) continue;
-      const root = list[0], tenant = tenantFor(root.contract_id), uid = tenantUser(tenant.id), last = list[list.length - 1];
+      const root = list[0], home = homeUsers(root.contract_id), tenant = writer(root.contract_id, list.find(m => home.has(m.sender_id))?.sender_id), last = list[list.length - 1];
       const st = rows('thread_states').find(t => t.thread_id === id);
       items.push({key: `t:${id}`, type: 'thread', id, contract_id: root.contract_id, subject: String(root.subject).replace(/^Response:\s*/i, ''), tenant, last: last.created_at,
-        messages: list.map(m => ({mine: uid === undefined ? true : m.sender_id !== uid, name: m.sender_name, body: m.body, at: m.created_at, doc: m.document_id})),
-        needsReply: uid !== undefined && last.sender_id === uid && !(st && st.status === 'resolved'), resolved: !!(st && st.status === 'resolved'), assignee: st ? st.assignee_id : null, priority: (st && st.priority) || 'Routine'});
+        messages: list.map(m => ({mine: !home.has(m.sender_id), name: m.sender_name, body: m.body, at: m.created_at, doc: m.document_id})),
+        needsReply: home.has(last.sender_id) && !(st && st.status === 'resolved'), resolved: !!(st && st.status === 'resolved'), assignee: st ? st.assignee_id : null, priority: (st && st.priority) || 'Routine'});
     }
     for (const r of inbox ? [] : reqs) {
       const tenant = tenantFor(r.contract_id);
       const msgsR = [{mine: false, name: tenant.name, body: `${r.kind}${r.requested_date ? ` (requested date ${dateLabel(r.requested_date)})` : ''}\n${r.body}`, at: r.created_at, doc: r.video_document_id || null}];
-      const uid = tenantUser(tenant.id);
+      const home = homeUsers(r.contract_id);
       // every answer the team gave is kept as its own message; the single r.response field only holds the latest one
       const answers = [...hidden].filter(([, rq]) => rq.id === r.id).map(([id]) => msgs.find(m => m.id === id)).filter(Boolean);
       const talk = answers.concat(followUps.get(r.id) || []).sort((x, y) => x.id - y.id);
       if (!talk.length && r.response) msgsR.push({mine: true, name: 'Property team', body: r.response, at: r.responded_at || r.created_at});
-      for (const m of talk) msgsR.push({mine: uid === undefined ? true : m.sender_id !== uid, name: m.sender_name, body: m.body, at: m.created_at, doc: m.document_id});
+      for (const m of talk) msgsR.push({mine: !home.has(m.sender_id), name: m.sender_name, body: m.body, at: m.created_at, doc: m.document_id});
       const lastTalk = talk[talk.length - 1];
-      const tenantLast = !!lastTalk && uid !== undefined && lastTalk.sender_id === uid && Date.parse(lastTalk.created_at) > Date.parse(r.responded_at || r.created_at);
+      const tenantLast = !!lastTalk && home.has(lastTalk.sender_id) && Date.parse(lastTalk.created_at) > Date.parse(r.responded_at || r.created_at);
       items.push({priority: r.priority || 'Routine', key: `r:${r.id}`, type: 'request', id: r.id, contract_id: r.contract_id, subject: r.subject, kind: r.kind, tenant, last: lastTalk && Date.parse(lastTalk.created_at) > Date.parse(r.responded_at || 0) ? lastTalk.created_at : r.responded_at || r.created_at, messages: msgsR, needsReply: r.status === 'open' || tenantLast, resolved: ['resolved', 'declined'].includes(r.status) && !tenantLast, status: r.status});
     }
     for (const r of inbox ? [] : rows('repairs')) {
-      const tenant = tenantFor(r.contract_id), uid = tenantUser(tenant.id);
+      const tenant = tenantFor(r.contract_id), home = homeUsers(r.contract_id);
       const updates = rows('repair_updates').filter(u => u.repair_id === r.id && !String(u.message).startsWith('Tenant reported: ')).slice().sort((a, b) => a.id - b.id);
       const log = [{mine: false, name: tenant.name, body: r.description, at: r.created_at, doc: null}];
       for (const u of updates) {
-        const fromTenant = uid !== undefined && u.user_id === uid;
+        const fromTenant = home.has(u.user_id);
         const isStatus = String(u.message).startsWith('Status: ') || String(u.message).startsWith('Priority: ');
         const staff = staffName(u.user_id);
-        log.push({mine: !fromTenant, name: fromTenant ? tenant.name : (staff || (String(u.message).startsWith('Contractor update') ? 'Contractor' : 'Property team')), body: u.message, at: u.created_at, doc: u.document_id, system: isStatus, internal: !u.tenant_visible});
+        log.push({mine: !fromTenant, name: fromTenant ? writer(r.contract_id, u.user_id).name : (staff || (String(u.message).startsWith('Contractor update') ? 'Contractor' : 'Property team')), body: u.message, at: u.created_at, doc: u.document_id, system: isStatus, internal: !u.tenant_visible});
       }
       const lastTalk = log.filter(m => !m.system).pop();
       const done = ['done', 'closed'].includes(r.status);
