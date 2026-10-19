@@ -4,7 +4,7 @@ Tenants pay rent into the company's bank account. Staff download the statement f
 and upload it here. Krein reads every incoming payment (date, amount, payer name, payer IBAN, description) and links it
 to an invoice:
 
-1. the invoice number (HVN-1-202611-0004) is in the description and the amount equals what is open  -> booked
+1. the invoice number (KPM-1-202611-0004; older invoices HVN-…) is in the description and the amount equals what is open  -> booked
 2. the payer's IBAN belongs to one tenant and the amount equals one open invoice (or all of them)    -> booked
 3. otherwise a suggestion (known IBAN or invoice number with another amount, or a name + amount that fits) -> staff confirm
 4. nothing fits -> staff pick the invoice or ignore the line
@@ -28,7 +28,7 @@ from .security import authorize, current_user, linked, record
 router = APIRouter()
 FINANCE = ('finance', 'manager')
 MAX_FILE = 5 * 1024 * 1024
-INVOICE_NO = re.compile(r'HVN[\s\-_.]?(\d{1,6})[\s\-_.]?(\d{6})[\s\-_.]?(\d{4})', re.I)
+INVOICE_NO = re.compile(r'(KPM|HVN)[\s\-_.]?(\d{1,6})[\s\-_.]?(\d{6})[\s\-_.]?(\d{4})', re.I)
 IBAN_IN_TEXT = re.compile(r'\b([A-Z]{2}\d{2}[A-Z0-9]{11,30})\b')
 
 
@@ -268,7 +268,7 @@ def match(conn, company_id, line, reach=None):
     reach = reach or Reach()
     amount = line['amount_cents']
     # 1. invoice numbers in the description
-    numbers = {f'HVN-{int(a)}-{b}-{c}' for a, b, c in INVOICE_NO.findall(line['description'] or '')}
+    numbers = {f'{p.upper()}-{int(a)}-{b}-{c}' for p, a, b, c in INVOICE_NO.findall(line['description'] or '')}
     if numbers:
         marks = ','.join('?' for _ in numbers)
         found = [dict(r) for r in conn.execute(f'SELECT i.id,i.number,i.contract_id,c.tenant_id FROM invoices i JOIN contracts c ON c.id=i.contract_id WHERE i.company_id=? AND i.number IN ({marks}) AND i.released_at IS NOT NULL ORDER BY i.due_date', (company_id, *numbers))]

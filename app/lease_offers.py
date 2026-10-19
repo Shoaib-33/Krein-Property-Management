@@ -178,7 +178,7 @@ def agreement_file(conn, offer, offer_id, stamp=''):
             boxes.append({'label': 'Medehuurder / Co-tenant', 'image': None, 'caption': f'{s["name"]}\nTe ondertekenen / To be signed'})
         if s['form_values']:
             text += details_text(defs, json.loads(s['form_values'])).replace('gegevens huurder | Appendix: tenant details', f'gegevens medehuurder {s["name"]} | Appendix: co-tenant details')
-    return agreement_pdf_bytes(text, company=company, logo=logo_bytes(offer['company_id']), reference=f'HVO-{offer["company_id"]}-{offer_id:04d}', signatures=boxes, subject=f'Huurovereenkomst {offer_id}')
+    return agreement_pdf_bytes(text, company=company, logo=logo_bytes(offer['company_id']), reference=f'KPO-{offer["company_id"]}-{offer_id:04d}', signatures=boxes, subject=f'Huurovereenkomst {offer_id}')
 
 
 def co_signers(conn, offer_id):

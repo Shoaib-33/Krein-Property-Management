@@ -76,17 +76,19 @@ class BankingTests(unittest.TestCase):
         self.assertFalse(valid_iban('hello'))
 
     def test_camt_and_mt940_statements_are_read(self):
-        lines = parse_camt(camt([('1200.00', 'CRDT', 'J DE VRIES', KNOWN_IBAN, 'Huur HVN-1-202611-0004', 'R1'), ('50.00', 'DBIT', 'SHOP', OTHER_IBAN, 'costs', 'R2')]))
+        lines = parse_camt(camt([('1200.00', 'CRDT', 'J DE VRIES', KNOWN_IBAN, 'Huur KPM-1-202611-0004', 'R1'), ('50.00', 'DBIT', 'SHOP', OTHER_IBAN, 'costs', 'R2')]))
         self.assertEqual(len(lines), 1)   # only incoming money
         self.assertEqual((lines[0]['amount_cents'], lines[0]['name'], lines[0]['iban'], lines[0]['booked_on']), (120000, 'J DE VRIES', KNOWN_IBAN, '2026-11-02'))
-        self.assertIn('HVN-1-202611-0004', lines[0]['description'])
+        self.assertIn('KPM-1-202611-0004', lines[0]['description'])
         mt = (':20:STARTUMS\n:25:NL69INGB0123456789EUR\n:28C:00000\n:60F:C261101EUR1000,00\n'
-              ':61:2611020211C1200,00NTRFNONREF//20261102-1\n:86:/TRTP/SEPA OVERBOEKING/IBAN/NL91ABNA0417164300/BIC/ABNANL2A/NAME/J DE VRIES/REMI/USTD//Huur november HVN-1-202611-0004/EREF/NOTPROVIDED\n'
+              ':61:2611020211C1200,00NTRFNONREF//20261102-1\n:86:/TRTP/SEPA OVERBOEKING/IBAN/NL91ABNA0417164300/BIC/ABNANL2A/NAME/J DE VRIES/REMI/USTD//Huur november KPM-1-202611-0004/EREF/NOTPROVIDED\n'
               ':61:2611020211D50,00NTRFNONREF//20261102-2\n:86:/NAME/SHOP/REMI/costs\n:62F:C261102EUR2150,00\n-}')
         out = parse_mt940(mt.encode())
         self.assertEqual(len(out), 1)
         self.assertEqual((out[0]['amount_cents'], out[0]['iban'], out[0]['name']), (120000, KNOWN_IBAN, 'J DE VRIES'))
-        self.assertIn('HVN-1-202611-0004', out[0]['description'])
+        self.assertIn('KPM-1-202611-0004', out[0]['description'])
+        from app.banking import INVOICE_NO   # invoices issued before the rename (HVN-) are still recognised
+        self.assertEqual(INVOICE_NO.findall('huur kpm 1 202611 0004 / HVN-1-202610-0004'), [('kpm', '1', '202611', '0004'), ('HVN', '1', '202610', '0004')])
         self.assertEqual(self.upload(b'not a statement', 'x.csv').status_code, 422)
         self.assertEqual(self.upload(b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><x>&a;</x>').status_code, 422)
 

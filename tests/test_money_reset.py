@@ -85,9 +85,9 @@ class MoneyAndResetTests(unittest.TestCase):
             prop = conn.execute('SELECT id FROM properties WHERE portfolio_id=? LIMIT 1', (portfolio['id'],)).fetchone()[0]
             contract = conn.execute('SELECT id FROM contracts WHERE property_id=? LIMIT 1', (prop,)).fetchone()[0]
             conn.execute("INSERT INTO invoices(company_id,contract_id,number,period,due_date,basic_cents,service_cents,total_cents,snapshot,created_at,released_at) VALUES(1,?,?,?,?,90000,0,90000,'{}',?,NULL)",
-                         (contract, f'HVN-1-{last.replace("-", "")}-9999', last, last + '-01', db.now()))
+                         (contract, f'KPM-1-{last.replace("-", "")}-9999', last, last + '-01', db.now()))
             billed = sum(l['billed_cents'] for l in build_statement(conn, portfolio, last)['snapshot']['lines'])
-            conn.execute('UPDATE invoices SET released_at=? WHERE number=?', (db.now(), f'HVN-1-{last.replace("-", "")}-9999'))
+            conn.execute('UPDATE invoices SET released_at=? WHERE number=?', (db.now(), f'KPM-1-{last.replace("-", "")}-9999'))
             billed_sent = sum(l['billed_cents'] for l in build_statement(conn, portfolio, last)['snapshot']['lines'])
         self.assertEqual(billed_sent - billed, 90000)   # the draft was not counted until it was sent
         made = self.finance.post('/api/owner-statements/generate', json={'company_id': 1, 'portfolio_id': portfolio['id'], 'period': last})

@@ -248,7 +248,7 @@ def issue_month(conn, company_id, period, user_id, only_contracts=None):
             basic += Decimal(r['basic_cents']) / last.day
             service += Decimal(r['service_cents']) / last.day
         b, s = int(basic.quantize(Decimal('1'), rounding=ROUND_HALF_UP)), int(service.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
-        number = f'HVN-{company_id}-{period.replace("-", "")}-{c["id"]:04d}'
+        number = f'KPM-{company_id}-{period.replace("-", "")}-{c["id"]:04d}'
         snapshot = {k: c[k] for k in ('tenant_name', 'tenant_email', 'address', 'property_name', 'company_name', 'company_address', 'payment_instructions')}
         snapshot.update({'from': start.isoformat(), 'to': end.isoformat(), 'basic_cents': b, 'service_cents': s})
         invoice_id = insert(conn, 'invoices', {'company_id': company_id, 'contract_id': c['id'], 'number': number, 'period': period, 'due_date': start.isoformat(), 'basic_cents': b, 'service_cents': s, 'total_cents': b+s, 'snapshot': json.dumps(snapshot), 'created_at': now()})
