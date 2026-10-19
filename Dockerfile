@@ -14,6 +14,8 @@ COPY app ./app
 COPY static ./static
 COPY manage.py ./manage.py
 COPY scripts ./scripts
+# the sample data for a public demo (HAVEN_SAMPLE_DATA=1); no real personal data
+COPY sample-data ./sample-data
 
 RUN mkdir -p /data
 EXPOSE 7860

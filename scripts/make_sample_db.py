@@ -201,7 +201,11 @@ def main(src=ROOT / 'data' / 'haven.db', out=ROOT / 'sample-data'):
                 t.execute(f'UPDATE "{table}" SET {", ".join(f"{c}=?" for c in upd)} WHERE {where}', (*upd.values(), *([r[k] for k in pk] if pk else [r[0]])))
                 changed += 1
 
-    # logins, tokens and sessions
+    # logins, tokens and sessions; the developer always signs in as developer@haven.local in the sample
+    if not t.execute("SELECT 1 FROM users WHERE email='developer@haven.local'").fetchone():
+        dev = t.execute('SELECT id FROM users WHERE global_admin=1 AND active=1 ORDER BY id LIMIT 1').fetchone()
+        if dev:
+            t.execute("UPDATE users SET email='developer@haven.local', name='Dev Krein' WHERE id=?", (dev['id'],))
     t.execute('UPDATE users SET password_hash=?', (password_hash(PW),))
     for table in ('sessions', 'password_resets'):
         t.execute(f'DELETE FROM {table}')

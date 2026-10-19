@@ -34,7 +34,35 @@ def seed_branding():
                 conn.execute('INSERT INTO doc_templates(company_id,name,kind,body,created_by,created_at) VALUES(?,?,?,?,?,?)', (company['id'], name, kind, body, admin['id'], now()))
 
 
+def load_sample():
+    """A public demo with the rich sample data (households with co-tenants, bank statements, contracts, repairs): the
+    sample database from sample-data/ (made by scripts/make_sample_db.py, no real personal data) is copied in when the
+    workspace is empty. On a host without a lasting disk this happens on every restart, so the demo always starts fresh.
+    Every login gets the password in HAVEN_DEMO_PASSWORD, never the one written in the repository."""
+    import shutil
+    from pathlib import Path
+    password = os.environ.get('HAVEN_DEMO_PASSWORD', '').strip()
+    if len(password) < 12:
+        raise SystemExit('Set HAVEN_DEMO_PASSWORD (12+ characters): the password of every login in the public sample demo.')
+    sample = Path(__file__).resolve().parent.parent / 'sample-data'
+    target = db.DATA_DIR / 'haven.db'
+    db.DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if not target.exists():
+        if not (sample / 'haven.db').exists():
+            raise SystemExit('sample-data/haven.db is missing: run python -m scripts.make_sample_db and commit it.')
+        shutil.copyfile(sample / 'haven.db', target)
+        if (sample / 'uploads').is_dir():
+            shutil.copytree(sample / 'uploads', db.DATA_DIR / 'uploads', dirs_exist_ok=True)
+    db.init_db()   # brings the sample up to the current database version
+    with transaction() as conn:
+        conn.execute('UPDATE users SET password_hash=?', (password_hash(password),))
+        conn.execute('DELETE FROM sessions')
+
+
 def bootstrap_admin():
+    if os.environ.get('HAVEN_SAMPLE_DATA') == '1':
+        load_sample()
+        return
     if os.environ.get('HAVEN_DEMO_SEED') == '1':
         seed_demo()
         return

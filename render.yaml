@@ -1,4 +1,4 @@
-# Render blueprint for a public DEMO (free plan: data is reset whenever the service restarts).
+# Render blueprint for a public DEMO (free plan: the sample data is loaded again whenever the service restarts).
 services:
   - type: web
     name: haven-demo
@@ -6,8 +6,8 @@ services:
     plan: free
     healthCheckPath: /api/health
     envVars:
-      - key: HAVEN_DEMO_SEED
-        value: "1"
+      - key: HAVEN_SAMPLE_DATA
+        value: "1"           # the sample data from sample-data/ (households, co-tenants, bank statements); use HAVEN_DEMO_SEED=1 instead for the small built-in demo
       - key: HAVEN_SECURE_COOKIES
         value: "1"
       - key: HAVEN_DATA_DIR
