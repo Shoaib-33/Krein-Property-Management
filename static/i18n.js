@@ -8,7 +8,8 @@
   const KEY = 'haven.lang';
   const read = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
   const save = v => { try { localStorage.setItem(KEY, v); } catch { /* storage unavailable */ } };
-  const lang = read() || ((navigator.language || 'en').toLowerCase().startsWith('nl') ? 'nl' : 'en');
+  // Dutch is the main language; English only when the person picked it in the switch
+  const lang = read() === 'en' ? 'en' : 'nl';
   const root = document.documentElement;
   root.lang = lang;
   window.havenLang = lang;
@@ -41,16 +42,21 @@
       if (!nl) continue;
       if (!/\{\d+\}/.test(en)) { exact.set(en, nl); continue; }
       const fixed = en.replace(/\{\d+\}/g, '');
-      if (fixed.replace(/[^A-Za-z]/g, '').length < 4) continue;
+      // too general to be safe ("{0} of {1}"); a short label that starts with its word ("Low ({0})") is fine
+      if (fixed.replace(/[^A-Za-z]/g, '').length < (/^[A-Za-z]{3}/.test(en) ? 3 : 4)) continue;
       const re = new RegExp('^' + en.split(/\{\d+\}/).map(esc).join('(.*?)') + '$', 's');
       patterns.push({re, out: nl, weight: fixed.length});
     }
   }
   patterns.sort((a, b) => b.weight - a.weight);
+  // labels written in capitals (ARREARS, RESIDENT SERVICES) use the Dutch of the same text in normal case
+  const upper = new Map();
+  for (const [en, nl] of exact) if (!upper.has(en.toUpperCase())) upper.set(en.toUpperCase(), nl.toUpperCase());
   const cache = new Map();
   function tr(text, depth = 0) {
     if (cache.has(text)) return cache.get(text);
     let result = exact.get(text);
+    if (result === undefined && /[A-Z]{3}/.test(text) && text === text.toUpperCase()) result = upper.get(text);
     if (result === undefined && depth < 3 && /[A-Za-z]{2}/.test(text)) {
       for (const p of patterns) {
         const m = p.re.exec(text);
@@ -109,7 +115,7 @@
     box.className = 'lang-switch';
     box.setAttribute('role', 'group');
     box.setAttribute('aria-label', 'Language');
-    box.innerHTML = ['en', 'nl'].map(code => `<button type="button" data-lang="${code}" class="${code === lang ? 'active' : ''}" aria-pressed="${code === lang}" title="${label[code]}" lang="${code}">${code.toUpperCase()}</button>`).join('');
+    box.innerHTML = ['nl', 'en'].map(code => `<button type="button" data-lang="${code}" class="${code === lang ? 'active' : ''}" aria-pressed="${code === lang}" title="${label[code]}" lang="${code}">${code.toUpperCase()}</button>`).join('');
     return box;
   }
   function placeSwitch() {

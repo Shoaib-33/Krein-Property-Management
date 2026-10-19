@@ -3,7 +3,7 @@
   const KEY = 'haven_lang';
   const read = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
   const write = v => { try { localStorage.setItem(KEY, v); } catch { /* storage unavailable */ } };
-  let lang = read() || ((navigator.language || 'nl').toLowerCase().startsWith('nl') ? 'nl' : 'en');
+  let lang = read() === 'en' ? 'en' : 'nl';
   const apply = () => {
     document.documentElement.lang = lang;
     document.querySelectorAll('[data-nl]').forEach(el => { el.textContent = el.dataset[lang]; });
