@@ -13,7 +13,7 @@ from reportlab.platypus import (
 
 
 ROOT = Path(__file__).resolve().parent.parent
-OUTPUT = ROOT / 'Haven_Dutch_Residential_Tenancy_Agreement_Demo.pdf'
+OUTPUT = ROOT / 'Krein_Dutch_Residential_Tenancy_Agreement_Demo.pdf'
 GREEN = colors.HexColor('#146B55')
 DARK = colors.HexColor('#183C33')
 MUTED = colors.HexColor('#60766E')

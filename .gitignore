@@ -9,7 +9,8 @@ test-results/
 .pytest_cache/
 *.db
 *.zip
-Haven_Dutch_Residential_Tenancy_Agreement_Demo.pdf
+*_Dutch_Residential_Tenancy_Agreement_Demo.pdf
 .claude/
 
 .tmp-venv/
+test-statements/
