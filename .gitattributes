@@ -1,0 +1,7 @@
+# binary files: never change their line endings
+*.pdf binary
+*.png binary
+*.jpg binary
+*.ttf binary
+*.db binary
+*.ico binary
