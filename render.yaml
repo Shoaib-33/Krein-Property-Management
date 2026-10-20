@@ -4,6 +4,12 @@ services:
     name: haven-demo
     runtime: docker
     plan: free
+    # Free: the service sleeps after 15 minutes without visitors and every restart starts again from the sample data
+    # (invitations, new tenants and payments made in the demo are lost). To keep them, use plan: starter and add the disk:
+    # disk:
+    #   name: krein-data
+    #   mountPath: /data
+    #   sizeGB: 1
     healthCheckPath: /api/health
     envVars:
       - key: HAVEN_SAMPLE_DATA

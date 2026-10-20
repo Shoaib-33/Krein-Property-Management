@@ -47,16 +47,18 @@ def load_sample():
     sample = Path(__file__).resolve().parent.parent / 'sample-data'
     target = db.DATA_DIR / 'haven.db'
     db.DATA_DIR.mkdir(parents=True, exist_ok=True)
-    if not target.exists():
+    fresh = not target.exists()
+    if fresh:
         if not (sample / 'haven.db').exists():
             raise SystemExit('sample-data/haven.db is missing: run python -m scripts.make_sample_db and commit it.')
         shutil.copyfile(sample / 'haven.db', target)
         if (sample / 'uploads').is_dir():
             shutil.copytree(sample / 'uploads', db.DATA_DIR / 'uploads', dirs_exist_ok=True)
     db.init_db()   # brings the sample up to the current database version
-    with transaction() as conn:
-        conn.execute('UPDATE users SET password_hash=?', (password_hash(password),))
-        conn.execute('DELETE FROM sessions')
+    if fresh:      # with a lasting disk the workspace is kept: passwords people chose themselves stay as they are
+        with transaction() as conn:
+            conn.execute('UPDATE users SET password_hash=?', (password_hash(password),))
+            conn.execute('DELETE FROM sessions')
 
 
 def bootstrap_admin():

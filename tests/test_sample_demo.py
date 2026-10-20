@@ -38,6 +38,20 @@ class SampleDemoTests(unittest.TestCase):
         self.assertTrue(data['tenants'] and data['invoices'])
         self.assertTrue((db.DATA_DIR / 'uploads').is_dir())
 
+    def test_with_a_lasting_disk_the_workspace_is_kept(self):
+        from scripts import hf_start
+        env = {'HAVEN_SAMPLE_DATA': '1', 'HAVEN_DEMO_PASSWORD': 'Sample-Demo-Pass-2026'}
+        with patch.dict(os.environ, env):
+            hf_start.bootstrap_admin()
+        with db.transaction() as conn:   # someone signs up and picks a password; a tenant is added
+            conn.execute("UPDATE users SET password_hash='kept' WHERE email='admin@haven.local'")
+            conn.execute("INSERT INTO tenants(company_id,name,email,created_at) VALUES(1,'Nieuwe Huurder','nieuw@example.com',datetime('now'))")
+        with patch.dict(os.environ, env):   # the service restarts
+            hf_start.bootstrap_admin()
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT password_hash FROM users WHERE email='admin@haven.local'").fetchone()[0], 'kept')
+            self.assertTrue(conn.execute("SELECT 1 FROM tenants WHERE email='nieuw@example.com'").fetchone())
+
     def test_a_public_sample_needs_its_own_password(self):
         from scripts import hf_start
         with patch.dict(os.environ, {'HAVEN_SAMPLE_DATA': '1', 'HAVEN_DEMO_PASSWORD': ''}):
