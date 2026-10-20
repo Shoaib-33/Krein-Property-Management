@@ -154,8 +154,9 @@ def send_plain(recipient, subject, body):
     message = EmailMessage()
     message['From'] = settings['sender']
     message['To'] = recipient
-    message['Subject'] = subject
-    message.set_content(body)
+    from .brand import apply
+    message['Subject'] = apply(subject)   # written with the Krein name, sent in the software's current name
+    message.set_content(apply(body))
     if settings['ssl']:
         server = smtplib.SMTP_SSL(settings['host'], settings['port'], timeout=settings['timeout'], context=ssl.create_default_context())
     else:
@@ -208,8 +209,9 @@ def _deliver_one(job, settings):
     message = EmailMessage()
     message['From'] = settings['sender']
     message['To'] = row['recipient']
-    message['Subject'] = subject
-    message.set_content(body)
+    from .brand import apply
+    message['Subject'] = apply(subject)   # written with the Krein name, sent in the software's current name
+    message.set_content(apply(body))
     if row['kind'] == 'invoice_issued':
         from .main import invoice_pdf_bytes
         message.add_attachment(invoice_pdf_bytes(row, snapshot), maintype='application', subtype='pdf', filename=row['number'] + '.pdf')

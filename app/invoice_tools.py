@@ -31,7 +31,7 @@ def fields_of(inv, snap):
     return out
 
 
-from .brand import BRAND, logo_bytes, on_behalf  # noqa: F401  (documents import these from here too)
+from .brand import logo_bytes, on_behalf  # noqa: F401  (documents import these from here too)
 
 
 @router.get('/api/companies/{company_id}/logo')

@@ -7,7 +7,7 @@
   const canEdit = () => ['admin', 'manager', 'finance'].includes(company().role);
   const canBrand = () => ['admin', 'manager'].includes(company().role);
   // every document is sent by Krein Property Management: its logo heads the invoice, as on the PDF
-  const logoUrl = () => '/static/brand/krein-logo.png';
+  const logoUrl = () => (window.kreinBrand && window.kreinBrand.custom) ? '' : '/static/brand/krein-logo.png';   // another software name: shown in text
   const brandMark = (c, cls = '') => {
     const url = logoUrl(c);
     return url ? `<img class="inv-logo ${cls}" src="${e(url)}" alt="${e(c.name)} logo">` : `<span class="inv-logo-fallback ${cls}" aria-hidden="true">${e(initials(c ? c.name : 'H'))}</span>`;
@@ -73,7 +73,7 @@
     return `<div class="inv-sheet inv-doc" id="inv-doc">
       ${d.released ? '' : `<div class="inv-draftbar"><span>${icon('edit')} <strong>Draft.</strong> The tenant has not received this invoice yet. Check it, change anything with the pencils, then send it.</span>${canEdit() ? `<button type="button" class="button primary" data-inv="send" data-id="${d.id}">Send to tenant</button>` : ''}</div>`}
       <div class="inv-docbar"><span class="inv-number">${e(d.number)}</span>${d.released ? badge(status) : badge('Draft', 'amber')}${editable() ? '<span class="inv-hint">Click a pencil to edit that part of the invoice.</span>' : ''}</div>
-      <header class="inv-top"><div class="inv-logo-wrap">${url ? `<img class="inv-logo big" src="${e(url)}" alt="${e(c.name)} logo">` : `<span class="inv-logo-fallback big">${e(initials(f.company_name || c.name))}</span>`}
+      <header class="inv-top"><div class="inv-logo-wrap">${url ? `<img class="inv-logo big" src="${e(url)}" alt="${e(c.name)} logo">` : `<span class="inv-logo-fallback big">${e(initials((window.kreinBrand || {}).full || f.company_name || c.name))}</span>`}
 </div>
         <div class="inv-from"><strong>Krein Property Management</strong><small class="inv-behalf">On behalf of ${field('company_name', f.company_name, {label: 'company name'})}</small>${field('company_address', f.company_address, {multiline: true, place: 'Company address', label: 'company address'})}</div></header>
       <section class="inv-to">${field('tenant_name', f.tenant_name, {label: 'recipient name'})}${field('address', f.address, {multiline: true, place: 'Recipient address', label: 'recipient address'})}</section>

@@ -582,6 +582,13 @@ CREATE TABLE lease_offer_signers (
 ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
 '''
 
+# V40: platform-wide settings the developer can change, such as the software's name (app/brand.py)
+V40 = '''
+CREATE TABLE platform_settings (
+ key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_by INTEGER REFERENCES users(id), updated_at TEXT NOT NULL
+);
+'''
+
 # V39: the Developer's access matrix: a feature switched off for a role (no row = switched on, as before) (app/access.py)
 V39 = '''
 CREATE TABLE role_access (
@@ -947,6 +954,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (39, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=40').fetchone():
+            statement = ''
+            for line in V40.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (40, now()))
         conn.commit()
     except Exception:
         conn.rollback()

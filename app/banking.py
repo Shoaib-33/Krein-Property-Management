@@ -613,7 +613,8 @@ def statement_pdf_bytes(company, imp, rows_, line_id):
     st = getSampleStyleSheet()
     small = ParagraphStyle('s', parent=st['Normal'], fontSize=8, leading=10)
     bold = ParagraphStyle('b', parent=small, fontName='Helvetica-Bold')
-    p = lambda text, style=small: Paragraph(escape(str(text or '')), style)
+    from .brand import apply
+    p = lambda text, style=small: Paragraph(escape(apply(str(text or ''))), style)
     ink, mark = colors.HexColor('#19372d'), colors.HexColor('#fff3b0')
     target = next((r for r in rows_ if r['id'] == line_id), None)
     story = [Paragraph(f'<b>{escape(company)}</b> · bank statement {escape(imp["filename"])} ({escape(imp["format"])})', ParagraphStyle('h', parent=st['Title'], fontSize=14, alignment=0, textColor=ink)),

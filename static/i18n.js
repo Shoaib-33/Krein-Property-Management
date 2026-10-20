@@ -72,18 +72,53 @@
     return result ?? null;
   }
 
+  /* ---------- the software's name (the developer can change it; Krein Property Management by default) ---------- */
+  // Every screen is written with the Krein name; when the developer chose another one, it is shown instead, in both
+  // languages: the wordmark, the letter in the icon, the line under the logo, sentences, titles. Email addresses stay as they are.
+  const BKEY = 'krein.brand', DEFAULT = {full: 'Krein Property Management', short: 'Krein', tagline: 'Property Management', custom: false};
+  const B = Object.assign({}, DEFAULT, (() => { try { return JSON.parse(localStorage.getItem(BKEY)) || {}; } catch { return {}; } })());
+  window.kreinBrand = B;
+  const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+  const swapName = p => p.replace(/Krein Property Management/g, B.full).replace(/KREIN PROPERTY MANAGEMENT/g, B.full.toUpperCase())
+    .replace(/\bKREIN\b/g, B.short.toUpperCase()).replace(/\bKrein\b/g, B.short).replace(/\bkrein\b/g, B.short.toLowerCase());
+  function brandText(text) {
+    if (!B.custom || !/krein/i.test(text)) return text;
+    let out = '', last = 0;
+    for (const m of text.matchAll(EMAIL)) { out += swapName(text.slice(last, m.index)) + m[0]; last = m.index + m[0].length; }
+    return out + swapName(text.slice(last));
+  }
+  window.kreinBrandText = brandText;
+
   const SKIP = new Set(['SCRIPT', 'STYLE', 'TEXTAREA', 'NOSCRIPT', 'CODE', 'PRE']);
-  const done = new WeakMap();
+  let done = new WeakMap();
+  const original = new WeakMap();   // node -> {en, shown}: the English text a translated node started as
+  // only the app's own texts carry the software's name (they are all in the dictionary); names people entered, such as a
+  // company called "Krein Residential BV", stay exactly as they are
+  const isAppText = text => tr(text) !== null;
   function translateText(node) {
-    const s = node.data;
-    if (done.get(node) === s || !/[A-Za-z]{2}/.test(s)) return;
-    const lead = s.match(/^\s*/)[0], trail = s.match(/\s*$/)[0], core = squash(s);
-    const t = tr(core);
-    if (t !== null && t !== core) {
+    const s = node.data, parent = node.parentNode;
+    if (done.get(node) === s) return;
+    if (B.custom && parent && parent.classList && parent.classList.contains('brand-mark')) {   // the letter in the icon
+      const letter = (B.short[0] || 'k').toLowerCase();
+      if (s.trim() !== letter) node.data = letter;
+      done.set(node, node.data); return;
+    }
+    if (!/[A-Za-z]{2}/.test(s)) return;
+    const lead = s.match(/^\s*/)[0], trail = s.match(/\s*$/)[0], seen = original.get(node);
+    const core = seen && seen.shown === s ? seen.en : squash(s);   // a node translated before the name arrived: start from its English
+    let t = lang === 'nl' ? tr(core) : null;
+    if (B.custom) {
+      const inBrand = parent && parent.closest && parent.closest('.brand');
+      if (inBrand && core.toLowerCase() === 'krein') t = B.short.toLowerCase();                                         // the wordmark
+      else if (inBrand && parent.nodeName === 'SMALL' && core === 'PROPERTY MANAGEMENT') t = (B.tagline || '').toUpperCase();   // the line under it
+      else if (!(parent && parent.closest && parent.closest('[data-brand-keep]')) && isAppText(core)) t = brandText(t ?? core);
+    }
+    const shown = t ?? core;
+    if (shown !== squash(s)) {
       // an <option> without a value sends its text: keep sending the English word the server expects, only show Dutch
       const opt = node.parentNode;
       if (opt && opt.nodeName === 'OPTION' && !opt.hasAttribute('value')) opt.setAttribute('value', core);
-      node.data = lead + t + trail; done.set(node, node.data);
+      node.data = lead + shown + trail; done.set(node, node.data); original.set(node, {en: core, shown: node.data});
     }
   }
   const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
@@ -91,7 +126,7 @@
     for (const a of ATTRS) {
       const v = el.getAttribute(a);
       if (!v || !/[A-Za-z]{2}/.test(v)) continue;
-      const t = tr(squash(v));
+      const nl = tr(squash(v)), t = nl !== null && B.custom ? brandText((lang === 'nl' && nl) || v) : ((lang === 'nl' && nl) || v);
       if (t && t !== v) el.setAttribute(a, t);
     }
   }
@@ -141,7 +176,8 @@
   function flush() {
     queued = false;
     placeSwitch();
-    if (lang !== 'nl') { pending.clear(); return; }
+    if (B.custom && /krein/i.test(document.title)) document.title = brandText(document.title);
+    if (lang !== 'nl' && !B.custom) { pending.clear(); return; }
     const batch = [...pending]; pending.clear();
     for (const n of batch) if (n.isConnected) translate(n);
   }
@@ -158,5 +194,15 @@
   document.addEventListener('DOMContentLoaded', () => { pending.add(document.body); schedule(); });
   if (document.readyState !== 'loading') { pending.add(document.body); schedule(); }
   window.kreinTranslate = translate;
-  window.kreinT = (text) => (lang === 'nl' && tr(squash(String(text)))) || text;
+  window.kreinT = (text) => { const nl = tr(squash(String(text))); const t = (lang === 'nl' && nl) || String(text); return nl !== null ? brandText(t) : t; };
+
+  // the current name from the server; remembered, so the next visit shows it straight away
+  fetch('/api/brand', {credentials: 'same-origin'}).then(r => r.ok ? r.json() : null).then(b => {
+    if (!b || !b.full) return;
+    const was = JSON.stringify([B.full, B.short, B.custom]), now = JSON.stringify([b.full, b.short, !!b.custom]);
+    try { localStorage.setItem(BKEY, JSON.stringify(b)); } catch { /* storage unavailable */ }
+    if (was === now) return;
+    if (B.custom && !b.custom) { location.reload(); return; }   // back to the original name: draw every screen again
+    Object.assign(B, b); done = new WeakMap(); pending.add(document.body); schedule();
+  }).catch(() => {});
 })();

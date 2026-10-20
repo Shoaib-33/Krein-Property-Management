@@ -81,10 +81,12 @@ def make_styles():
 def agreement_pdf_bytes(text, *, company, logo=None, reference='', signatures=None, subject=''):
     """company: dict with name, address, kvk. signatures: [{'label','caption','image'}]."""
     st = make_styles()
+    from . import brand
+    text = brand.apply(text)   # 'signed through Krein' and the like, in the software's current name
     esc = lambda value: escape(str(value or ''))
     stream = io.BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=A4, leftMargin=22 * mm, rightMargin=22 * mm, topMargin=18 * mm, bottomMargin=24 * mm,
-                            title=subject or 'Huurovereenkomst woonruimte', author='Krein Property Management', subject=reference)
+                            title=subject or 'Huurovereenkomst woonruimte', author=brand.full(), subject=reference)
     story = []
 
     # ---- masthead: logo left, reference right, a green rule
@@ -94,12 +96,12 @@ def agreement_pdf_bytes(text, *, company, logo=None, reference='', signatures=No
             scale = min(52 * mm / iw, 17 * mm / ih)
             left = Image(io.BytesIO(logo), width=iw * scale, height=ih * scale, hAlign='LEFT')
         except Exception:
-            left = Paragraph('Krein Property Management', st['brand'])
+            left = Paragraph(esc(brand.full()), st['brand'])
     else:
-        left = Paragraph('Krein Property Management', st['brand'])
+        left = Paragraph(esc(brand.full()), st['brand'])
     from .brand import BRAND, on_behalf
     behalf = on_behalf(company.get('name'))
-    right = Paragraph(f'<b>{BRAND}</b><br/>' + (f'{esc(behalf)}<br/>' if behalf else '') + f'{esc(company.get("address"))}<br/>KvK {esc(company.get("kvk"))}' + (f'<br/>Kenmerk / Reference: <b>{esc(reference)}</b>' if reference else ''), st['meta'])
+    right = Paragraph(f'<b>{esc(BRAND)}</b><br/>' + (f'{esc(behalf)}<br/>' if behalf else '') + f'{esc(company.get("address"))}<br/>KvK {esc(company.get("kvk"))}' + (f'<br/>Kenmerk / Reference: <b>{esc(reference)}</b>' if reference else ''), st['meta'])
     story += [Table([[left, right]], colWidths=[84 * mm, 82 * mm], style=TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0)])),
               Spacer(1, 6), HRFlowable(width='100%', thickness=2.2, color=GREEN), Spacer(1, 14)]
 

@@ -113,7 +113,7 @@
       status.textContent = left.length ? `${left.length} detail${left.length === 1 ? '' : 's'} still to fill in (yellow boxes): ${left.map(k => doc.labelOf(k)).join(', ')}` : 'Ready to send.';
       status.classList.toggle('warn', left.length > 0);
     };
-    doc = KreinDoc.mount(document.getElementById('de-host'), {text: r.body, company: {name: c.name, address: c.address, kvk: c.kvk}, logo: '/static/brand/krein-logo.png',
+    doc = KreinDoc.mount(document.getElementById('de-host'), {text: r.body, company: {name: c.name, address: c.address, kvk: c.kvk}, logo: (window.kreinBrand && window.kreinBrand.custom) ? '' : '/static/brand/krein-logo.png',
       signature: sigInfo && sigInfo.set ? sigInfo : null, asks, onChange: check});
     check();
     go.addEventListener('click', async () => {

@@ -21,6 +21,7 @@ METHODS = {'equal': ('Gelijk deel per woning', 'Equal share per unit'), 'floor_a
 
 def statement_pdf_bytes(company_name, tenant_name, address, year, occupied_days, year_days, allocations, cost_total, advances, balance, *,
                         company=None, property_label='', reference='', issued_on=None, logo=None):
+    from . import brand
     company = company or {'name': company_name}
     issued_on = issued_on or local_today().isoformat()
     esc = lambda value: escape(str(value or ''))
@@ -45,7 +46,7 @@ def statement_pdf_bytes(company_name, tenant_name, address, year, occupied_days,
     P = lambda text, style='body': Paragraph(text, st[style])
     stream = io.BytesIO()
     doc = SimpleDocTemplate(stream, pagesize=A4, leftMargin=20 * mm, rightMargin=20 * mm, topMargin=13 * mm, bottomMargin=21 * mm,
-                            title=f'Jaarafrekening servicekosten {year}', author='Krein Property Management', subject=reference)
+                            title=f'Jaarafrekening servicekosten {year}', author=brand.full(), subject=reference)
     width = doc.width
     story = []
 
@@ -56,12 +57,12 @@ def statement_pdf_bytes(company_name, tenant_name, address, year, occupied_days,
             scale = min(52 * mm / iw, 17 * mm / ih)
             left = Image(io.BytesIO(logo), width=iw * scale, height=ih * scale, hAlign='LEFT')
         except Exception:
-            left = P('Krein Property Management', 'brand')
+            left = P(esc(brand.full()), 'brand')
     else:
-        left = P('Krein Property Management', 'brand')
+        left = P(esc(brand.full()), 'brand')
     from .brand import BRAND, on_behalf
     behalf = on_behalf(company.get('name'))
-    contact = f'<b>{BRAND}</b><br/>' + (f'{esc(behalf)}<br/>' if behalf else '') + f'{esc(company.get("address"))}' + (f'<br/>KvK {esc(company.get("kvk"))}' if company.get('kvk') else '')
+    contact = f'<b>{esc(BRAND)}</b><br/>' + (f'{esc(behalf)}<br/>' if behalf else '') + f'{esc(company.get("address"))}' + (f'<br/>KvK {esc(company.get("kvk"))}' if company.get('kvk') else '')
     story.append(Table([[left, [P('JAARAFREKENING SERVICEKOSTEN', 'title'), P('Annual service-charge statement', 'sub'), Spacer(1, 3), P(contact, 'meta')]]], colWidths=[width * .42, width * .58],
                        style=TableStyle([('VALIGN', (0, 0), (-1, -1), 'TOP'), ('LEFTPADDING', (0, 0), (-1, -1), 0), ('RIGHTPADDING', (0, 0), (-1, -1), 0)])))
     story += [Spacer(1, 4), HRFlowable(width='100%', thickness=2.2, color=GREEN), Spacer(1, 9)]

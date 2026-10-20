@@ -1884,6 +1884,7 @@ def pdf_response(title, lines, filename, company=None):
     from reportlab.lib.units import mm
     from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     from xml.sax.saxutils import escape
+    from . import brand
     stream = io.BytesIO()
     document = SimpleDocTemplate(stream, title=title, pagesize=A4, rightMargin=20*mm, leftMargin=20*mm, topMargin=22*mm, bottomMargin=19*mm)
     styles = getSampleStyleSheet()
@@ -1893,7 +1894,7 @@ def pdf_response(title, lines, filename, company=None):
     styles.add(ParagraphStyle(name='ReportSection',parent=styles['Heading2'],fontName='Helvetica-Bold',fontSize=11,leading=15,textColor=green,spaceBefore=10,spaceAfter=5))
     styles.add(ParagraphStyle(name='ReportBody',parent=styles['BodyText'],fontSize=9,leading=14,textColor=ink,spaceAfter=3))
     styles.add(ParagraphStyle(name='ReportCallout',parent=styles['BodyText'],fontSize=9,leading=14,textColor=ink,backColor=pale,borderColor=line_color,borderWidth=.6,borderPadding=8,spaceBefore=5,spaceAfter=8))
-    story=[Table([[Paragraph('<b>KREIN</b><br/><font size="7">PROPERTY MANAGEMENT</font>',styles['ReportMeta']),Paragraph('WORKSPACE RECORD',styles['ReportMeta'])]],colWidths=[85*mm,85*mm],style=TableStyle([('TEXTCOLOR',(0,0),(0,0),green),('ALIGN',(1,0),(1,0),'RIGHT'),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)])),Spacer(1,12),Paragraph(escape(title),styles['ReportTitle']),Spacer(1,7),HRFlowable(width='100%',thickness=1,color=line_color),Spacer(1,12)]
+    story=[Table([[Paragraph(f'<b>{escape(brand.short().upper())}</b><br/><font size="7">{escape(brand.tagline().upper())}</font>',styles['ReportMeta']),Paragraph('WORKSPACE RECORD',styles['ReportMeta'])]],colWidths=[85*mm,85*mm],style=TableStyle([('TEXTCOLOR',(0,0),(0,0),green),('ALIGN',(1,0),(1,0),'RIGHT'),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)])),Spacer(1,12),Paragraph(escape(title),styles['ReportTitle']),Spacer(1,7),HRFlowable(width='100%',thickness=1,color=line_color),Spacer(1,12)]
     section_names={'contract history','ledger','communication timeline','document index (source attachments remain in the document vault)','actual allocated costs:','your allocated cost calculation:','review summary','allocation details'}
     for index,value in enumerate(lines):
         text=str(value).strip()
@@ -1938,9 +1939,10 @@ def invoice_pdf_bytes(inv, snap):
     from reportlab.lib.units import mm
     from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     from xml.sax.saxutils import escape
+    from . import brand
 
     stream=io.BytesIO()
-    document=SimpleDocTemplate(stream,pagesize=A4,rightMargin=20*mm,leftMargin=20*mm,topMargin=19*mm,bottomMargin=18*mm,title=f'Rent invoice {inv["number"]}',author='Krein Property Management')
+    document=SimpleDocTemplate(stream,pagesize=A4,rightMargin=20*mm,leftMargin=20*mm,topMargin=19*mm,bottomMargin=18*mm,title=f'Rent invoice {inv["number"]}',author=brand.full())
     ink=colors.HexColor('#173b32');green=colors.HexColor('#176b55');muted=colors.HexColor('#687b74');line=colors.HexColor('#dce7e1');pale=colors.HexColor('#f1f6f3')
     styles=getSampleStyleSheet()
     styles.add(ParagraphStyle(name='Brand',parent=styles['Normal'],fontName='Helvetica-Bold',fontSize=18,leading=22,textColor=green))
@@ -2110,6 +2112,15 @@ app.include_router(finance_ops_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')
+@app.get('/static/manifest.webmanifest', include_in_schema=False)
+def web_manifest():
+    """The installable-app description, in the software's current name."""
+    from . import brand
+    manifest = json.loads((ROOT / 'static' / 'manifest.webmanifest').read_text(encoding='utf-8'))
+    manifest['name'], manifest['short_name'] = brand.full(), brand.short()
+    return Response(json.dumps(manifest), media_type='application/manifest+json', headers={'Cache-Control': 'no-cache'})
+
+
 app.mount('/static', StaticFiles(directory=ROOT / 'static'), name='static')
 
 

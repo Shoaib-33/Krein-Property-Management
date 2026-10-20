@@ -115,7 +115,7 @@ function render(){
  const notificationBell=$('.topbar button[aria-label="Open pending tasks"]');if(notificationBell){notificationBell.dataset.action='notifications';notificationBell.removeAttribute('data-page');notificationBell.setAttribute('aria-label','Notifications');if(unreadMessages)notificationBell.insertAdjacentHTML('beforeend',`<span class="count" aria-label="${unreadMessages} unread notifications">${unreadMessages>99?'99+':unreadMessages}</span>`);}
  $('#company-picker').addEventListener('change',async ev=>{state.company=Number(ev.target.value);sessionStorage.setItem('krein_company',state.company);state.filter='All';await safe(refresh);});
  $('#search-form').addEventListener('submit',ev=>{ev.preventDefault();showSearch($('#global-search').value);});
- document.title=`${title} · Krein`;
+ document.title=`${title} · ${(window.kreinBrand||{}).short||'Krein'}`;
  applyProgressWidths();
 }
 function applyProgressWidths(){document.querySelectorAll('[data-width]').forEach(el=>{el.style.width=el.dataset.width+'%';});}

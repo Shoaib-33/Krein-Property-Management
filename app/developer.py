@@ -130,3 +130,65 @@ def set_active(user_id: int, data: dict, user=Depends(current_user)):
             conn.execute('DELETE FROM sessions WHERE user_id=?', (user_id,))
         _audit_all(conn, user['id'], 'login_opened' if active else 'login_closed', user_id, {'email': u['email']})
     return {'ok': True}
+
+
+# ---- Software and companies: the software's name and every company's name
+
+@router.get('/api/brand')
+def brand_info():
+    """The software's name, for every screen (also before signing in)."""
+    from . import brand
+    return brand.info()
+
+
+@router.post('/api/developer/brand')
+def set_brand(data: dict, user=Depends(current_user)):
+    """Change the software's name (full and short); empty fields go back to Krein Property Management / Krein."""
+    require_developer(user)
+    from . import brand
+    full = ' '.join(str(data.get('full') or '').split())
+    short = ' '.join(str(data.get('short') or '').split())
+    if bool(full) != bool(short):
+        raise HTTPException(422, 'Fill in both the full name and the short name, or leave both empty for the original name.')
+    if full and not (2 <= len(full) <= 80 and 1 <= len(short) <= 30):
+        raise HTTPException(422, 'Use a full name of 2-80 characters and a short name of at most 30 characters.')
+    if full and any(ch in full + short for ch in '<>{}'):
+        raise HTTPException(422, 'The name may not contain < > { or }.')
+    with transaction() as conn:
+        if full:
+            for key, value in (('brand_full', full), ('brand_short', short)):
+                conn.execute('INSERT INTO platform_settings(key,value,updated_by,updated_at) VALUES(?,?,?,?) '
+                             'ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_by=excluded.updated_by,updated_at=excluded.updated_at', (key, value, user['id'], now()))
+        else:
+            conn.execute("DELETE FROM platform_settings WHERE key IN ('brand_full','brand_short')")
+        _audit_all(conn, user['id'], 'brand_changed', user['id'], {'full': full or brand.DEFAULT_FULL, 'short': short or brand.DEFAULT_SHORT})
+    brand.forget()
+    return brand.info()
+
+
+@router.get('/api/developer/companies')
+def companies_overview(user=Depends(current_user)):
+    require_developer(user)
+    with connect() as conn:
+        return {'companies': [dict(r) for r in conn.execute(
+            "SELECT c.id,c.name,c.kvk,c.address,(SELECT COUNT(*) FROM tenants t WHERE t.company_id=c.id AND t.archived_at IS NULL) tenants,"
+            "(SELECT COUNT(*) FROM properties p WHERE p.company_id=c.id) homes,(SELECT COUNT(*) FROM memberships m WHERE m.company_id=c.id AND m.role='admin') admins "
+            "FROM companies c ORDER BY c.name")]}
+
+
+@router.patch('/api/developer/companies/{company_id}')
+def rename_company(company_id: int, data: dict, user=Depends(current_user)):
+    """Rename a company. Invoices already issued keep the name they were issued with."""
+    require_developer(user)
+    name = ' '.join(str(data.get('name') or '').split())
+    if not 2 <= len(name) <= 120:
+        raise HTTPException(422, 'Use a company name of 2-120 characters.')
+    with transaction() as conn:
+        old = conn.execute('SELECT name FROM companies WHERE id=?', (company_id,)).fetchone()
+        if not old:
+            raise HTTPException(404, 'Company not found.')
+        if conn.execute('SELECT 1 FROM companies WHERE lower(name)=lower(?) AND id<>?', (name, company_id)).fetchone():
+            raise HTTPException(409, 'Another company already has this name.')
+        conn.execute('UPDATE companies SET name=? WHERE id=?', (name, company_id))
+        audit(conn, user['id'], company_id, 'renamed', 'company', company_id, {'from': old['name'], 'to': name})
+    return {'id': company_id, 'name': name}
