@@ -44,7 +44,7 @@ All sample names, receipts and financial entries are fictional. `demo` initializ
 
 ### Hugging Face demo Space
 
-The root `Dockerfile` and Space metadata support a Docker Space on port 7860. This deployment starts an empty workspace and creates only the initial administrator and company; it does not import the local database or run `manage.py demo`. Set `HAVEN_BOOTSTRAP_ADMIN_EMAIL` as a Space variable and `HAVEN_BOOTSTRAP_ADMIN_PASSWORD` as a Space secret (12 or more characters). Optional `HAVEN_BOOTSTRAP_ADMIN_NAME` and `HAVEN_BOOTSTRAP_COMPANY_NAME` variables set their display names. The database and uploads are stored under `/data`; attach persistent storage at `/data` if records must survive Space restarts. Without persistent storage, treat the Space as disposable demo data.
+The root `Dockerfile` and Space metadata support a Docker Space on port 7860. This deployment starts an empty workspace and creates only the initial administrator and company; it does not import the local database or run `manage.py demo`. Set `HAVEN_BOOTSTRAP_DEVELOPER_EMAIL` as a Space variable and `HAVEN_BOOTSTRAP_DEVELOPER_PASSWORD` as a Space secret (12 or more characters). Optional `HAVEN_BOOTSTRAP_DEVELOPER_NAME` and `HAVEN_BOOTSTRAP_COMPANY_NAME` variables set their display names. The database and uploads are stored under `/data`; attach persistent storage at `/data` if records must survive Space restarts. Without persistent storage, treat the Space as disposable demo data.
 
 The staff portal is `/` and the tenant portal is `/tenant` on the same Space URL. After signing in as the administrator, create a tenant and activate their tenant portal account from the staff workspace.
 
@@ -218,7 +218,7 @@ For a demo you can show to others, deploy the included Docker setup to [Render](
 | `GROQ_API_KEY` | optional, for the AI Help chat |
 | `GEMINI_API_KEY` | optional fallback |
 
-Things to know: on the **free plan** the service sleeps after about 15 minutes without visitors (the next visit takes up to a minute to wake it) and its disk is erased on every restart, so the demo returns to its sample data. Anything entered during a demo is lost. A paid plan with a persistent disk keeps the data. The demo logins are public knowledge, so never put real tenant data in a demo deployment, and share the address only with people you want to have it. To run it with your own administrator instead of sample data, remove `HAVEN_DEMO_SEED` and set `HAVEN_BOOTSTRAP_ADMIN_EMAIL` and `HAVEN_BOOTSTRAP_ADMIN_PASSWORD` (12+ characters).
+Things to know: on the **free plan** the service sleeps after about 15 minutes without visitors (the next visit takes up to a minute to wake it) and its disk is erased on every restart, so the demo returns to its sample data. Anything entered during a demo is lost. A paid plan with a persistent disk keeps the data. The demo logins are public knowledge, so never put real tenant data in a demo deployment, and share the address only with people you want to have it. To run it with your own administrator instead of sample data, remove `HAVEN_DEMO_SEED` and set `HAVEN_BOOTSTRAP_DEVELOPER_EMAIL` and `HAVEN_BOOTSTRAP_DEVELOPER_PASSWORD` (12+ characters).
 
 ### Contract form and signatures
 

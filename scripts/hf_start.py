@@ -68,29 +68,29 @@ def bootstrap_admin():
     if os.environ.get('HAVEN_DEMO_SEED') == '1':
         seed_demo()
         return
-    email = os.environ.get('HAVEN_BOOTSTRAP_ADMIN_EMAIL', '').strip().lower()
-    password = os.environ.get('HAVEN_BOOTSTRAP_ADMIN_PASSWORD', '')
-    if not email or not password:
-        raise SystemExit(
-            'Set HAVEN_BOOTSTRAP_ADMIN_EMAIL and '
-            'HAVEN_BOOTSTRAP_ADMIN_PASSWORD as Space variables/secrets.'
-        )
-    if len(password) < 12:
-        raise SystemExit('HAVEN_BOOTSTRAP_ADMIN_PASSWORD must be at least 12 characters.')
-
+    # the first login on a new, empty database: the developer (signs in at /developer). Used only while the database
+    # has no login yet, so the password can be removed from the settings after the first start.
+    # HAVEN_BOOTSTRAP_ADMIN_* are the older names of the same settings and still work.
+    setting = lambda key, default='': os.environ.get(f'HAVEN_BOOTSTRAP_DEVELOPER_{key}') or os.environ.get(f'HAVEN_BOOTSTRAP_ADMIN_{key}') or default
     db.init_db()
     with transaction() as conn:
         if conn.execute('SELECT 1 FROM users LIMIT 1').fetchone():
             return
-        name = os.environ.get('HAVEN_BOOTSTRAP_ADMIN_NAME', 'Workspace administrator').strip()
-        company_name = os.environ.get('HAVEN_BOOTSTRAP_COMPANY_NAME', 'Krein Property Management').strip()
+    email, password = setting('EMAIL').strip().lower(), setting('PASSWORD')
+    if not email or not password:
+        raise SystemExit('New empty database: set HAVEN_BOOTSTRAP_DEVELOPER_EMAIL and HAVEN_BOOTSTRAP_DEVELOPER_PASSWORD for the first (developer) login.')
+    if len(password) < 12:
+        raise SystemExit('HAVEN_BOOTSTRAP_DEVELOPER_PASSWORD must be at least 12 characters.')
+    with transaction() as conn:
+        name = setting('NAME', 'Developer').strip()
+        company_name = (os.environ.get('HAVEN_BOOTSTRAP_COMPANY_NAME') or 'Krein Property Management').strip()
         user_id = conn.execute(
             'INSERT INTO users(name,email,password_hash,global_admin) VALUES(?,?,?,1)',
-            (name or 'Workspace administrator', email, password_hash(password)),
+            (name or 'Developer', email, password_hash(password)),
         ).lastrowid
         company_id = conn.execute(
             'INSERT INTO companies(name,created_at) VALUES(?,?)',
-            (company_name or 'Krein Demo Workspace', now()),
+            (company_name or 'Krein Property Management', now()),
         ).lastrowid
         conn.execute('INSERT INTO memberships(user_id,company_id,role) VALUES(?,?,?)',
                      (user_id, company_id, 'admin'))
