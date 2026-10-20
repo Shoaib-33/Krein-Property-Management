@@ -50,7 +50,7 @@ PORTALS = ('tenant', 'contractor', 'owner', 'landlord', 'developer')
 
 
 def portal_of(request: Request):
-    portal = request.headers.get('X-Haven-Portal', '')
+    portal = request.headers.get('X-Krein-Portal', '')
     if portal not in PORTALS:
         portal = next((p for p in PORTALS if request.url.path.startswith('/api/' + p + '/')), '')
     if not portal and urlparse(request.headers.get('referer', '')).path in ('/landlord', '/developer'):
@@ -60,11 +60,11 @@ def portal_of(request: Request):
 
 def client_ip(request: Request):
     """The visitor's real IP address. Behind a reverse proxy (Render, a load balancer, Caddy/nginx) set
-    HAVEN_TRUSTED_PROXY_HOPS to the number of proxies in front of Krein (usually 1): the address is then read from the
+    KREIN_TRUSTED_PROXY_HOPS to the number of proxies in front of Krein (usually 1): the address is then read from the
     right-hand end of X-Forwarded-For, the part our own proxy wrote. The left-hand part is whatever the visitor sent and is
     never trusted. Without a proxy leave it at 0 (the default), then the header is ignored completely."""
     try:
-        hops = max(0, int(os.environ.get('HAVEN_TRUSTED_PROXY_HOPS', '0')))
+        hops = max(0, int(os.environ.get('KREIN_TRUSTED_PROXY_HOPS', '0')))
     except ValueError:
         hops = 0
     if hops:
@@ -76,7 +76,7 @@ def client_ip(request: Request):
 
 def session_cookie(request: Request):
     portal = portal_of(request)
-    return 'haven_' + portal + '_session' if portal else 'haven_session'
+    return 'krein_' + portal + '_session' if portal else 'krein_session'
 
 
 def current_user(request: Request):

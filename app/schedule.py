@@ -67,7 +67,7 @@ def payment_schedule(conn, contract, today=None):
             amount = period_amount(conn, contract, first, last)
             if amount:
                 try:
-                    run_day = max(1, min(28, int(os.environ.get('HAVEN_RENT_BILL_DAY', '15'))))
+                    run_day = max(1, min(28, int(os.environ.get('KREIN_RENT_BILL_DAY', '15'))))
                 except ValueError:
                     run_day = 15
                 before = month_start(first, -1)

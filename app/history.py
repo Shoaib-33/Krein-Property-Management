@@ -1,7 +1,7 @@
 """How much history the workspace payload (/api/data) carries.
 
 Everything that is still open is always sent. Closed items (finished repairs, done tasks, answered requests, old messages,
-old letters and documents of ended tenancies) are only sent for the last HAVEN_HISTORY_MONTHS months (default 13),
+old letters and documents of ended tenancies) are only sent for the last KREIN_HISTORY_MONTHS months (default 13),
 so a page load stays small after years of use. Nothing is deleted: older records stay in the database, in the
 reports/exports and in the paged invoice and ledger lists.
 """
@@ -13,7 +13,7 @@ from .clock import local_today
 
 def months():
     try:
-        return max(1, min(120, int(os.environ.get('HAVEN_HISTORY_MONTHS', '13'))))
+        return max(1, min(120, int(os.environ.get('KREIN_HISTORY_MONTHS', '13'))))
     except ValueError:
         return 13
 

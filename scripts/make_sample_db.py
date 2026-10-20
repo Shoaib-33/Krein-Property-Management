@@ -1,16 +1,16 @@
 """Make a shareable sample database from a working one: the same homes, households, contracts, invoices, payments, bank
 statements, repairs and messages, but with no real personal data.
 
-    python -m scripts.make_sample_db [source.db] [target folder]     (defaults: data/haven.db -> sample-data/)
+    python -m scripts.make_sample_db [source.db] [target folder]     (defaults: data/krein.db -> sample-data/)
 
-Every person who is not a built-in demo account (@haven.local / @example.com) gets a made-up name, email address and phone
+Every person who is not a built-in demo account (@krein.local / @example.com) gets a made-up name, email address and phone
 number; every IBAN becomes a made-up (valid) one; ID numbers, dates of birth and home addresses from signed contracts are
 replaced; signatures become drawn sample signatures; uploaded files become placeholder files; IP addresses are hidden;
-sessions, reset links and invitation codes are removed; every login gets the demo password HavenDemo!2026. The audit log's
+sessions, reset links and invitation codes are removed; every login gets the demo password KreinDemo!2026. The audit log's
 fingerprint chain is calculated again so the records check still passes. The source database is only read. Nothing
 personal is printed.
 
-To use the result: stop Krein, copy sample-data/haven.db and sample-data/uploads into data/, start Krein.
+To use the result: stop Krein, copy sample-data/krein.db and sample-data/uploads into data/, start Krein.
 Never use it in production."""
 import hashlib, io, json, random, re, shutil, sqlite3, sys
 from pathlib import Path
@@ -19,8 +19,8 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 from app.security import password_hash  # noqa: E402
 
-PW = 'HavenDemo!2026'
-DEMO = re.compile(r'@(haven\.local|example\.com|haven\.invalid)$', re.I)
+PW = 'KreinDemo!2026'
+DEMO = re.compile(r'@(krein\.local|example\.com|krein\.invalid)$', re.I)
 FIRST = ['Daan', 'Sanne', 'Bram', 'Fleur', 'Thijs', 'Lotte', 'Jesse', 'Iris', 'Ruben', 'Eva', 'Sem', 'Noor', 'Lucas', 'Julia', 'Milan', 'Tess', 'Finn', 'Roos', 'Luuk', 'Anna',
          'Stijn', 'Femke', 'Gijs', 'Lisa', 'Koen', 'Maud', 'Teun', 'Sara']
 LAST = ['de Boer', 'Mulder', 'Bakker', 'Kok', 'Peters', 'Hendriks', 'Dekker', 'Brouwer', 'van Leeuwen', 'Bos', 'Vos', 'Meijer', 'Jacobs', 'Willems', 'Hoekstra', 'Koster',
@@ -29,7 +29,7 @@ IBAN = re.compile(r'\bNL\s?\d{2}\s?[A-Z]{4}\s?(?:\d\s?){10}\b')
 IPV4 = re.compile(r'\b(?:\d{1,3}\.){3}\d{1,3}\b')
 # words that are never a person's name on their own, and fields that hold system values rather than text
 COMMON = {'tenant', 'tenants', 'owner', 'contractor', 'admin', 'administrator', 'test', 'demo', 'user', 'manager', 'finance', 'property', 'inspector', 'landlord',
-          'developer', 'staff', 'team', 'new', 'the', 'van', 'de', 'der', 'den', 'het', 'ten', 'ter', 'bv', 'b.v.', 'workspace', 'company', 'krein', 'haven'}
+          'developer', 'staff', 'team', 'new', 'the', 'van', 'de', 'der', 'den', 'het', 'ten', 'ter', 'bv', 'b.v.', 'workspace', 'company', 'krein', 'krein'}
 SYSTEM = re.compile(r'^(kind|status|role|action|entity|mime|type|category|urgency|priority|file_key|sha256|period|number|split_mode|bank_mode|channel|step|target|.*_mode|.*_status)$')
 
 
@@ -66,10 +66,10 @@ def signature_png(name):
     buf = io.BytesIO(); img.save(buf, 'PNG'); return buf.getvalue()
 
 
-def main(src=ROOT / 'data' / 'haven.db', out=ROOT / 'sample-data'):
+def main(src=ROOT / 'data' / 'krein.db', out=ROOT / 'sample-data'):
     src, out = Path(src), Path(out)
     out.mkdir(exist_ok=True)
-    target = out / 'haven.db'
+    target = out / 'krein.db'
     target.unlink(missing_ok=True)
     s = sqlite3.connect(f'file:{src}?mode=ro', uri=True); t = sqlite3.connect(target)
     s.backup(t); s.close()
@@ -201,11 +201,11 @@ def main(src=ROOT / 'data' / 'haven.db', out=ROOT / 'sample-data'):
                 t.execute(f'UPDATE "{table}" SET {", ".join(f"{c}=?" for c in upd)} WHERE {where}', (*upd.values(), *([r[k] for k in pk] if pk else [r[0]])))
                 changed += 1
 
-    # logins, tokens and sessions; the developer always signs in as developer@haven.local in the sample
-    if not t.execute("SELECT 1 FROM users WHERE email='developer@haven.local'").fetchone():
+    # logins, tokens and sessions; the developer always signs in as developer@krein.local in the sample
+    if not t.execute("SELECT 1 FROM users WHERE email='developer@krein.local'").fetchone():
         dev = t.execute('SELECT id FROM users WHERE global_admin=1 AND active=1 ORDER BY id LIMIT 1').fetchone()
         if dev:
-            t.execute("UPDATE users SET email='developer@haven.local', name='Dev Krein' WHERE id=?", (dev['id'],))
+            t.execute("UPDATE users SET email='developer@krein.local', name='Dev Krein' WHERE id=?", (dev['id'],))
     t.execute('UPDATE users SET password_hash=?', (password_hash(PW),))
     for table in ('sessions', 'password_resets'):
         t.execute(f'DELETE FROM {table}')
@@ -258,6 +258,6 @@ if __name__ == '__main__':
         main(*sys.argv[1:3])
     except BaseException:
         # the copy is made before it is cleaned: never leave a half-cleaned copy behind
-        (Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / 'sample-data').joinpath('haven.db').unlink(missing_ok=True)
+        (Path(sys.argv[2]) if len(sys.argv) > 2 else ROOT / 'sample-data').joinpath('krein.db').unlink(missing_ok=True)
         print('Stopped; the unfinished copy was deleted.')
         raise

@@ -50,7 +50,7 @@ def _send(email, name, url):
                        'Heeft u dit niet gevraagd? Negeer dan deze e-mail; uw wachtwoord blijft hetzelfde.')
         except Exception:
             logging.exception('Password reset email could not be sent.')
-    threading.Thread(target=run, name='haven-reset-mail', daemon=True).start()
+    threading.Thread(target=run, name='krein-reset-mail', daemon=True).start()
 
 
 @router.post('/api/password/forgot')

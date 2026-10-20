@@ -32,7 +32,7 @@
       if (!(state.me && state.me.developer)) return '';
       return head('Automatic bank connection', 'Off. Statements are uploaded by hand below.',
         `<p>Krein can read your business account (ING, Rabobank and most Dutch banks) through <strong>Ponto</strong>, read-only, and book tenants' transfers by itself every hour.</p>
-         <p class="subtitle">To switch it on, put the Ponto keys in the server settings: <code>HAVEN_PONTO_CLIENT_ID</code> and <code>HAVEN_PONTO_CLIENT_SECRET</code> (and <code>HAVEN_PONTO_SANDBOX=1</code> while testing), then restart Krein.</p>`);
+         <p class="subtitle">To switch it on, put the Ponto keys in the server settings: <code>KREIN_PONTO_CLIENT_ID</code> and <code>KREIN_PONTO_CLIENT_SECRET</code> (and <code>KREIN_PONTO_SANDBOX=1</code> while testing), then restart Krein.</p>`);
     }
     const c = s.connection, sandbox = s.sandbox ? `<p class="pn-sandbox">${badge('Sandbox: test banks, not your real account', 'amber')}</p>` : '';
     if (!c || ['revoked', 'replaced'].includes(c.status)) {

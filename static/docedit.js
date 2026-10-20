@@ -1,7 +1,7 @@
 'use strict';
 /* The contract as a document you edit in place, set up like the PDF: letterhead with the logo, key-facts table, articles with the
    English translation under each clause, signature block. Every part has a pencil. Details Krein does not know yet are inputs right
-   in the text. HavenDoc.mount(host, options) -> {text(), missing(), complete()}. */
+   in the text. KreinDoc.mount(host, options) -> {text(), missing(), complete()}. */
 (() => {
   const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   const GAP = /\{\{\s*([a-z_.0-9]+)\s*\}\}/g;
@@ -123,5 +123,5 @@
     const missing = () => [...new Set([...filled().matchAll(GAP)].map(m => m[1]))];
     return {text: () => (commit(), filled()), missing, complete: () => missing().length === 0, labelOf: label};
   }
-  window.HavenDoc = {mount};
+  window.KreinDoc = {mount};
 })();

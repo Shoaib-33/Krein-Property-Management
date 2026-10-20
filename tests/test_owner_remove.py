@@ -22,7 +22,7 @@ class OwnerRemoveTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.staff = TestClient(app)
-        r = self.staff.post('/api/login', json={'email': 'manager@haven.local', 'password': 'HavenDemo!2026'})
+        r = self.staff.post('/api/login', json={'email': 'manager@krein.local', 'password': 'KreinDemo!2026'})
         self.staff.headers['X-CSRF-Token'] = r.json()['csrf']
         self.data = self.staff.get('/api/data?company_id=1').json()
 
@@ -55,7 +55,7 @@ class OwnerRemoveTests(unittest.TestCase):
         self.assertEqual(self.staff.post(f'/api/portfolios/{other}/archive').status_code, 200)
         # now the owner can go: the login is closed and the email is free again
         self.assertEqual(self.staff.post(f'/api/owners/{owner}/archive').status_code, 200)
-        self.assertEqual(TestClient(app).post('/api/login', headers={'X-Haven-Portal': 'owner'}, json={'email': 'tahmid@example.com', 'password': 'OwnerStrongPass-2026'}).status_code, 401)
+        self.assertEqual(TestClient(app).post('/api/login', headers={'X-Krein-Portal': 'owner'}, json={'email': 'tahmid@example.com', 'password': 'OwnerStrongPass-2026'}).status_code, 401)
         again = self.staff.post('/api/owners', json={'company_id': 1, 'name': 'Tahmid Rahman', 'email': 'tahmid@example.com', 'phone': '', 'payout_details': ''}).json()['id']
         invite = self.staff.post('/api/accounts/invite', json={'kind': 'owner', 'target_id': again})
         self.assertEqual(invite.status_code, 200, invite.text)
@@ -67,7 +67,7 @@ class OwnerRemoveTests(unittest.TestCase):
     def test_property_staff_may_remove_but_other_companies_cannot(self):
         owner = self.staff.post('/api/owners', json={'company_id': 1, 'name': 'Temp Owner', 'email': 'temp@example.com', 'phone': '', 'payout_details': ''}).json()['id']
         outsider = TestClient(app)
-        r = outsider.post('/api/login', json={'email': 'admin@haven.local', 'password': 'HavenDemo!2026'})
+        r = outsider.post('/api/login', json={'email': 'admin@krein.local', 'password': 'KreinDemo!2026'})
         outsider.headers['X-CSRF-Token'] = r.json()['csrf']
         self.assertEqual(self.staff.post(f'/api/owners/{owner}/archive').status_code, 200)
         self.assertEqual(TestClient(app).post(f'/api/owners/{owner}/restore').status_code, 401)

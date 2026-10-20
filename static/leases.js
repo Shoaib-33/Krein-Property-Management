@@ -113,7 +113,7 @@
       status.textContent = left.length ? `${left.length} detail${left.length === 1 ? '' : 's'} still to fill in (yellow boxes): ${left.map(k => doc.labelOf(k)).join(', ')}` : 'Ready to send.';
       status.classList.toggle('warn', left.length > 0);
     };
-    doc = HavenDoc.mount(document.getElementById('de-host'), {text: r.body, company: {name: c.name, address: c.address, kvk: c.kvk}, logo: '/static/brand/krein-logo.png',
+    doc = KreinDoc.mount(document.getElementById('de-host'), {text: r.body, company: {name: c.name, address: c.address, kvk: c.kvk}, logo: '/static/brand/krein-logo.png',
       signature: sigInfo && sigInfo.set ? sigInfo : null, asks, onChange: check});
     check();
     go.addEventListener('click', async () => {
@@ -163,11 +163,11 @@
       ${manager ? `<form id="sig-form" class="lf-sigform"><h3>${cur.set ? 'Replace your signature' : 'Add your signature'}</h3>
         <div class="form-grid"><div class="field"><label for="sg-name">Name as printed under the signature</label><input id="sg-name" name="name" type="text" maxlength="100" required value="${e(cur.name || state.me.name)}"></div>
         <div class="field"><label for="sg-title">Role (optional)</label><input id="sg-title" name="title" type="text" maxlength="100" placeholder="e.g. Director" value="${e(cur.title || '')}"></div></div>
-        ${HavenSignature.html(cur.name || state.me.name)}<p class="form-error" id="sg-error" role="alert"></p>
+        ${KreinSignature.html(cur.name || state.me.name)}<p class="form-error" id="sg-error" role="alert"></p>
         <div class="modal-footer"><button type="submit" class="button primary" id="sg-save" disabled>Save signature</button></div></form>` : '<p class="subtitle">Only a manager can change the signature.</p>'}`;
     const form = document.getElementById('sig-form'); if (!form) return;
     const save = document.getElementById('sg-save');
-    const pad = HavenSignature.bind(form, cur.name || state.me.name, () => { save.disabled = !pad.ready(); });
+    const pad = KreinSignature.bind(form, cur.name || state.me.name, () => { save.disabled = !pad.ready(); });
     requestAnimationFrame(() => pad.refit());
     form.addEventListener('submit', async ev => {
       ev.preventDefault(); save.disabled = true;
@@ -207,13 +207,13 @@
         ${answers}
         ${(r.co_signers || []).map(s => `<div class="lf-cosig"><p>Co-tenant <strong>${e(s.signer_name || s.name)}</strong> signed on ${e(dateLabel((s.signed_at || '').slice(0, 10)))}${s.share_cents ? ` · pays ${money(s.share_cents)} a month` : ''}.</p>${s.signature ? `<img class="lf-sigimg" src="${e(s.signature)}" alt="Signature of ${e(s.name)}">` : ''}${r.fields.length ? `<div class="lf-answers">${r.fields.map(f => `<div><span>${e(f.label)}</span><strong>${e(s.values[f.key] || '—')}</strong></div>`).join('')}</div>` : ''}</div>`).join('')}
         <p><a class="button small" href="/api/lease-offers/${id}/file" target="_blank" rel="noopener">${icon('folder')} Open the contract as signed so far (PDF)</a></p>
-        ${needPad ? `<div class="sign-step"><span>2</span>Sign for the landlord</div>${HavenSignature.html(state.me.name)}` : `<p class="lf-ok">${icon('check')} The contract already carries the landlord's signature (${e(r.landlord_name || '')}), placed when it was sent.</p>`}
+        ${needPad ? `<div class="sign-step"><span>2</span>Sign for the landlord</div>${KreinSignature.html(state.me.name)}` : `<p class="lf-ok">${icon('check')} The contract already carries the landlord's signature (${e(r.landlord_name || '')}), placed when it was sent.</p>`}
         <div class="sign-agree"><input type="checkbox" id="la-confirm"><label for="la-confirm">I checked the signed contract. Approving makes ${e(o.tenant_name)}${o.co_names ? ' and ' + e(o.co_names) : ''} the tenant of ${e(o.property_name)} from ${e(dateLabel(o.start_date))}.</label></div>
         <p class="form-error" id="la-error" role="alert"></p>
         <div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="button" class="button primary" id="la-go" disabled>Approve and create tenancy</button></div></div>`);
       const dlg = document.getElementById('modal'), root = dlg.querySelector('.sign-sheet'), go = document.getElementById('la-go'), box = document.getElementById('la-confirm');
       dlg.classList.add('sign-modal'); dlg.addEventListener('close', () => dlg.classList.remove('sign-modal'), {once: true});
-      const pad = needPad ? HavenSignature.bind(root, state.me.name, () => check()) : null;
+      const pad = needPad ? KreinSignature.bind(root, state.me.name, () => check()) : null;
       const check = () => { go.disabled = !((!pad || pad.ready()) && box.checked); };
       box.addEventListener('change', check);
       if (pad) requestAnimationFrame(() => pad.refit());

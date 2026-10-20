@@ -1,7 +1,7 @@
 'use strict';
 /* Signature pad with three ways to sign: draw (mouse, finger, stylus), type (handwriting-style fonts) and upload (photo or scan).
    Shared by the tenant portal and the landlord screen. Produces a small transparent PNG data URL.
-   HavenSignature.html(name)  -> markup;  HavenSignature.bind(root, name, onChange) -> {ready(), data(), mode()}  */
+   KreinSignature.html(name)  -> markup;  KreinSignature.bind(root, name, onChange) -> {ready(), data(), mode()}  */
 (() => {
   const FONTS = [['Dancing Script', 'Flowing'], ['Caveat', 'Casual'], ['Great Vibes', 'Elegant']];
   const INK = '#14213d';
@@ -128,5 +128,5 @@
       refit: fit
     };
   }
-  window.HavenSignature = {html, bind};
+  window.KreinSignature = {html, bind};
 })();

@@ -33,7 +33,7 @@ class FeatureTests(unittest.TestCase):
         self.temp.cleanup()
 
     def login(self, role):
-        r = self.client.post('/api/login', json={'email': f'{role}@haven.local', 'password': 'HavenDemo!2026'})
+        r = self.client.post('/api/login', json={'email': f'{role}@krein.local', 'password': 'KreinDemo!2026'})
         self.assertEqual(r.status_code, 200, r.text)
         self.client.headers['X-CSRF-Token'] = r.json()['csrf']
 
@@ -135,8 +135,8 @@ class FeatureTests(unittest.TestCase):
         self.assertEqual(self.post('/api/owner-documents', {'company_id': 1, 'owner_id': owner['id'], 'document_id': private, 'category': 'Other'}).status_code, 422)
         self.assertEqual(self.post('/api/owner-documents', {'company_id': 1, 'owner_id': owner['id'], 'document_id': doc, 'category': 'Insurance', 'title': 'Building insurance 2026'}).status_code, 200)
         owner_client = TestClient(app)
-        r = owner_client.post('/api/login', headers={'X-Haven-Portal': 'owner'}, json={'email': 'owner@haven.local', 'password': 'HavenDemo!2026'})
-        headers = {'X-Haven-Portal': 'owner', 'X-CSRF-Token': r.json()['csrf']}
+        r = owner_client.post('/api/login', headers={'X-Krein-Portal': 'owner'}, json={'email': 'owner@krein.local', 'password': 'KreinDemo!2026'})
+        headers = {'X-Krein-Portal': 'owner', 'X-CSRF-Token': r.json()['csrf']}
         docs = owner_client.get('/api/owner/data', headers=headers).json()['documents']
         self.assertEqual([d['title'] for d in docs], ['Building insurance 2026'])
         self.assertEqual(owner_client.get(f'/api/owner/documents/{docs[0]["id"]}/file', headers=headers).content, PDF)
@@ -154,12 +154,12 @@ class FeatureTests(unittest.TestCase):
     def test_inbox_thread_state_and_saved_replies(self):
         contract = min(self.data()['contracts'], key=lambda c: c['id'])
         tenant = TestClient(app)
-        r = tenant.post('/api/login', headers={'X-Haven-Portal': 'tenant'}, json={'email': 'tenant@haven.local', 'password': 'HavenDemo!2026'})
-        th = {'X-Haven-Portal': 'tenant', 'X-CSRF-Token': r.json()['csrf']}
+        r = tenant.post('/api/login', headers={'X-Krein-Portal': 'tenant'}, json={'email': 'tenant@krein.local', 'password': 'KreinDemo!2026'})
+        th = {'X-Krein-Portal': 'tenant', 'X-CSRF-Token': r.json()['csrf']}
         sent = tenant.post('/api/tenant/messages', headers=th, data={'contract_id': str(contract['id']), 'subject': 'Heating question', 'body': 'The radiator is cold.'})
         self.assertEqual(sent.status_code, 200, sent.text)
         tid = sent.json()['id']
-        staff = next(u for u in self.data()['staff'] if u['email'] == 'finance@haven.local')
+        staff = next(u for u in self.data()['staff'] if u['email'] == 'finance@krein.local')
         self.assertEqual(self.post(f'/api/threads/{tid}/state', {'status': 'resolved', 'assignee_id': 999999}).status_code, 422)
         self.assertEqual(self.post(f'/api/threads/{tid}/state', {'status': 'resolved', 'assignee_id': staff['id']}).status_code, 200)
         self.assertEqual([(t['thread_id'], t['status'], t['assignee_id']) for t in self.data()['thread_states']], [(tid, 'resolved', staff['id'])])

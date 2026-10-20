@@ -73,7 +73,7 @@
       render();
     }).catch(() => need.forEach(m => done.delete(m)));
   };
-  const changed = key => { document.dispatchEvent(new CustomEvent('haven-period', {detail: key})); render(); };
+  const changed = key => { document.dispatchEvent(new CustomEvent('krein-period', {detail: key})); render(); };
   document.addEventListener('change', ev => {
     const part = ev.target.dataset && ev.target.dataset.periodPart;
     if (!part) return;

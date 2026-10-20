@@ -13,7 +13,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 MP4 = b'\x00\x00\x00\x18ftypmp42\x00\x00\x00\x00mp42isom' + b'\x00' * 2000
 def png(width=40, height=30):
     from PIL import Image
@@ -51,8 +51,8 @@ class VideoTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.manager = self.login('manager@haven.local')
-        self.tenant = self.login('tenant@haven.local', portal='tenant')
+        self.manager = self.login('manager@krein.local')
+        self.tenant = self.login('tenant@krein.local', portal='tenant')
         self.contract = self.tenant.get('/api/tenant/data').json()['contracts'][0]['id']
 
     def tearDown(self):
@@ -64,7 +64,7 @@ class VideoTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)
@@ -88,7 +88,7 @@ class VideoTests(unittest.TestCase):
 
     def test_only_real_videos_within_the_limit_are_accepted(self):
         self.assertEqual(self.repair(b'not a video at all' * 50, 'fake.mp4').status_code, 422)
-        with mock.patch.dict(os.environ, {'HAVEN_MAX_VIDEO_MB': '1'}):
+        with mock.patch.dict(os.environ, {'KREIN_MAX_VIDEO_MB': '1'}):
             big = self.repair(MP4 + b'\x00' * (1024 * 1024))
             self.assertEqual(big.status_code, 422)
             self.assertIn('larger than 1 MB', big.json()['detail'])

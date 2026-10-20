@@ -1,6 +1,6 @@
 'use strict';
 (() => {
-  const KEY = 'haven_lang';
+  const KEY = 'krein_lang';
   const read = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
   const write = v => { try { localStorage.setItem(KEY, v); } catch { /* storage unavailable */ } };
   let lang = read() === 'en' ? 'en' : 'nl';

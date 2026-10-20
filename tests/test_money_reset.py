@@ -14,8 +14,8 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
-SMTP = {'HAVEN_SMTP_HOST': 'smtp.example.test', 'HAVEN_SMTP_FROM': 'haven@example.test', 'HAVEN_PUBLIC_URL': 'https://haven.example.test'}
+PASSWORD = 'KreinDemo!2026'
+SMTP = {'KREIN_SMTP_HOST': 'smtp.example.test', 'KREIN_SMTP_FROM': 'krein@example.test', 'KREIN_PUBLIC_URL': 'https://krein.example.test'}
 
 
 class MoneyAndResetTests(unittest.TestCase):
@@ -29,9 +29,9 @@ class MoneyAndResetTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.manager = self.login('manager@haven.local')
-        self.finance = self.login('finance@haven.local')
-        self.platform = self.login('admin@haven.local')
+        self.manager = self.login('manager@krein.local')
+        self.finance = self.login('finance@krein.local')
+        self.platform = self.login('admin@krein.local')
 
     def tearDown(self):
         for c in self.clients:
@@ -42,7 +42,7 @@ class MoneyAndResetTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)
@@ -103,18 +103,18 @@ class MoneyAndResetTests(unittest.TestCase):
 
     # ---------- password reset
     def test_forgot_password_by_email_sets_a_new_password_once_and_signs_out_everywhere(self):
-        old = self.login('finance@haven.local')
+        old = self.login('finance@krein.local')
         sent = {}
-        with mock.patch.dict(os.environ, {'HAVEN_SMTP_HOST': ''}):
-            r = TestClient(app).post('/api/password/forgot', json={'email': 'finance@haven.local'}).json()
+        with mock.patch.dict(os.environ, {'KREIN_SMTP_HOST': ''}):
+            r = TestClient(app).post('/api/password/forgot', json={'email': 'finance@krein.local'}).json()
             self.assertFalse(r['email_ready'])
         with mock.patch.dict(os.environ, SMTP), mock.patch('app.email_delivery.send_plain', lambda to, subject, body: sent.update(to=to, body=body)):
-            answer = TestClient(app).post('/api/password/forgot', json={'email': 'finance@haven.local'}).json()
+            answer = TestClient(app).post('/api/password/forgot', json={'email': 'finance@krein.local'}).json()
             same = TestClient(app).post('/api/password/forgot', json={'email': 'nobody@example.com'}).json()
             import time
             time.sleep(.3)
         self.assertEqual(answer['message'], same['message'])   # nobody can tell which emails have an account
-        self.assertEqual(sent['to'], 'finance@haven.local')
+        self.assertEqual(sent['to'], 'finance@krein.local')
         token = sent['body'].split('/reset/')[1].split()[0]
         self.assertEqual(TestClient(app).get(f'/api/password/reset/{token}').status_code, 200)
         self.assertEqual(TestClient(app).post(f'/api/password/reset/{token}', json={'password': 'short'}).status_code, 422)
@@ -123,13 +123,13 @@ class MoneyAndResetTests(unittest.TestCase):
         self.assertEqual(done.json()['sign_in'][0][0], '/')
         self.assertEqual(TestClient(app).post(f'/api/password/reset/{token}', json={'password': 'AnotherPassword-2026'}).status_code, 404)   # one use only
         self.assertEqual(old.get('/api/me').status_code, 401)   # signed out everywhere
-        self.login('finance@haven.local', 'BrandNewPassword-2026')
+        self.login('finance@krein.local', 'BrandNewPassword-2026')
 
     def test_reset_links_made_by_staff_stay_inside_the_company(self):
         with db.connect() as conn:
-            finance_id = conn.execute("SELECT id FROM users WHERE email='finance@haven.local'").fetchone()[0]
-            admin_id = conn.execute("SELECT id FROM users WHERE email='admin@haven.local'").fetchone()[0]
-            tenant_id = conn.execute("SELECT a.tenant_id FROM portal_accounts a JOIN users u ON u.id=a.user_id WHERE u.email='tenant@haven.local'").fetchone()[0]
+            finance_id = conn.execute("SELECT id FROM users WHERE email='finance@krein.local'").fetchone()[0]
+            admin_id = conn.execute("SELECT id FROM users WHERE email='admin@krein.local'").fetchone()[0]
+            tenant_id = conn.execute("SELECT a.tenant_id FROM portal_accounts a JOIN users u ON u.id=a.user_id WHERE u.email='tenant@krein.local'").fetchone()[0]
         self.assertEqual(self.manager.post('/api/password/reset-link', json={'kind': 'staff', 'target_id': finance_id, 'company_id': 1}).status_code, 403)   # admins only for staff
         link = self.platform.post('/api/password/reset-link', json={'kind': 'staff', 'target_id': finance_id, 'company_id': 1})
         self.assertEqual(link.status_code, 200, link.text)

@@ -12,7 +12,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 ANSWERS = {'legal_name': 'Loodgietersbedrijf De Vries B.V.', 'kvk': '12345678', 'vat': 'NL123456789B01', 'address': 'Kerkstraat 1, 1011 AA Amsterdam',
            'contact_person': 'Jan de Vries', 'phone': '+31 6 1234 5678', 'iban': 'NL91 ABNA 0417 1643 00', 'account_holder': 'Loodgietersbedrijf De Vries',
            'insurer': 'Nationale-Nederlanden', 'policy_number': 'AVB-998877'}
@@ -39,10 +39,10 @@ class ContractorAgreementTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.manager = self.login('manager@haven.local')
-        self.contractor = self.login('contractor@haven.local', portal='contractor')
+        self.manager = self.login('manager@krein.local')
+        self.contractor = self.login('contractor@krein.local', portal='contractor')
         with db.connect() as conn:
-            self.contractor_id = conn.execute("SELECT a.contractor_id FROM contractor_accounts a JOIN users u ON u.id=a.user_id WHERE u.email='contractor@haven.local'").fetchone()[0]
+            self.contractor_id = conn.execute("SELECT a.contractor_id FROM contractor_accounts a JOIN users u ON u.id=a.user_id WHERE u.email='contractor@krein.local'").fetchone()[0]
 
     def tearDown(self):
         for c in self.clients:
@@ -53,7 +53,7 @@ class ContractorAgreementTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)

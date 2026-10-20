@@ -14,7 +14,7 @@ from app.banking import parse_camt, parse_mt940, valid_iban
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 KNOWN_IBAN = 'NL91ABNA0417164300'
 OTHER_IBAN = 'NL02RABO0123456789'
 
@@ -38,8 +38,8 @@ class BankingTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.finance = self.login('finance@haven.local')
-        self.manager = self.login('manager@haven.local')
+        self.finance = self.login('finance@krein.local')
+        self.manager = self.login('manager@krein.local')
         with db.transaction() as conn:   # the demo invoices are sent to the tenants
             conn.execute('UPDATE invoices SET released_at=COALESCE(released_at,?)', (db.now(),))
         self.open = self.finance.get('/api/bank/open-invoices?company_id=1').json()
@@ -54,7 +54,7 @@ class BankingTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)
@@ -115,7 +115,7 @@ class BankingTests(unittest.TestCase):
         data = self.manager.get('/api/data?company_id=1').json()
         self.assertTrue(any(l['invoice_id'] == first['id'] and l['kind'] == 'payment' for l in data['ledger']))
 
-    def test_unclear_payments_wait_for_a_person_who_confirms_and_haven_learns_the_account(self):
+    def test_unclear_payments_wait_for_a_person_who_confirms_and_krein_learns_the_account(self):
         target = self.open[0]
         raw = camt([(f"{target['balance_cents'] / 100:.2f}", 'CRDT', 'UNKNOWN NAME', KNOWN_IBAN, 'huur', 'B1'), ('10.00', 'CRDT', 'Supplier', OTHER_IBAN, 'refund', 'B2')])
         r = self.upload(raw).json()
@@ -154,11 +154,11 @@ class BankingTests(unittest.TestCase):
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM ledger WHERE invoice_id=? AND kind='payment'", (target['id'],)).fetchone()[0], 1)
 
     def test_only_finance_staff_import_statements(self):
-        self.assertEqual(self.upload(camt([]), client=self.login('tenant@haven.local', portal='tenant')).status_code, 403)
+        self.assertEqual(self.upload(camt([]), client=self.login('tenant@krein.local', portal='tenant')).status_code, 403)
 
     # ---------- the tenant's own bank accounts
     def test_tenants_save_their_bank_account_in_the_portal(self):
-        tenant = self.login('tenant@haven.local', portal='tenant')
+        tenant = self.login('tenant@krein.local', portal='tenant')
         self.assertEqual(tenant.post('/api/tenant/bank-accounts', json={'iban': 'NL91ABNA0417164301', 'holder': 'E Jansen'}).status_code, 422)
         self.assertEqual(tenant.post('/api/tenant/bank-accounts', json={'iban': 'nl91 abna 0417 1643 00', 'holder': 'E Jansen'}).status_code, 200)
         self.assertEqual(tenant.post('/api/tenant/bank-accounts', json={'iban': KNOWN_IBAN, 'holder': 'E Jansen'}).status_code, 409)
@@ -169,7 +169,7 @@ class BankingTests(unittest.TestCase):
 
     # ---------- "I have paid"
     def test_a_tenant_can_say_paid_and_the_bank_line_shows_it_with_the_receipt(self):
-        tenant = self.login('tenant@haven.local', portal='tenant')
+        tenant = self.login('tenant@krein.local', portal='tenant')
         mine = [i for i in tenant.get('/api/tenant/data').json()['invoices'] if i['balance_cents'] > 0]
         inv = mine[0]
         told = tenant.post(f"/api/tenant/invoices/{inv['id']}/paid", json={'amount': f"{inv['balance_cents'] / 100:.2f}", 'paid_on': date.today().isoformat(), 'note': 'paid via app'})
@@ -190,7 +190,7 @@ class BankingTests(unittest.TestCase):
         self.assertEqual(tenant.get('/api/tenant/data').json()['payment_notices'][0]['status'], 'confirmed')
 
     def test_a_notice_with_the_paying_account_is_booked_by_itself(self):
-        tenant = self.login('tenant@haven.local', portal='tenant')
+        tenant = self.login('tenant@krein.local', portal='tenant')
         inv = [i for i in tenant.get('/api/tenant/data').json()['invoices'] if i['balance_cents'] > 0][0]
         self.assertEqual(tenant.post(f"/api/tenant/invoices/{inv['id']}/paid", json={'amount': f"{inv['balance_cents'] / 100:.2f}", 'paid_on': date.today().isoformat(), 'iban': 'NL69 INGB 0123 4567 89'}).status_code, 200)
         r = self.upload(camt([(f"{inv['balance_cents'] / 100:.2f}", 'CRDT', 'E JANSEN', 'NL69INGB0123456789', 'huur', 'N2')])).json()
@@ -198,9 +198,9 @@ class BankingTests(unittest.TestCase):
 
     # ---------- a landlord who collects the rent himself
     def landlord_with_own_account(self):
-        platform = self.login('admin@haven.local')
+        platform = self.login('admin@krein.local')
         with db.connect() as conn:
-            tc = dict(conn.execute("SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id JOIN users u ON u.id=a.user_id WHERE u.email='tenant@haven.local'").fetchone())
+            tc = dict(conn.execute("SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id JOIN users u ON u.id=a.user_id WHERE u.email='tenant@krein.local'").fetchone())
         for old in self.manager.get('/api/data?company_id=1').json()['portfolios']:
             self.manager.post(f'/api/portfolios/{old["id"]}/archive')
         owner = self.manager.post('/api/owners', json={'company_id': 1, 'name': 'Rob Rentier', 'email': 'rob@example.com', 'phone': '', 'payout_details': ''}).json()['id']

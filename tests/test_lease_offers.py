@@ -23,11 +23,11 @@ class LeaseOfferTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.staff = TestClient(app)
-        r = self.staff.post('/api/login', json={'email': 'manager@haven.local', 'password': 'HavenDemo!2026'})
+        r = self.staff.post('/api/login', json={'email': 'manager@krein.local', 'password': 'KreinDemo!2026'})
         self.staff.headers['X-CSRF-Token'] = r.json()['csrf']
         self.tenant = TestClient(app)
-        r = self.tenant.post('/api/login', headers={'X-Haven-Portal': 'tenant'}, json={'email': 'tenant@haven.local', 'password': 'HavenDemo!2026'})
-        self.th = {'X-Haven-Portal': 'tenant', 'X-CSRF-Token': r.json()['csrf']}
+        r = self.tenant.post('/api/login', headers={'X-Krein-Portal': 'tenant'}, json={'email': 'tenant@krein.local', 'password': 'KreinDemo!2026'})
+        self.th = {'X-Krein-Portal': 'tenant', 'X-CSRF-Token': r.json()['csrf']}
         self.staff.post('/api/templates/starters', json={'company_id': 1})
         data = self.staff.get('/api/data?company_id=1').json()
         self.template = next(t['id'] for t in data['doc_templates'] if t['kind'] == 'Lease')
@@ -103,7 +103,7 @@ class LeaseOfferTests(unittest.TestCase):
         self.assertNotIn(second_id, [o['id'] for o in self.tenant_offers()])
         # finance cannot send contracts
         fin = TestClient(app)
-        r = fin.post('/api/login', json={'email': 'finance@haven.local', 'password': 'HavenDemo!2026'})
+        r = fin.post('/api/login', json={'email': 'finance@krein.local', 'password': 'KreinDemo!2026'})
         fin.headers['X-CSRF-Token'] = r.json()['csrf']
         self.assertEqual(fin.post('/api/lease-offers', json=self.offer_body()).status_code, 403)
         fin.close()

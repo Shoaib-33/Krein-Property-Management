@@ -23,7 +23,7 @@ class WorkOrderTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.m = TestClient(app)
-        self.m.headers['X-CSRF-Token'] = self.m.post('/api/login', json={'email': 'manager@haven.local', 'password': 'HavenDemo!2026'}).json()['csrf']
+        self.m.headers['X-CSRF-Token'] = self.m.post('/api/login', json={'email': 'manager@krein.local', 'password': 'KreinDemo!2026'}).json()['csrf']
 
     def tearDown(self):
         self.m.close()

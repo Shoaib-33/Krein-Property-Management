@@ -12,7 +12,7 @@
 
   let ui = null, info = null, csrf = '', busy = false, log = [];  // the conversation lives only until the page is refreshed
 
-  const headers = extra => Object.assign({'Content-Type': 'application/json'}, portal ? {'X-Haven-Portal': portal} : {}, extra || {});
+  const headers = extra => Object.assign({'Content-Type': 'application/json'}, portal ? {'X-Krein-Portal': portal} : {}, extra || {});
   async function ensureCsrf() {
     if (csrf) return csrf;
     const r = await fetch('/api/me', {headers: headers(), credentials: 'same-origin'});
@@ -76,7 +76,7 @@
     typing.firstChild.classList.add('typing'); typing.firstChild.innerHTML = '<i></i><i></i><i></i>';
     try {
       const token = await ensureCsrf();
-      const r = await fetch('/api/assistant/chat', {method: 'POST', credentials: 'same-origin', headers: headers({'X-CSRF-Token': token}), body: JSON.stringify({message: text, history, page: currentPage(), lang: window.havenLang || 'en'})});
+      const r = await fetch('/api/assistant/chat', {method: 'POST', credentials: 'same-origin', headers: headers({'X-CSRF-Token': token}), body: JSON.stringify({message: text, history, page: currentPage(), lang: window.kreinLang || 'en'})});
       if (!r.ok) throw new Error(r.status === 401 ? 'Please sign in again.' : 'The helper is unavailable right now.');
       const data = await r.json();
       typing.remove();

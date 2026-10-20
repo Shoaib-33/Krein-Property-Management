@@ -11,7 +11,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 
 
 class PriorityTests(unittest.TestCase):
@@ -25,8 +25,8 @@ class PriorityTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.manager = self.login('manager@haven.local')
-        self.tenant = self.login('tenant@haven.local', portal='tenant')
+        self.manager = self.login('manager@krein.local')
+        self.tenant = self.login('tenant@krein.local', portal='tenant')
         self.contract = self.tenant.get('/api/tenant/data').json()['contracts'][0]['id']
 
     def tearDown(self):
@@ -38,7 +38,7 @@ class PriorityTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)

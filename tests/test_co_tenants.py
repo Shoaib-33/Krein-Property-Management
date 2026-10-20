@@ -13,7 +13,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 PARTNER_IBAN = 'NL31ABNA0000000002'
 OTHER_IBAN = 'NL02RABO0123456789'
 
@@ -39,9 +39,9 @@ class CoTenantTests(unittest.TestCase):
         self.clients = []
         with db.transaction() as conn:
             conn.execute('UPDATE invoices SET released_at=COALESCE(released_at,?)', (db.now(),))
-        self.manager = self.login('manager@haven.local')
-        self.finance = self.login('finance@haven.local')
-        self.main = self.login('tenant@haven.local', portal='tenant')
+        self.manager = self.login('manager@krein.local')
+        self.finance = self.login('finance@krein.local')
+        self.main = self.login('tenant@krein.local', portal='tenant')
         self.contract = self.main.get('/api/tenant/data').json()['contracts'][0]['id']
 
     def tearDown(self):
@@ -53,7 +53,7 @@ class CoTenantTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)
@@ -224,7 +224,7 @@ class CoTenantTests(unittest.TestCase):
         from unittest.mock import patch
         tid, partner = self.add_partner()
         inv = self.oldest_open(partner)
-        env = {'HAVEN_SMTP_HOST': 'smtp.example.test', 'HAVEN_SMTP_PORT': '587', 'HAVEN_SMTP_FROM': 'haven@example.test', 'HAVEN_PUBLIC_URL': 'https://haven.example.test'}
+        env = {'KREIN_SMTP_HOST': 'smtp.example.test', 'KREIN_SMTP_PORT': '587', 'KREIN_SMTP_FROM': 'krein@example.test', 'KREIN_PUBLIC_URL': 'https://krein.example.test'}
         with patch.dict(os.environ, env), patch('app.email_delivery.smtplib.SMTP') as smtp, patch('app.email_delivery.kick', lambda: None):
             server = smtp.return_value
             server.__enter__.return_value = server

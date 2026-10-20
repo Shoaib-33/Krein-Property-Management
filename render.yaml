@@ -1,7 +1,7 @@
 # Render blueprint for a public DEMO (free plan: the sample data is loaded again whenever the service restarts).
 services:
   - type: web
-    name: haven-demo
+    name: krein-demo
     runtime: docker
     plan: free
     # Free: the service sleeps after 15 minutes without visitors and every restart starts again from the sample data
@@ -12,21 +12,21 @@ services:
     #   sizeGB: 1
     healthCheckPath: /api/health
     envVars:
-      - key: HAVEN_SAMPLE_DATA
-        value: "1"           # the sample data from sample-data/ (households, co-tenants, bank statements); use HAVEN_DEMO_SEED=1 instead for the small built-in demo
-      - key: HAVEN_SECURE_COOKIES
+      - key: KREIN_SAMPLE_DATA
+        value: "1"           # the sample data from sample-data/ (households, co-tenants, bank statements); use KREIN_DEMO_SEED=1 instead for the small built-in demo
+      - key: KREIN_SECURE_COOKIES
         value: "1"
-      - key: HAVEN_DATA_DIR
+      - key: KREIN_DATA_DIR
         value: /data
-      - key: HAVEN_PUBLIC_URL
+      - key: KREIN_PUBLIC_URL
         sync: false          # paste your https://....onrender.com address after the first deploy
-      - key: HAVEN_TIMEZONE
-        sync: false          # the country whose date Haven shows, e.g. Europe/Amsterdam or Asia/Dhaka (servers run on UTC, which can be a day behind)
-      - key: HAVEN_DEMO_PASSWORD
+      - key: KREIN_TIMEZONE
+        sync: false          # the country whose date Krein shows, e.g. Europe/Amsterdam or Asia/Dhaka (servers run on UTC, which can be a day behind)
+      - key: KREIN_DEMO_PASSWORD
         sync: false          # REQUIRED for a public demo: the password of every demo login (12+ characters, your own choice)
       - key: GROQ_API_KEY
         sync: false          # optional: turns the Help chat into the AI assistant (free key from console.groq.com)
-      - key: HAVEN_GROQ_MODEL
+      - key: KREIN_GROQ_MODEL
         value: openai/gpt-oss-20b
       - key: GEMINI_API_KEY
         sync: false          # optional fallback for the Help chat

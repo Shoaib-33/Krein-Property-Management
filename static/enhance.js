@@ -156,7 +156,7 @@
       [...body.rows].filter(tr => !tr.hidden).forEach(tr => lines.push([...tr.cells].map(cell).join(',')));
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob(['﻿' + lines.join('\r\n')], {type: 'text/csv'}));
-      a.download = `haven-${state.page}.csv`; a.click();
+      a.download = `krein-${state.page}.csv`; a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 1000);
       toast(`Exported ${lines.length - 1} rows.`);
     });
@@ -167,7 +167,7 @@
   const pages = () => navGroups.flatMap(g => g[1].map(([id, label, ic]) => ({id, label, ic, group: g[0]}))).filter(p => allowedPage(p.id));
   function buildItems(query) {
     const q = norm(query).trim();
-    const recents = store.get('haven_recent', []);
+    const recents = store.get('krein_recent', []);
     const items = [];
     const match = text => !q || q.split(/\s+/).every(w => norm(text).includes(w));
     pages().forEach(p => { if (match(p.label + ' ' + p.group + ' go open')) items.push({kind: 'Page', ic: p.ic, title: p.label, sub: p.group.toLowerCase(), run: () => go(p.id), key: 'p:' + p.id}); });
@@ -221,8 +221,8 @@
   }
   function choose(i) {
     const item = results[i]; if (!item) return;
-    const recents = [item.key, ...store.get('haven_recent', []).filter(k => k !== item.key)].slice(0, 8);
-    store.set('haven_recent', recents);
+    const recents = [item.key, ...store.get('krein_recent', []).filter(k => k !== item.key)].slice(0, 8);
+    store.set('krein_recent', recents);
     palette.close();
     item.run();
   }

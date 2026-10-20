@@ -18,7 +18,7 @@
   const badge = s => '<span class="badge ' + (tone[s] || 'gray') + '">' + esc(s[0].toUpperCase() + s.slice(1)) + '</span>';
 
   async function call(url, opt = {}) {
-    const h = {...(opt.headers || {}), 'X-Haven-Portal': 'owner'};
+    const h = {...(opt.headers || {}), 'X-Krein-Portal': 'owner'};
     if (S.csrf) h['X-CSRF-Token'] = S.csrf;
     if (opt.body && !(opt.body instanceof FormData)) { h['Content-Type'] = 'application/json'; opt.body = JSON.stringify(opt.body); }
     const r = await fetch(url, {...opt, headers: h});

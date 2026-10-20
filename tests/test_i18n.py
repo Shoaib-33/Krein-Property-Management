@@ -10,7 +10,7 @@ CONDITIONAL = re.compile(r'\{(\d+)\?([^|{}]*)\|([^{}]*)\}')
 
 def load_dictionary():
     text = (STATIC / 'i18n-nl.js').read_text(encoding='utf-8')
-    prefix, suffix = 'window.HAVEN_NL = ', ';'
+    prefix, suffix = 'window.KREIN_NL = ', ';'
     assert text.startswith(prefix)
     return json.loads(text[len(prefix):].rstrip().rstrip(suffix))
 
@@ -50,7 +50,7 @@ class DutchDictionaryTests(unittest.TestCase):
         self.assertLess(html.index('i18n-nl.js'), html.index('i18n.js'))
         self.assertLess(html.index('i18n.js'), html.index('/static/app.js'))
         script = (STATIC / 'i18n.js').read_text(encoding='utf-8')
-        for needle in ("haven.lang", "data-lang", "nl-NL", "MutationObserver"):
+        for needle in ("krein.lang", "data-lang", "nl-NL", "MutationObserver"):
             self.assertIn(needle, script)
 
 

@@ -22,8 +22,8 @@ class OwnerFullAccessTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.platform = self.login('admin@haven.local')
-        self.manager = self.login('manager@haven.local')
+        self.platform = self.login('admin@krein.local')
+        self.manager = self.login('manager@krein.local')
 
     def tearDown(self):
         for c in self.clients:
@@ -31,10 +31,10 @@ class OwnerFullAccessTests(unittest.TestCase):
         db.DATA_DIR = self.original_dir
         self.temp.cleanup()
 
-    def login(self, email, password='HavenDemo!2026', portal=None):
+    def login(self, email, password='KreinDemo!2026', portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)

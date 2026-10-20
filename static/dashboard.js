@@ -5,7 +5,7 @@
   if (typeof renderPage !== 'function') return;
   const prevRender = renderPage;
   const view = {months: 6, hide: new Set()};
-  try { view.months = Number(localStorage.getItem('haven_dash_months')) === 12 ? 12 : 6; } catch { /* storage unavailable */ }
+  try { view.months = Number(localStorage.getItem('krein_dash_months')) === 12 ? 12 : 6; } catch { /* storage unavailable */ }
 
   renderPage = () => {
     const html = prevRender();
@@ -238,7 +238,7 @@
     if (el.dataset.dashGo) { state.page = el.dataset.dashGo; state.filter = 'All'; history.replaceState(null, '', '#' + state.page); render(); window.scrollTo(0, 0); return true; }
     if (el.dataset.dashSeries) { const k = el.dataset.dashSeries; view.hide.has(k) ? view.hide.delete(k) : view.hide.add(k); if (view.hide.size === 2) view.hide.clear(); render(); return true; }
     if (el.dataset.dashShift) { state.overviewPeriod = shift(state.overviewPeriod || todayStr().slice(0, 7), Number(el.dataset.dashShift)); render(); return true; }
-    if (el.dataset.dashRange) { const v = el.dataset.dashRange; view.months = v === 'year' ? 'year' : Number(v); if (v !== 'year') { try { localStorage.setItem('haven_dash_months', view.months); } catch { /* storage unavailable */ } } render(); return true; }
+    if (el.dataset.dashRange) { const v = el.dataset.dashRange; view.months = v === 'year' ? 'year' : Number(v); if (v !== 'year') { try { localStorage.setItem('krein_dash_months', view.months); } catch { /* storage unavailable */ } } render(); return true; }
     return false;
   };
   document.addEventListener('click', ev => { const el = ev.target.closest && ev.target.closest('#dash [data-dash-period],#dash [data-dash-go],#dash [data-dash-series],#dash [data-dash-range],.period-bar [data-dash-period],.period-bar [data-dash-shift]'); if (el && !el.disabled && act(el)) ev.stopPropagation(); }, true);

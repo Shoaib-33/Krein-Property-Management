@@ -17,7 +17,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 OWNER_PASSWORD = 'OwnerStrongPass-2026'
 
 
@@ -34,8 +34,8 @@ class HardeningTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.manager = self.login('manager@haven.local')
-        self.platform = self.login('admin@haven.local')
+        self.manager = self.login('manager@krein.local')
+        self.platform = self.login('admin@krein.local')
         self.data = self.manager.get('/api/data?company_id=1').json()
 
     def tearDown(self):
@@ -47,7 +47,7 @@ class HardeningTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)
@@ -56,7 +56,7 @@ class HardeningTests(unittest.TestCase):
 
     def tenant_contract(self):
         with db.connect() as conn:
-            return dict(conn.execute("SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id JOIN users u ON u.id=a.user_id WHERE u.email='tenant@haven.local'").fetchone())
+            return dict(conn.execute("SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id JOIN users u ON u.id=a.user_id WHERE u.email='tenant@krein.local'").fetchone())
 
     def landlord_for(self, property_ids, email='landlord@example.com', name='Landlord L'):
         """An owner with a login and management access whose portfolio holds these units."""
@@ -94,7 +94,7 @@ class HardeningTests(unittest.TestCase):
 
     # ---------- email
     def test_invoice_emails_wait_in_the_queue_until_email_is_set_up(self):
-        with mock.patch.dict(os.environ, {'HAVEN_SMTP_HOST': '', 'HAVEN_SMTP_FROM': '', 'HAVEN_PUBLIC_URL': ''}):
+        with mock.patch.dict(os.environ, {'KREIN_SMTP_HOST': '', 'KREIN_SMTP_FROM': '', 'KREIN_PUBLIC_URL': ''}):
             run = self.manager.post('/api/invoices/run', json={'company_id': 1, 'period': AHEAD})
             self.assertEqual(run.status_code, 200, run.text)
             self.assertFalse(run.json()['email_delivery']['configured'])
@@ -106,7 +106,7 @@ class HardeningTests(unittest.TestCase):
     def test_landlord_gets_alerts_for_his_units_only_and_can_invite_and_export_his_tenant(self):
         c = self.tenant_contract()
         landlord, _ = self.landlord_for([c['property_id']])
-        tenant = self.login('tenant@haven.local', portal='tenant')
+        tenant = self.login('tenant@krein.local', portal='tenant')
         r = tenant.post('/api/tenant/repairs', data={'contract_id': c['id'], 'title': 'Broken window', 'description': 'Glass cracked'})
         self.assertEqual(r.status_code, 200, r.text)
         notes = landlord.get('/api/data?company_id=1').json()['notifications']
@@ -133,7 +133,7 @@ class HardeningTests(unittest.TestCase):
         c = self.tenant_contract()
         landlord, owner = self.landlord_for([c['property_id']])
         portfolio = landlord.get('/api/data?company_id=1').json()['portfolios'][0]['id']
-        finance = self.login('finance@haven.local')
+        finance = self.login('finance@krein.local')
         last = (date.today().replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
         made = finance.post('/api/owner-statements/generate', json={'company_id': 1, 'portfolio_id': portfolio, 'period': last})
         self.assertEqual(made.status_code, 200, made.text)
@@ -147,7 +147,7 @@ class HardeningTests(unittest.TestCase):
         with db.transaction() as conn:
             conn.execute('DROP TRIGGER invoice_no_update')
             conn.execute('UPDATE invoices SET due_date=?,released_at=COALESCE(released_at,?) WHERE id=?', ((date.today() - timedelta(days=100)).isoformat(), db.now(), invoice['id']))
-        finance = self.login('finance@haven.local')
+        finance = self.login('finance@krein.local')
         self.assertEqual(finance.post('/api/arrears/run', json={'company_id': 1}).status_code, 200)
         case = next(c for c in self.manager.get('/api/data?company_id=1').json()['arrears_cases'] if c['invoice_id'] == invoice['id'])
         step = lambda body: self.manager.post(f"/api/arrears/cases/{case['id']}/step", json=body)
@@ -198,7 +198,7 @@ class HardeningTests(unittest.TestCase):
             t = conn.execute('SELECT * FROM tenants WHERE id=?', (c['tenant_id'],)).fetchone()
             self.assertTrue(t['erased_at'])
             self.assertTrue(t['name'].startswith('Former tenant'))
-            self.assertNotIn('@haven', t['email'])
+            self.assertNotIn('@krein', t['email'])
             msgs = conn.execute('SELECT DISTINCT body FROM portal_messages WHERE contract_id=?', (c['id'],)).fetchall()
             self.assertEqual([m[0] for m in msgs], ['[removed]'])
             # the books still add up and messages stay protected outside an erasure

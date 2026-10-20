@@ -46,8 +46,8 @@ async def lifespan(app):
             pass
 
 
-# the interactive API pages (/docs, /redoc, /openapi.json) are off unless HAVEN_API_DOCS=1 (handy while developing)
-_docs = os.environ.get('HAVEN_API_DOCS') == '1'
+# the interactive API pages (/docs, /redoc, /openapi.json) are off unless KREIN_API_DOCS=1 (handy while developing)
+_docs = os.environ.get('KREIN_API_DOCS') == '1'
 app = FastAPI(title='Krein property management', version='1.0.0', lifespan=lifespan,
               docs_url='/docs' if _docs else None, redoc_url='/redoc' if _docs else None, openapi_url='/openapi.json' if _docs else None)
 
@@ -74,21 +74,21 @@ MAX_REPAIR_PHOTOS = 5
 
 
 def video_limit():
-    """The largest video a tenant may attach, in bytes: HAVEN_MAX_VIDEO_MB, default 50 MB (at most 500)."""
+    """The largest video a tenant may attach, in bytes: KREIN_MAX_VIDEO_MB, default 50 MB (at most 500)."""
     try:
-        mb = float(os.environ.get('HAVEN_MAX_VIDEO_MB', '50'))
+        mb = float(os.environ.get('KREIN_MAX_VIDEO_MB', '50'))
     except ValueError:
         mb = 50
     return int(max(1, min(500, mb)) * 1024 * 1024)
 
 
 class BodyLimit:
-    """Refuse a request body above HAVEN_MAX_BODY_MB (default 12 MB) before it is read, so nobody can fill the disk or memory
+    """Refuse a request body above KREIN_MAX_BODY_MB (default 12 MB) before it is read, so nobody can fill the disk or memory
     with huge uploads (files themselves are limited to 10 MB further on)."""
     def __init__(self, inner):
         self.inner = inner
         try:
-            self.limit = int(float(os.environ.get('HAVEN_MAX_BODY_MB', '12')) * 1024 * 1024)
+            self.limit = int(float(os.environ.get('KREIN_MAX_BODY_MB', '12')) * 1024 * 1024)
         except ValueError:
             self.limit = 12 * 1024 * 1024
 
@@ -138,7 +138,7 @@ async def security_headers(request, call_next):
     response.headers['Referrer-Policy'] = 'same-origin'   # never sent to other sites; the landlord address uses it to pick its own session for file downloads
     response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     response.headers['Cache-Control'] = 'no-store'
-    if os.environ.get('HAVEN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
+    if os.environ.get('KREIN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
     if response.headers.get('content-type', '').startswith(('application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'video/')):
         # only Krein's own pages may show a PDF or a receipt photo inside the portal viewer
@@ -304,7 +304,7 @@ def scheduled_invoice_periods(today=None):
 def scheduled_invoice_period(today=None):
     today = today or local_today()
     try:
-        run_day = int(os.environ.get('HAVEN_RENT_BILL_DAY', '15'))
+        run_day = int(os.environ.get('KREIN_RENT_BILL_DAY', '15'))
     except ValueError:
         run_day = 15
     run_day = max(1, min(28, run_day))
@@ -418,7 +418,7 @@ async def email_delivery_loop():
 
 
 async def bank_connection_loop():
-    """The automatic bank connection (app/ponto.py) looks for new payments every HAVEN_PONTO_SYNC_MINUTES; it does nothing until the keys are set."""
+    """The automatic bank connection (app/ponto.py) looks for new payments every KREIN_PONTO_SYNC_MINUTES; it does nothing until the keys are set."""
     from .ponto import settings, sync_all, sync_minutes
     await asyncio.sleep(90)   # let the server start first
     while True:
@@ -471,14 +471,14 @@ def login(data: dict, request: Request):
     if not valid:
         raise HTTPException(401, 'Email or password is incorrect.')
     response = JSONResponse({'csrf': csrf, 'name': user['name']})
-    portal = request.headers.get('X-Haven-Portal', '')
+    portal = request.headers.get('X-Krein-Portal', '')
     # the developer has an own sign-in (/developer) and an own session; nobody else signs in there
     if (portal == 'developer') != bool(user['global_admin']) and portal in ('', 'developer'):
         with transaction() as conn:
             conn.execute('DELETE FROM sessions WHERE token_hash=?', (token_hash(token),))
         raise HTTPException(403, 'This is a developer account: sign in at /developer.' if user['global_admin'] else 'This sign-in is for the developer only. Use the normal sign-in page.')
-    cookie = 'haven_' + request.headers.get('X-Haven-Portal', '') + '_session' if request.headers.get('X-Haven-Portal', '') in PORTALS else 'haven_session'
-    response.set_cookie(cookie, token, httponly=True, samesite='strict', secure=os.environ.get('HAVEN_SECURE_COOKIES') == '1', max_age=86400)
+    cookie = 'krein_' + request.headers.get('X-Krein-Portal', '') + '_session' if request.headers.get('X-Krein-Portal', '') in PORTALS else 'krein_session'
+    response.set_cookie(cookie, token, httponly=True, samesite='strict', secure=os.environ.get('KREIN_SECURE_COOKIES') == '1', max_age=86400)
     return response
 
 
@@ -1133,7 +1133,7 @@ async def read_upload(file):
 
 
 async def read_video(file):
-    """An MP4, MOV or WebM video up to HAVEN_MAX_VIDEO_MB. The type is read from the file itself, not from its name."""
+    """An MP4, MOV or WebM video up to KREIN_MAX_VIDEO_MB. The type is read from the file itself, not from its name."""
     limit = video_limit()
     content = await file.read(limit + 1)
     await file.close()
@@ -1893,7 +1893,7 @@ def pdf_response(title, lines, filename, company=None):
     styles.add(ParagraphStyle(name='ReportSection',parent=styles['Heading2'],fontName='Helvetica-Bold',fontSize=11,leading=15,textColor=green,spaceBefore=10,spaceAfter=5))
     styles.add(ParagraphStyle(name='ReportBody',parent=styles['BodyText'],fontSize=9,leading=14,textColor=ink,spaceAfter=3))
     styles.add(ParagraphStyle(name='ReportCallout',parent=styles['BodyText'],fontSize=9,leading=14,textColor=ink,backColor=pale,borderColor=line_color,borderWidth=.6,borderPadding=8,spaceBefore=5,spaceAfter=8))
-    story=[Table([[Paragraph('<b>HAVEN</b><br/><font size="7">PROPERTY MANAGEMENT</font>',styles['ReportMeta']),Paragraph('WORKSPACE RECORD',styles['ReportMeta'])]],colWidths=[85*mm,85*mm],style=TableStyle([('TEXTCOLOR',(0,0),(0,0),green),('ALIGN',(1,0),(1,0),'RIGHT'),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)])),Spacer(1,12),Paragraph(escape(title),styles['ReportTitle']),Spacer(1,7),HRFlowable(width='100%',thickness=1,color=line_color),Spacer(1,12)]
+    story=[Table([[Paragraph('<b>KREIN</b><br/><font size="7">PROPERTY MANAGEMENT</font>',styles['ReportMeta']),Paragraph('WORKSPACE RECORD',styles['ReportMeta'])]],colWidths=[85*mm,85*mm],style=TableStyle([('TEXTCOLOR',(0,0),(0,0),green),('ALIGN',(1,0),(1,0),'RIGHT'),('VALIGN',(0,0),(-1,-1),'TOP'),('LEFTPADDING',(0,0),(-1,-1),0),('RIGHTPADDING',(0,0),(-1,-1),0)])),Spacer(1,12),Paragraph(escape(title),styles['ReportTitle']),Spacer(1,7),HRFlowable(width='100%',thickness=1,color=line_color),Spacer(1,12)]
     section_names={'contract history','ledger','communication timeline','document index (source attachments remain in the document vault)','actual allocated costs:','your allocated cost calculation:','review summary','allocation details'}
     for index,value in enumerate(lines):
         text=str(value).strip()
@@ -2044,7 +2044,7 @@ def export_csv(company_id: int, user=Depends(current_user)):
     writer.writerow(['ID','Recorded at','Contract','Invoice','Type','Amount (cents)','Reverses entry','Note'])
     for row in rows:
         writer.writerow([("'" + value if isinstance(value, str) and value.startswith(('=','+','-','@')) else value) for value in row])
-    return Response(out.getvalue(), media_type='text/csv', headers={'Content-Disposition':'attachment; filename="haven-ledger.csv"'})
+    return Response(out.getvalue(), media_type='text/csv', headers={'Content-Disposition':'attachment; filename="krein-ledger.csv"'})
 
 
 @app.get('/api/audit/verify')

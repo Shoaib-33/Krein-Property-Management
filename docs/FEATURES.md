@@ -24,31 +24,31 @@ Alternatively, after installing dependencies, run `powershell -ExecutionPolicy B
 
 When the server is running, Krein automatically creates the next month's invoice for each active tenancy on the 15th of the month and adds an in-app bill alert for tenants with an activated portal account. When SMTP is configured, Krein also emails each newly issued invoice to the tenant as a PDF attachment. It retries during the rest of the month without creating duplicate invoices. If the server was unavailable around the run date, it catches up for the current month during the first three days. The invoice is due on the first day of its billing month and appears in the **Rent & payments** page with a PDF download.
 
-Set HAVEN_RENT_BILL_DAY to a day from 1 to 28 to change the monthly run date. The default is 15. Bills appear in the tenant portal. Overdue bills create an in-portal alert and staff follow-up task; optional SMTP can also send friendly overdue emails on day 1 and day 8. These are not statutory notices. Tenants pay by bank transfer; payments are matched from imported bank statements (or automatically through Ponto), or tenants upload proof for staff verification.
+Set KREIN_RENT_BILL_DAY to a day from 1 to 28 to change the monthly run date. The default is 15. Bills appear in the tenant portal. Overdue bills create an in-portal alert and staff follow-up task; optional SMTP can also send friendly overdue emails on day 1 and day 8. These are not statutory notices. Tenants pay by bank transfer; payments are matched from imported bank statements (or automatically through Ponto), or tenants upload proof for staff verification.
 
 #### SMTP invoice and arrears email
 
-For local use, copy `.env.example` to `.env` in the project folder and fill in your SMTP provider's values. Krein loads `.env` automatically when it starts; values already set by the operating system or deployment take precedence. Keep `.env` private and out of source control. On Hugging Face, set the same names in Space Variables and Secrets. SMTP needs `HAVEN_SMTP_HOST`, `HAVEN_SMTP_FROM`, and `HAVEN_PUBLIC_URL`; set `HAVEN_SMTP_PORT` (default `587`), `HAVEN_SMTP_USERNAME`, `HAVEN_SMTP_PASSWORD`, and optionally `HAVEN_SMTP_STARTTLS` (default `1`) or `HAVEN_SMTP_SSL` (default `0`) for your provider. If SMTP is not configured, Krein continues using in-portal invoices and alerts and staff tasks. Emails go out on their own background loop every 2 minutes (buttons never wait for the mail server). Failed deliveries retry after 5, 15, 60 and 180 minutes, up to five times; finance staff can retry failed invoice or reminder emails from the relevant page. Invoice emails are queued even while SMTP is not set up yet and go out once it is (invoice emails older than 30 days are then skipped); the Invoices page shows a notice while email is not set up or when deliveries failed. Invoice messages include the PDF invoice; overdue messages are friendly reminders only. Krein does not automatically send a formal 14-day notice or postal letters.
+For local use, copy `.env.example` to `.env` in the project folder and fill in your SMTP provider's values. Krein loads `.env` automatically when it starts; values already set by the operating system or deployment take precedence. Keep `.env` private and out of source control. On Hugging Face, set the same names in Space Variables and Secrets. SMTP needs `KREIN_SMTP_HOST`, `KREIN_SMTP_FROM`, and `KREIN_PUBLIC_URL`; set `KREIN_SMTP_PORT` (default `587`), `KREIN_SMTP_USERNAME`, `KREIN_SMTP_PASSWORD`, and optionally `KREIN_SMTP_STARTTLS` (default `1`) or `KREIN_SMTP_SSL` (default `0`) for your provider. If SMTP is not configured, Krein continues using in-portal invoices and alerts and staff tasks. Emails go out on their own background loop every 2 minutes (buttons never wait for the mail server). Failed deliveries retry after 5, 15, 60 and 180 minutes, up to five times; finance staff can retry failed invoice or reminder emails from the relevant page. Invoice emails are queued even while SMTP is not set up yet and go out once it is (invoice emails older than 30 days are then skipped); the Invoices page shows a notice while email is not set up or when deliveries failed. Invoice messages include the PDF invoice; overdue messages are friendly reminders only. Krein does not automatically send a formal 14-day notice or postal letters.
 
 ### Demo accounts
 
 | Email | Role | Password |
 |---|---|---|
-| `admin@haven.local` | Administrator; both companies | `HavenDemo!2026` |
-| `finance@haven.local` | Finance; Krein Residential only | `HavenDemo!2026` |
-| `manager@haven.local` | Manager; Krein Residential only | `HavenDemo!2026` |
-| `tenant@haven.local` | Fictional tenant; only Emma's tenancy | `HavenDemo!2026` |
-| `contractor@haven.local` | Fictional contractor; one assigned repair only | `HavenDemo!2026` |
+| `admin@krein.local` | Administrator; both companies | `KreinDemo!2026` |
+| `finance@krein.local` | Finance; Krein Residential only | `KreinDemo!2026` |
+| `manager@krein.local` | Manager; Krein Residential only | `KreinDemo!2026` |
+| `tenant@krein.local` | Fictional tenant; only Emma's tenancy | `KreinDemo!2026` |
+| `contractor@krein.local` | Fictional contractor; one assigned repair only | `KreinDemo!2026` |
 
 All sample names, receipts and financial entries are fictional. `demo` initializes only an empty database and never resets existing records. These credentials are for a loopback-only demonstration, not a public deployment.
 
 ### Hugging Face demo Space
 
-The root `Dockerfile` and Space metadata support a Docker Space on port 7860. This deployment starts an empty workspace and creates only the initial administrator and company; it does not import the local database or run `manage.py demo`. Set `HAVEN_BOOTSTRAP_DEVELOPER_EMAIL` as a Space variable and `HAVEN_BOOTSTRAP_DEVELOPER_PASSWORD` as a Space secret (12 or more characters). Optional `HAVEN_BOOTSTRAP_DEVELOPER_NAME` and `HAVEN_BOOTSTRAP_COMPANY_NAME` variables set their display names. The database and uploads are stored under `/data`; attach persistent storage at `/data` if records must survive Space restarts. Without persistent storage, treat the Space as disposable demo data.
+The root `Dockerfile` and Space metadata support a Docker Space on port 7860. This deployment starts an empty workspace and creates only the initial administrator and company; it does not import the local database or run `manage.py demo`. Set `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` as a Space variable and `KREIN_BOOTSTRAP_DEVELOPER_PASSWORD` as a Space secret (12 or more characters). Optional `KREIN_BOOTSTRAP_DEVELOPER_NAME` and `KREIN_BOOTSTRAP_COMPANY_NAME` variables set their display names. The database and uploads are stored under `/data`; attach persistent storage at `/data` if records must survive Space restarts. Without persistent storage, treat the Space as disposable demo data.
 
 The staff portal is `/` and the tenant portal is `/tenant` on the same Space URL. After signing in as the administrator, create a tenant and activate their tenant portal account from the staff workspace.
 
-To enable arrears email on the Space, add `HAVEN_SMTP_HOST`, `HAVEN_SMTP_PORT`, `HAVEN_SMTP_FROM`, and `HAVEN_PUBLIC_URL` as variables, and add `HAVEN_SMTP_USERNAME` / `HAVEN_SMTP_PASSWORD` as secrets if your provider requires authentication. Use the Space's HTTPS URL for `HAVEN_PUBLIC_URL`. Set either `HAVEN_SMTP_STARTTLS=1` (default) or `HAVEN_SMTP_SSL=1` according to the provider. Email remains disabled until the required host, sender, and public URL are set.
+To enable arrears email on the Space, add `KREIN_SMTP_HOST`, `KREIN_SMTP_PORT`, `KREIN_SMTP_FROM`, and `KREIN_PUBLIC_URL` as variables, and add `KREIN_SMTP_USERNAME` / `KREIN_SMTP_PASSWORD` as secrets if your provider requires authentication. Use the Space's HTTPS URL for `KREIN_PUBLIC_URL`. Set either `KREIN_SMTP_STARTTLS=1` (default) or `KREIN_SMTP_SSL=1` according to the provider. Email remains disabled until the required host, sender, and public URL are set.
 
 Tenant portal: **http://127.0.0.1:8000/tenant**. Contractor portal: **http://127.0.0.1:8000/contractor**. The first `demo` startup initializes sample portal accounts. On an existing fictional Krein demo database, running `python manage.py demo` once adds the sample accounts and one fictional assigned repair; it does not reset existing data. For real tenants, staff use **Settings → Tenant access → Create link** and send the one-use, 7-day activation link through their existing secure communication channel.
 
@@ -111,7 +111,7 @@ Tests use isolated temporary databases. They do not change demo data.
 Set a separate data directory and create your administrator. No default password is created:
 
 ```powershell
-$env:HAVEN_DATA_DIR = 'E:\Dutch\data-clean'
+$env:KREIN_DATA_DIR = 'E:\Dutch\data-clean'
 python manage.py create-admin
 python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
@@ -126,7 +126,7 @@ Stop writes while backing up attachments and run:
 python manage.py backup
 ```
 
-The ZIP includes a consistent SQLite snapshot and uploaded files. Protect backups as personal data. Restore into a separate directory, then select it using `HAVEN_DATA_DIR`.
+The ZIP includes a consistent SQLite snapshot and uploaded files. Protect backups as personal data. Restore into a separate directory, then select it using `KREIN_DATA_DIR`.
 
 ## Deployment and specification limits
 
@@ -134,13 +134,13 @@ This is an expanded local implementation, **not a certified production deploymen
 
 Legal rules are not certified. Stored reference rules are informational, not an executable legal engine. Service-charge settlement currently allocates costs to individual units by occupancy days. It produces tenant-specific downloadable statements but does not implement all Dutch statutory allocation methods or independently verify costs. Deposit intervals and repair targets need legal review. Tenancy exports are summaries and document indexes, not merged and redacted tribunal bundles. The application must not be represented as automatically ensuring legal compliance.
 
-For an HTTPS deployment, configure `HAVEN_SECURE_COOKIES=1`, a trusted reverse proxy and separate runtime secrets. Behind a reverse proxy set `HAVEN_TRUSTED_PROXY_HOPS` to the number of proxies in front of Krein (the Docker image sets 1, right for Render); the visitor's address for the login limit is then read from the part of `X-Forwarded-For` that your own proxy wrote, so it cannot be forged. Set it to 0 when Krein is reached directly. Sign-in is limited to 8 failed attempts per account and address, and 30 per address, for 15 minutes. Do not expose the demo server publicly.
+For an HTTPS deployment, configure `KREIN_SECURE_COOKIES=1`, a trusted reverse proxy and separate runtime secrets. Behind a reverse proxy set `KREIN_TRUSTED_PROXY_HOPS` to the number of proxies in front of Krein (the Docker image sets 1, right for Render); the visitor's address for the login limit is then read from the part of `X-Forwarded-For` that your own proxy wrote, so it cannot be forged. Set it to 0 when Krein is reached directly. Sign-in is limited to 8 failed attempts per account and address, and 30 per address, for 15 minutes. Do not expose the demo server publicly.
 
 ## Owners, portfolios and statements
 - **Owners & portfolios** (staff): group units into portfolios, set a management fee, invite the owner to `/owner`.
 - **Owner statements** (finance/manager): generate a month from verified ledger payments, subtract fee and recorded expenses, a second person approves, then record the payout by hand. No bank connection exists anywhere in Krein.
 - **Landing page** at `/welcome` (Dutch/English). **Installable app**: manifest + service worker (API calls are never cached).
-- Demo owner login: `owner@haven.local` / `HavenDemo!2026` (run `python manage.py demo`).
+- Demo owner login: `owner@krein.local` / `KreinDemo!2026` (run `python manage.py demo`).
 
 ## Deadlines, automation, templates and owner documents
 - **Repair deadlines:** each urgency has a first-response time and a resolution time (Maintenance > Edit deadlines). The Maintenance page ranks open repairs by breach risk and the overview raises an alert.
@@ -163,11 +163,11 @@ Two-pane chat for tenants: searchable conversation list with unread/answered/sol
 
 Every signed-in screen (landlord, tenant, owner, contractor) has a **Help** bubble in the bottom-right corner. It explains where things are in Krein and offers buttons that open the right page.
 
-- **With Groq (tried first):** put a free key from https://console.groq.com/keys in `.env` as `GROQ_API_KEY=...` and restart. The model defaults to `openai/gpt-oss-20b`; override it with `HAVEN_GROQ_MODEL`.
-- **With Gemini (fallback):** put a free key from https://aistudio.google.com/apikey in `.env` as `GEMINI_API_KEY=...` and restart. The model defaults to `gemini-flash-latest` (Google's alias for the newest Flash model); override it with `HAVEN_GEMINI_MODEL`.
+- **With Groq (tried first):** put a free key from https://console.groq.com/keys in `.env` as `GROQ_API_KEY=...` and restart. The model defaults to `openai/gpt-oss-20b`; override it with `KREIN_GROQ_MODEL`.
+- **With Gemini (fallback):** put a free key from https://aistudio.google.com/apikey in `.env` as `GEMINI_API_KEY=...` and restart. The model defaults to `gemini-flash-latest` (Google's alias for the newest Flash model); override it with `KREIN_GEMINI_MODEL`.
 - **Without a key** (or if Gemini is unreachable or over its free quota) a built-in keyword guide answers instead, so the bubble always works.
 - **Privacy:** the browser never sees the key. What the person types (the question and the last few chat turns) and the current page name are sent to Groq or Google; no records from the database are sent, and the assistant cannot read or change anything. Email addresses, phone numbers, IBANs and other long numbers are masked before sending, and the chat shows a notice not to type personal details. Name Groq and Google as processors in your privacy statement (see `docs/PRIVACY.md`).
-- **Limits:** each user can ask 15 questions a minute; `HAVEN_ASSISTANT_DAILY_LIMIT` (default 2000) caps AI calls per day for the whole server. `HAVEN_ASSISTANT_AI_FOR` (default `staff,owner,contractor,tenant`) chooses who gets the AI; for example `staff,owner` keeps tenants on the built-in guide.
+- **Limits:** each user can ask 15 questions a minute; `KREIN_ASSISTANT_DAILY_LIMIT` (default 2000) caps AI calls per day for the whole server. `KREIN_ASSISTANT_AI_FOR` (default `staff,owner,contractor,tenant`) chooses who gets the AI; for example `staff,owner` keeps tenants on the built-in guide.
 
 ## Contracts for signature
 
@@ -186,8 +186,8 @@ The staff screens do not download the whole history any more. `GET /api/data` se
 - **Invoices**, the **tenant ledger** and the **audit trail** are paged and searchable on the server (`/api/invoices`, `/api/ledger`, `/api/audit`: `q`, filters, `page`, `page_size`). Search covers every record, not only the loaded ones.
 - Opening an old month on the Overview loads that month on demand (`/api/periods/{YYYY-MM}`). The month-by-month analysis uses the all-time totals.
 - Tickets draw 40 conversations at a time ("Show more"); a search shows every match.
-- Tenants, contracts and properties are sent in full. Repairs, tasks, requests, letters, messages and documents are sent when they are still open or from the last `HAVEN_HISTORY_MONTHS` months (default 13); older closed items stay in the database, the tenant export and the reports. With 300 tenants and 5 years of history the page load is about 2.8 MB (0.6 s) instead of 15.8 MB.
-- Request bodies above `HAVEN_MAX_BODY_MB` (default 12) are refused before they are read. The interactive API pages (`/docs`, `/openapi.json`) are off unless `HAVEN_API_DOCS=1`.
+- Tenants, contracts and properties are sent in full. Repairs, tasks, requests, letters, messages and documents are sent when they are still open or from the last `KREIN_HISTORY_MONTHS` months (default 13); older closed items stay in the database, the tenant export and the reports. With 300 tenants and 5 years of history the page load is about 2.8 MB (0.6 s) instead of 15.8 MB.
+- Request bodies above `KREIN_MAX_BODY_MB` (default 12) are refused before they are read. The interactive API pages (`/docs`, `/openapi.json`) are off unless `KREIN_API_DOCS=1`.
 
 ## English and Dutch
 
@@ -204,21 +204,21 @@ For a demo you can show to others, deploy the included Docker setup to [Render](
 
 1. Put the project in a **private** GitHub repository. `.gitignore` already keeps `.env`, `data/` and backups out of it.
 2. In Render choose **New > Blueprint**, pick the repository and apply. It reads `render.yaml` (a free Docker web service). Or create a **Web Service** by hand with *Runtime: Docker* and the environment variables below.
-3. During the blueprint setup Render asks for `HAVEN_DEMO_PASSWORD` (your own password, 12+ characters, used by every demo login) and optionally `GROQ_API_KEY` (free key from console.groq.com, turns the Help chat into the AI assistant). After the first deploy, copy the `https://….onrender.com` address into `HAVEN_PUBLIC_URL`.
-4. Open the address. The demo data (with a logo, a landlord signature and the Dutch contract template) is loaded on every start. Logins (the password you chose in `HAVEN_DEMO_PASSWORD`): `admin@haven.local`, `manager@haven.local`, `tenant@haven.local` (open `/tenant`), `owner@haven.local` (open `/owner`), `contractor@haven.local` (open `/contractor`).
+3. During the blueprint setup Render asks for `KREIN_DEMO_PASSWORD` (your own password, 12+ characters, used by every demo login) and optionally `GROQ_API_KEY` (free key from console.groq.com, turns the Help chat into the AI assistant). After the first deploy, copy the `https://….onrender.com` address into `KREIN_PUBLIC_URL`.
+4. Open the address. The demo data (with a logo, a landlord signature and the Dutch contract template) is loaded on every start. Logins (the password you chose in `KREIN_DEMO_PASSWORD`): `admin@krein.local`, `manager@krein.local`, `tenant@krein.local` (open `/tenant`), `owner@krein.local` (open `/owner`), `contractor@krein.local` (open `/contractor`).
 
 | Variable | Value |
 |---|---|
-| `HAVEN_SAMPLE_DATA` | `1` loads the sample data from `sample-data/` (households, co-tenants, bank statements; no real personal data) when the workspace is empty. `HAVEN_DEMO_SEED=1` loads the smaller built-in demo instead |
-| `HAVEN_SECURE_COOKIES` | `1` (Render serves HTTPS) |
-| `HAVEN_DATA_DIR` | `/data` |
-| `HAVEN_TIMEZONE` | the timezone whose date Krein shows, e.g. `Europe/Amsterdam` or `Asia/Dhaka`. Servers run on UTC, so without it the date can be a day behind your own |
-| `HAVEN_DEMO_PASSWORD` | your own password for all demo logins (12+ characters). Without it the public default is used, so always set it online |
-| `HAVEN_PUBLIC_URL` | your Render address |
+| `KREIN_SAMPLE_DATA` | `1` loads the sample data from `sample-data/` (households, co-tenants, bank statements; no real personal data) when the workspace is empty. `KREIN_DEMO_SEED=1` loads the smaller built-in demo instead |
+| `KREIN_SECURE_COOKIES` | `1` (Render serves HTTPS) |
+| `KREIN_DATA_DIR` | `/data` |
+| `KREIN_TIMEZONE` | the timezone whose date Krein shows, e.g. `Europe/Amsterdam` or `Asia/Dhaka`. Servers run on UTC, so without it the date can be a day behind your own |
+| `KREIN_DEMO_PASSWORD` | your own password for all demo logins (12+ characters). Without it the public default is used, so always set it online |
+| `KREIN_PUBLIC_URL` | your Render address |
 | `GROQ_API_KEY` | optional, for the AI Help chat |
 | `GEMINI_API_KEY` | optional fallback |
 
-Things to know: on the **free plan** the service sleeps after about 15 minutes without visitors (the next visit takes up to a minute to wake it) and its disk is erased on every restart, so the demo returns to its sample data. Anything entered during a demo is lost. A paid plan with a persistent disk keeps the data. The demo logins are public knowledge, so never put real tenant data in a demo deployment, and share the address only with people you want to have it. To run it with your own administrator instead of sample data, remove `HAVEN_DEMO_SEED` and set `HAVEN_BOOTSTRAP_DEVELOPER_EMAIL` and `HAVEN_BOOTSTRAP_DEVELOPER_PASSWORD` (12+ characters).
+Things to know: on the **free plan** the service sleeps after about 15 minutes without visitors (the next visit takes up to a minute to wake it) and its disk is erased on every restart, so the demo returns to its sample data. Anything entered during a demo is lost. A paid plan with a persistent disk keeps the data. The demo logins are public knowledge, so never put real tenant data in a demo deployment, and share the address only with people you want to have it. To run it with your own administrator instead of sample data, remove `KREIN_DEMO_SEED` and set `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` and `KREIN_BOOTSTRAP_DEVELOPER_PASSWORD` (12+ characters).
 
 ### Contract form and signatures
 
@@ -255,7 +255,7 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 ### Privacy (AVG/GDPR)
 
 - **Tenant data export:** Tenants & contracts > Tenant directory > **Export data** downloads a ZIP with everything Krein holds about that tenant (data.json plus the files of their tenancies).
-- **Erasure after the retention period:** `python manage.py privacy-erase` lists former tenants whose last tenancy ended more than `HAVEN_RETENTION_YEARS` years ago (default 7) and who owe nothing; `python manage.py privacy-erase --apply` anonymises them (name, contact details, messages, form answers, signatures and files are removed; amounts and invoice numbers stay). Run it, for example, once a month.
+- **Erasure after the retention period:** `python manage.py privacy-erase` lists former tenants whose last tenancy ended more than `KREIN_RETENTION_YEARS` years ago (default 7) and who owe nothing; `python manage.py privacy-erase --apply` anonymises them (name, contact details, messages, form answers, signatures and files are removed; amounts and invoice numbers stay). Run it, for example, once a month.
 - See `docs/PRIVACY.md` for the processors (hosting, email provider, Groq/Google for the help chat) and text for your privacy statement.
 
 ### Tenancies, tenants and arrears

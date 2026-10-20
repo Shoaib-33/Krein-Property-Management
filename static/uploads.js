@@ -1,7 +1,7 @@
 'use strict';
 /* Every file field in Krein (staff, tenant, owner and contractor screens): a file that is too large, or the wrong kind,
    is refused the moment it is chosen, with a clear message, before anything is uploaded. The server checks again.
-   Limits: videos HAVEN_MAX_VIDEO_MB (data-max-mb on the field, default 50), the company logo 1 MB, everything else 10 MB. */
+   Limits: videos KREIN_MAX_VIDEO_MB (data-max-mb on the field, default 50), the company logo 1 MB, everything else 10 MB. */
 (() => {
   const nl = () => (document.documentElement.lang || '').startsWith('nl');
   const mb = n => (n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0);

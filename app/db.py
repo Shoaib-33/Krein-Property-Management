@@ -6,7 +6,7 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get('HAVEN_DATA_DIR', Path(__file__).resolve().parent.parent / 'data'))
+DATA_DIR = Path(os.environ.get('KREIN_DATA_DIR', Path(__file__).resolve().parent.parent / 'data'))
 
 
 def now():
@@ -23,7 +23,7 @@ class ClosingConnection(sqlite3.Connection):
 
 def connect():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    connection = sqlite3.connect(DATA_DIR / 'haven.db', timeout=20, factory=ClosingConnection)
+    connection = sqlite3.connect(DATA_DIR / 'krein.db', timeout=20, factory=ClosingConnection)
     connection.row_factory = sqlite3.Row
     connection.execute('PRAGMA foreign_keys = ON')
     return connection

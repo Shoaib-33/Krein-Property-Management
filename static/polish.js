@@ -7,7 +7,7 @@
     set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } }
   };
   const root = document.documentElement;
-  if (store.get('haven.rail') === '1') root.classList.add('rail');
+  if (store.get('krein.rail') === '1') root.classList.add('rail');
 
   const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
   const seen = new Set();
@@ -54,7 +54,7 @@
   document.addEventListener('click', ev => {
     if (!ev.target.closest('.rail-toggle')) return;
     root.classList.toggle('rail');
-    store.set('haven.rail', root.classList.contains('rail') ? '1' : '0');
+    store.set('krein.rail', root.classList.contains('rail') ? '1' : '0');
   });
 
   let queued = false;

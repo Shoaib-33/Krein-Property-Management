@@ -14,27 +14,27 @@ from .db import audit, now
 
 
 def smtp_settings():
-    host = os.environ.get('HAVEN_SMTP_HOST', '').strip()
-    sender = os.environ.get('HAVEN_SMTP_FROM', '').strip()
-    public_url = os.environ.get('HAVEN_PUBLIC_URL', '').strip().rstrip('/')
+    host = os.environ.get('KREIN_SMTP_HOST', '').strip()
+    sender = os.environ.get('KREIN_SMTP_FROM', '').strip()
+    public_url = os.environ.get('KREIN_PUBLIC_URL', '').strip().rstrip('/')
     if not host or not sender or not public_url:
         return None
     if parseaddr(sender)[1] != sender or '@' not in sender:
         return None
     try:
-        port = int(os.environ.get('HAVEN_SMTP_PORT', '587'))
-        timeout = max(5, min(60, int(os.environ.get('HAVEN_SMTP_TIMEOUT', '20'))))
+        port = int(os.environ.get('KREIN_SMTP_PORT', '587'))
+        timeout = max(5, min(60, int(os.environ.get('KREIN_SMTP_TIMEOUT', '20'))))
     except ValueError:
         return None
-    username = os.environ.get('HAVEN_SMTP_USERNAME', '').strip()
-    password = os.environ.get('HAVEN_SMTP_PASSWORD', '')
+    username = os.environ.get('KREIN_SMTP_USERNAME', '').strip()
+    password = os.environ.get('KREIN_SMTP_PASSWORD', '')
     if username and not password:
         return None
     return {
         'host': host, 'port': port, 'sender': sender, 'public_url': public_url,
         'username': username, 'password': password, 'timeout': timeout,
-        'starttls': os.environ.get('HAVEN_SMTP_STARTTLS', '1').strip().lower() not in ('0', 'false', 'no'),
-        'ssl': os.environ.get('HAVEN_SMTP_SSL', '0').strip().lower() in ('1', 'true', 'yes'),
+        'starttls': os.environ.get('KREIN_SMTP_STARTTLS', '1').strip().lower() not in ('0', 'false', 'no'),
+        'ssl': os.environ.get('KREIN_SMTP_SSL', '0').strip().lower() in ('1', 'true', 'yes'),
     }
 
 
@@ -242,7 +242,7 @@ def kick():
             logging.exception('Background email delivery failed.')
         finally:
             _kick_lock.release()
-    threading.Thread(target=run, name='haven-email', daemon=True).start()
+    threading.Thread(target=run, name='krein-email', daemon=True).start()
 
 
 def pending_summary(conn, company_id):

@@ -11,8 +11,8 @@ from app.clock import local_today
 from app.db import audit, now, transaction
 from app.security import password_hash
 
-# the password of every demo login; set HAVEN_DEMO_PASSWORD (12+ characters) to use your own on a public demo
-DEMO_PASSWORD = os.environ.get('HAVEN_DEMO_PASSWORD', '').strip() or 'HavenDemo!2026'
+# the password of every demo login; set KREIN_DEMO_PASSWORD (12+ characters) to use your own on a public demo
+DEMO_PASSWORD = os.environ.get('KREIN_DEMO_PASSWORD', '').strip() or 'KreinDemo!2026'
 
 
 def demo_portal_accounts(conn, company_id, manager_id):
@@ -23,16 +23,16 @@ def demo_portal_accounts(conn, company_id, manager_id):
         return
     c=contracts[0]
     if not conn.execute('SELECT 1 FROM portal_accounts WHERE tenant_id=?',(c['tenant_id'],)).fetchone():
-        user_id=conn.execute('SELECT id FROM users WHERE email=?',('tenant@haven.local',)).fetchone()
+        user_id=conn.execute('SELECT id FROM users WHERE email=?',('tenant@krein.local',)).fetchone()
         if user_id: user_id=user_id['id']
-        else: user_id=conn.execute('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)',(c['tenant_name'],'tenant@haven.local',password_hash(DEMO_PASSWORD))).lastrowid
+        else: user_id=conn.execute('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)',(c['tenant_name'],'tenant@krein.local',password_hash(DEMO_PASSWORD))).lastrowid
         conn.execute('INSERT OR IGNORE INTO portal_accounts(user_id,tenant_id,company_id,created_at) VALUES(?,?,?,?)',(user_id,c['tenant_id'],company_id,now()))
     if conn.execute('SELECT 1 FROM work_orders WHERE company_id=?',(company_id,)).fetchone():
         return
     stream=io.BytesIO();pdf=Canvas(stream);pdf.drawString(72,760,'DEMO CONTRACTOR DATA PROCESSING AGREEMENT');pdf.drawString(72,735,'Fictional example for portal demonstration only.');pdf.save()
     doc_id=save_document(conn,company_id,None,manager_id,'Contractor agreement',(stream.getvalue(),'application/pdf','.pdf','demo-contractor-agreement.pdf'))
-    contractor_id=conn.execute('INSERT INTO contractors(company_id,name,email,phone,trade,agreement_document_id,created_at) VALUES(?,?,?,?,?,?,?)',(company_id,'North Canal Repairs','contractor@haven.local','+31 20 000 0000','Plumbing & general repairs',doc_id,now())).lastrowid
-    contractor_user=conn.execute('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)',('North Canal Repairs','contractor@haven.local',password_hash(DEMO_PASSWORD))).lastrowid
+    contractor_id=conn.execute('INSERT INTO contractors(company_id,name,email,phone,trade,agreement_document_id,created_at) VALUES(?,?,?,?,?,?,?)',(company_id,'North Canal Repairs','contractor@krein.local','+31 20 000 0000','Plumbing & general repairs',doc_id,now())).lastrowid
+    contractor_user=conn.execute('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)',('North Canal Repairs','contractor@krein.local',password_hash(DEMO_PASSWORD))).lastrowid
     conn.execute('INSERT INTO contractor_accounts(user_id,contractor_id,company_id,created_at) VALUES(?,?,?,?)',(contractor_user,contractor_id,company_id,now()))
     repair=conn.execute('SELECT * FROM repairs WHERE company_id=? ORDER BY id LIMIT 1',(company_id,)).fetchone()
     if not repair:return
@@ -42,11 +42,11 @@ def demo_portal_accounts(conn, company_id, manager_id):
 def demo_owners(conn, company_id, creator_id):
     if conn.execute('SELECT 1 FROM owners WHERE company_id=?',(company_id,)).fetchone():
         return
-    owner_id=conn.execute('INSERT INTO owners(company_id,name,email,phone,payout_details,created_at) VALUES(?,?,?,?,?,?)',(company_id,'Van Dijk Vastgoed BV','owner@haven.local','+31 20 000 0001','DEMO: paid manually by the property manager',now())).lastrowid
+    owner_id=conn.execute('INSERT INTO owners(company_id,name,email,phone,payout_details,created_at) VALUES(?,?,?,?,?,?)',(company_id,'Van Dijk Vastgoed BV','owner@krein.local','+31 20 000 0001','DEMO: paid manually by the property manager',now())).lastrowid
     pid=conn.execute('INSERT INTO portfolios(company_id,owner_id,name,fee_percent,created_at) VALUES(?,?,?,?,?)',(company_id,owner_id,'Amsterdam Canal Belt',6.0,now())).lastrowid
     conn.execute('UPDATE properties SET portfolio_id=? WHERE company_id=?',(pid,company_id))
-    user=conn.execute('SELECT id FROM users WHERE email=?',('owner@haven.local',)).fetchone()
-    uid=user['id'] if user else conn.execute('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)',('Van Dijk Vastgoed BV','owner@haven.local',password_hash(DEMO_PASSWORD))).lastrowid
+    user=conn.execute('SELECT id FROM users WHERE email=?',('owner@krein.local',)).fetchone()
+    uid=user['id'] if user else conn.execute('INSERT INTO users(name,email,password_hash) VALUES(?,?,?)',('Van Dijk Vastgoed BV','owner@krein.local',password_hash(DEMO_PASSWORD))).lastrowid
     conn.execute('INSERT INTO owner_accounts(user_id,owner_id,company_id,created_at) VALUES(?,?,?,?)',(uid,owner_id,company_id,now()))
 
 
@@ -59,27 +59,27 @@ def demo():
     with transaction() as conn:
         if conn.execute('SELECT COUNT(*) FROM users').fetchone()[0]:
             fixture=conn.execute('SELECT id FROM companies WHERE kvk="DEMO-0001"').fetchone()
-            manager=conn.execute('SELECT id FROM users WHERE email="manager@haven.local"').fetchone()
+            manager=conn.execute('SELECT id FROM users WHERE email="manager@krein.local"').fetchone()
             if fixture and manager:
                 demo_portal_accounts(conn,fixture['id'],manager['id'])
                 demo_owners(conn,fixture['id'],manager['id'])
                 audit(conn,manager['id'],fixture['id'],'demo_portals_ready','company',fixture['id'],{'fictional':True})
                 print('Demo tenant and contractor portals are ready.')
-                print('Tenant: tenant@haven.local · Contractor: contractor@haven.local')
-                print('Demo password for both: ' + ('(the one in HAVEN_DEMO_PASSWORD)' if os.environ.get('HAVEN_DEMO_PASSWORD') else DEMO_PASSWORD))
+                print('Tenant: tenant@krein.local · Contractor: contractor@krein.local')
+                print('Demo password for both: ' + ('(the one in KREIN_DEMO_PASSWORD)' if os.environ.get('KREIN_DEMO_PASSWORD') else DEMO_PASSWORD))
             else:
                 print('Database already initialized. No records changed.')
             return
-        admin = insert(conn, 'users', {'name':'Alex Morgan', 'email':'admin@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
-        insert(conn, 'users', {'name':'Dev Krein', 'email':'developer@haven.local', 'password_hash':password_hash(DEMO_PASSWORD), 'global_admin':1})   # the developer: own sign-in at /developer
-        finance = insert(conn, 'users', {'name':'Sophie de Vries', 'email':'finance@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
-        manager = insert(conn, 'users', {'name':'Daan Bakker', 'email':'manager@haven.local', 'password_hash':password_hash(DEMO_PASSWORD)})
+        admin = insert(conn, 'users', {'name':'Alex Morgan', 'email':'admin@krein.local', 'password_hash':password_hash(DEMO_PASSWORD)})
+        insert(conn, 'users', {'name':'Dev Krein', 'email':'developer@krein.local', 'password_hash':password_hash(DEMO_PASSWORD), 'global_admin':1})   # the developer: own sign-in at /developer
+        finance = insert(conn, 'users', {'name':'Sophie de Vries', 'email':'finance@krein.local', 'password_hash':password_hash(DEMO_PASSWORD)})
+        manager = insert(conn, 'users', {'name':'Daan Bakker', 'email':'manager@krein.local', 'password_hash':password_hash(DEMO_PASSWORD)})
         company = insert(conn, 'companies', {'name':'Krein Residential BV','kvk':'DEMO-0001','address':'Keizersgracht 128, Amsterdam','payment_instructions':'DEMO ONLY. Contact your property manager for the agreed payment instructions. Include your invoice number as the reference.','created_at':now()})
         other = insert(conn, 'companies', {'name':'Canal House BV','kvk':'DEMO-0002','address':'Rotterdam','payment_instructions':'Contact the property manager for payment details.','created_at':now()})
         for uid, cid, role in [(admin,company,'admin'),(admin,other,'admin'),(finance,company,'finance'),(manager,company,'manager')]:
             conn.execute('INSERT INTO memberships VALUES(?,?,?)',(uid,cid,role))
         people = [('Emma Janssen','emma@example.com'),('Noah de Groot','noah@example.com'),('Olivia Visser','olivia@example.com'),('Liam Smit','liam@example.com'),('Mila van Dijk','mila@example.com')]
-        homes = [('The Linden · 2A','Lindengracht 42 A','Amsterdam',68,'B'),('Canal View · 1B','Prinsengracht 216 B','Amsterdam',82,'A'),('Parkside · 3C','Vondelstraat 93 C','Amsterdam',54,'C'),('The Jordaan · 4A','Elandsgracht 18 A','Amsterdam',76,'A'),('Westhaven · 2B','Spaarndammerstraat 52 B','Amsterdam',61,'B'),('Garden House · 1','Rozenstraat 74','Amsterdam',96,'A+')]
+        homes = [('The Linden · 2A','Lindengracht 42 A','Amsterdam',68,'B'),('Canal View · 1B','Prinsengracht 216 B','Amsterdam',82,'A'),('Parkside · 3C','Vondelstraat 93 C','Amsterdam',54,'C'),('The Jordaan · 4A','Elandsgracht 18 A','Amsterdam',76,'A'),('Westerpark · 2B','Spaarndammerstraat 52 B','Amsterdam',61,'B'),('Garden House · 1','Rozenstraat 74','Amsterdam',96,'A+')]
         contracts=[]
         for i,h in enumerate(homes):
             pid=insert(conn,'properties',{'company_id':company,'name':h[0],'address':h[1],'city':h[2],'postcode':'1015 AA','kind':'Apartment','area':h[3],'rooms':2+i%3,'energy_label':h[4],'created_at':now()})
@@ -120,9 +120,9 @@ def demo():
         demo_owners(conn,company,manager)
         audit(conn,admin,company,'demo_initialized','company',company,{'fictional':True})
     print('Fictional demonstration data created.')
-    print('Accounts: admin@haven.local, finance@haven.local, manager@haven.local · Developer (sign in at /developer): developer@haven.local')
-    print('Tenant: tenant@haven.local · Contractor: contractor@haven.local · Owner: owner@haven.local')
-    print('Demo password for all three: ' + ('(the one in HAVEN_DEMO_PASSWORD)' if os.environ.get('HAVEN_DEMO_PASSWORD') else DEMO_PASSWORD))
+    print('Accounts: admin@krein.local, finance@krein.local, manager@krein.local · Developer (sign in at /developer): developer@krein.local')
+    print('Tenant: tenant@krein.local · Contractor: contractor@krein.local · Owner: owner@krein.local')
+    print('Demo password for all three: ' + ('(the one in KREIN_DEMO_PASSWORD)' if os.environ.get('KREIN_DEMO_PASSWORD') else DEMO_PASSWORD))
 
 
 def create_admin():
@@ -181,7 +181,7 @@ def main():
         finally:
             target.close()
         with zipfile.ZipFile(destination,'w',zipfile.ZIP_DEFLATED) as archive:
-            archive.write(snapshot,'haven.db')
+            archive.write(snapshot,'krein.db')
             for path in (db.DATA_DIR/'uploads').iterdir():
                 if path.is_file(): archive.write(path,'uploads/'+path.name)
         snapshot.unlink()

@@ -20,7 +20,7 @@ def _get_json(path, params=None):
     url = f'{BASE}/{path}'
     if params:
         url += '?' + urlencode(params)
-    request = Request(url, headers={'Accept': 'application/json', 'User-Agent': 'HavenPropertyManagement/1.0'})
+    request = Request(url, headers={'Accept': 'application/json', 'User-Agent': 'KreinPropertyManagement/1.0'})
     try:
         with urlopen(request, timeout=8) as response:
             return json.loads(response.read().decode('utf-8'))

@@ -12,7 +12,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 
 
 class CoSigningTests(unittest.TestCase):
@@ -26,8 +26,8 @@ class CoSigningTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.staff = self.login('manager@haven.local')
-        self.emma = self.login('tenant@haven.local', portal='tenant')
+        self.staff = self.login('manager@krein.local')
+        self.emma = self.login('tenant@krein.local', portal='tenant')
         self.staff.post('/api/templates/starters', json={'company_id': 1})
         data = self.staff.get('/api/data?company_id=1').json()
         self.template = next(t['id'] for t in data['doc_templates'] if t['kind'] == 'Lease')
@@ -44,7 +44,7 @@ class CoSigningTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)

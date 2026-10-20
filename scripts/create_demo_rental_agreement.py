@@ -42,7 +42,7 @@ class AgreementDoc(BaseDocTemplate):
         canvas.drawCentredString(24*mm, h-13.8*mm, 'h')
         canvas.setFillColor(DARK)
         canvas.setFont('Helvetica-Bold', 10)
-        canvas.drawString(31*mm, h-12.9*mm, 'HAVEN')
+        canvas.drawString(31*mm, h-12.9*mm, 'KREIN')
         canvas.setFillColor(MUTED)
         canvas.setFont('Helvetica', 7.5)
         canvas.drawRightString(w-20*mm, h-12.9*mm, 'RESIDENTIAL TENANCY AGREEMENT · DEMO TEMPLATE')
@@ -165,10 +165,10 @@ story = [
     fields([('Place','[City]'),('Date','[YYYY-MM-DD]')]),
     Spacer(1, 6*mm),
     P('LANDLORD SIGNATURE', 'Label'),
-    P('{{HAVEN_LANDLORD_SIGNATURE}}', 'SignatureMarker'),
+    P('{{KREIN_LANDLORD_SIGNATURE}}', 'SignatureMarker'),
     Spacer(1, 11*mm),
     P('TENANT SIGNATURE', 'Label'),
-    P('{{HAVEN_TENANT_SIGNATURE}}', 'SignatureMarker'),
+    P('{{KREIN_TENANT_SIGNATURE}}', 'SignatureMarker'),
     Spacer(1, 3*mm),
     P('Additional tenant signature (if applicable): [Add a signature line for each additional tenant.]', 'SmallCustom'),
     Spacer(1, 5*mm),

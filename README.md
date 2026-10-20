@@ -56,7 +56,7 @@ python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
 Open http://127.0.0.1:8000/developer, create an administrator, and sign in with it at http://127.0.0.1:8000.
 
-**Demo data instead:** `python manage.py demo` fills an empty database with fictional data (logins `admin@haven.local`, `tenant@haven.local`, … with the password `HavenDemo!2026`). To use the richer sample database, copy `sample-data/haven.db` and `sample-data/uploads` into `data/`.
+**Demo data instead:** `python manage.py demo` fills an empty database with fictional data (logins `admin@krein.local`, `tenant@krein.local`, … with the password `KreinDemo!2026`). To use the richer sample database, copy `sample-data/krein.db` and `sample-data/uploads` into `data/`.
 
 ## Configuration
 
@@ -64,14 +64,14 @@ Settings are read from environment variables (or `.env` for local use). See [.en
 
 | Setting | Purpose |
 |---|---|
-| `HAVEN_PUBLIC_URL` | The public address, used in emails and links |
-| `HAVEN_DATA_DIR` | Where the database and uploaded files are stored (default `data/`) |
-| `HAVEN_SMTP_*` | Outgoing email (invoices, reminders, invitations) |
-| `HAVEN_TIMEZONE` | For example `Europe/Amsterdam` |
-| `HAVEN_SECURE_COOKIES` | `1` when served over HTTPS |
-| `HAVEN_PONTO_*` | Optional automatic bank feed |
-| `HAVEN_BOOTSTRAP_DEVELOPER_EMAIL` / `_PASSWORD` | First developer login on a new hosted deployment |
-| `HAVEN_SAMPLE_DATA` / `HAVEN_DEMO_PASSWORD` | Demo deployments only: load the sample data, with your own password |
+| `KREIN_PUBLIC_URL` | The public address, used in emails and links |
+| `KREIN_DATA_DIR` | Where the database and uploaded files are stored (default `data/`) |
+| `KREIN_SMTP_*` | Outgoing email (invoices, reminders, invitations) |
+| `KREIN_TIMEZONE` | For example `Europe/Amsterdam` |
+| `KREIN_SECURE_COOKIES` | `1` when served over HTTPS |
+| `KREIN_PONTO_*` | Optional automatic bank feed |
+| `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` / `_PASSWORD` | First developer login on a new hosted deployment |
+| `KREIN_SAMPLE_DATA` / `KREIN_DEMO_PASSWORD` | Demo deployments only: load the sample data, with your own password |
 
 Never commit `.env`: it holds passwords and keys.
 
@@ -91,7 +91,7 @@ Creates a ZIP with a consistent database snapshot and the uploaded files. Backup
 
 ## Deployment
 
-- **Production**: Docker on a server with a persistent disk (planned: Google Cloud, region europe-west4), HTTPS through a reverse proxy, nightly backups. Start with an empty database: set `HAVEN_BOOTSTRAP_DEVELOPER_EMAIL` and `HAVEN_BOOTSTRAP_DEVELOPER_PASSWORD`; never set `HAVEN_SAMPLE_DATA` or `HAVEN_DEMO_SEED`.
+- **Production**: Docker on a server with a persistent disk (planned: Google Cloud, region europe-west4), HTTPS through a reverse proxy, nightly backups. Start with an empty database: set `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` and `KREIN_BOOTSTRAP_DEVELOPER_PASSWORD`; never set `KREIN_SAMPLE_DATA` or `KREIN_DEMO_SEED`.
 - **Demo**: [render.yaml](render.yaml) deploys the sample data to Render. The free plan resets the data whenever the service restarts; see the notes in the file.
 
 ## Documentation

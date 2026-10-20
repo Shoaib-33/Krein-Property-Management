@@ -1,7 +1,7 @@
 """Privacy (AVG/GDPR) for tenants.
 
 - Export: everything Krein holds about one tenant, as a ZIP with data.json plus the files of their tenancies (right of access, art. 15/20).
-- Erasure after the retention period: a former tenant whose last tenancy ended more than HAVEN_RETENTION_YEARS years ago
+- Erasure after the retention period: a former tenant whose last tenancy ended more than KREIN_RETENTION_YEARS years ago
   (default 7, the Dutch fiscal retention period) and who owes nothing is anonymised. Amounts, dates and invoice numbers stay,
   so the books still add up; names, contact details, messages, form answers, signatures and uploaded files are removed.
   The audit log keeps its entries (it is the tamper-evident legal record and cannot be changed).
@@ -28,7 +28,7 @@ REMOVED = '[removed]'
 
 def retention_years():
     try:
-        return max(1, int(os.environ.get('HAVEN_RETENTION_YEARS', '7')))
+        return max(1, int(os.environ.get('KREIN_RETENTION_YEARS', '7')))
     except ValueError:
         return 7
 

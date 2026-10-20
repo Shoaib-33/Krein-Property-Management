@@ -10,7 +10,7 @@ def load_local_env() -> None:
     The test suite never reads .env, so tests can not send real email or use real API keys."""
     import sys
     # `python -m unittest` reports argv[0] as "python -m unittest"; a test runner script lives in a unittest folder
-    if 'unittest' in (sys.argv[0] or '') or 'unittest' in sys.modules and 'uvicorn' not in sys.modules or os.environ.get('HAVEN_SKIP_DOTENV') == '1':
+    if 'unittest' in (sys.argv[0] or '') or 'unittest' in sys.modules and 'uvicorn' not in sys.modules or os.environ.get('KREIN_SKIP_DOTENV') == '1':
         return
     env_file = Path(__file__).resolve().parent.parent / '.env'
     try:

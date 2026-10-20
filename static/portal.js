@@ -5,15 +5,15 @@
  let mode=path==='/contractor'?'contractor':'tenant';const token=path.startsWith('/activate/')?path.split('/').pop():'';
  const S={me:null,data:{},page:'home',csrf:'',busy:false};
  const safe=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const cash=n=>new Intl.NumberFormat(window.havenLang==='nl'?'nl-NL':'en-NL',{style:'currency',currency:'EUR'}).format((n||0)/100);
+ const cash=n=>new Intl.NumberFormat(window.kreinLang==='nl'?'nl-NL':'en-NL',{style:'currency',currency:'EUR'}).format((n||0)/100);
  const day=v=>v?new Intl.DateTimeFormat('en-GB',{day:'numeric',month:'short',year:'numeric'}).format(new Date(v.slice(0,10)+'T12:00:00')):'—';
  const ini=n=>String(n||'?').split(' ').map(x=>x[0]).slice(0,2).join('').toUpperCase();
  const ico={home:'M2 10l10-8 10 8 M5 9v13h14V9 M9 22v-9h6v9',money:'M20 8H5a3 3 0 0 1 0-6h13v6 M3 5v14a2 2 0 0 0 2 2h15V8 M20 12h-5v5h5',wrench:'M14 6a5 5 0 0 0-6 6L2 18l4 4 6-6a5 5 0 0 0 6-6l-3 3-4-4 3-3',folder:'M2 6h7l2 3h11v12H2z M2 6V3h7l2 3h9v3',message:'M21 3H3v14h5l4 4 4-4h5z M7 7h10 M7 11h7',calendar:'M3 5h18v17H3z M7 2v6 M17 2v6 M3 11h18',exit:'M9 3H3v18h6 M9 12h12 M17 8l4 4-4 4',plus:'M12 5v14 M5 12h14',check:'M5 12l4 4L19 6',menu:'M3 6h18 M3 12h18 M3 18h18'};
- const NL=window.havenLang==='nl',L=(en,nl)=>NL?nl:en,days=n=>n+(NL?(n===1?' dag':' dagen'):(n===1?' day':' days'));
+ const NL=window.kreinLang==='nl',L=(en,nl)=>NL?nl:en,days=n=>n+(NL?(n===1?' dag':' dagen'):(n===1?' day':' days'));
  const ic=k=>'<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="'+(ico[k]||ico.home)+'"/></svg>';
  const tag=s=>'<span class="badge '+(['approved','paid','active','done','closed','resolved'].includes(String(s).toLowerCase())?'green':['pending','open','urgent'].includes(String(s).toLowerCase())?'amber':'gray')+'">'+safe(s)+'</span>';
  function flash(message){let n=document.getElementById('portal-flash');if(!n){n=document.createElement('div');n.id='portal-flash';n.className='notice';n.style.cssText='position:fixed;bottom:20px;right:20px;z-index:90;max-width:400px';document.body.append(n);}n.textContent=message;n.hidden=false;setTimeout(()=>n.hidden=true,4500);}
- async function call(url,opt={}){const h={...(opt.headers||{}),'X-Haven-Portal':mode};if(S.csrf)h['X-CSRF-Token']=S.csrf;if(opt.body&&!(opt.body instanceof FormData)){h['Content-Type']='application/json';opt.body=JSON.stringify(opt.body);}const r=await fetch(url,{...opt,headers:h});let d=await r.json().catch(()=>({detail:'Could not complete the request.'}));if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'Please check the information and try again.');return d;}
+ async function call(url,opt={}){const h={...(opt.headers||{}),'X-Krein-Portal':mode};if(S.csrf)h['X-CSRF-Token']=S.csrf;if(opt.body&&!(opt.body instanceof FormData)){h['Content-Type']='application/json';opt.body=JSON.stringify(opt.body);}const r=await fetch(url,{...opt,headers:h});let d=await r.json().catch(()=>({detail:'Could not complete the request.'}));if(!r.ok)throw Error(typeof d.detail==='string'?d.detail:'Please check the information and try again.');return d;}
  function login(message='Sign in to see your account.'){
   root.innerHTML='<main class="public-page"><header class="public-header"><a href="/" class="brand"><span class="brand-mark">k</span>krein</a><small>'+(mode==='tenant'?'TENANT ACCESS':'CONTRACTOR ACCESS')+'</small></header><section class="panel"><div class="eyebrow">'+(mode==='tenant'?'YOUR HOME, IN ONE PLACE':'YOUR ASSIGNED WORK')+'</div><h1>Welcome back</h1><p class="subtitle">'+safe(message)+'</p><form id="portal-login"><div class="field"><label for="portal-email">Email</label><input id="portal-email" type="email" name="email" autocomplete="username" required></div><div class="field"><label for="portal-pass">Password</label><input id="portal-pass" type="password" name="password" autocomplete="current-password" required></div><p class="form-error" role="alert"></p><button class="button primary">Sign in</button></form></section><p class="public-note">Access comes from a personal invitation from your property manager.</p></main>';
   document.querySelector('#portal-login').onsubmit=async ev=>{ev.preventDefault();const b=ev.currentTarget.querySelector('button');b.disabled=true;try{const d=await call('/api/login',{method:'POST',body:Object.fromEntries(new FormData(ev.currentTarget))});S.csrf=d.csrf;await start();}catch(err){b.form.querySelector('.form-error').textContent=err.message;b.disabled=false;}};
@@ -66,14 +66,14 @@
    +'<div class="sign-step"><span>1</span>Read your contract</div><div class="contract-read" tabindex="0" aria-label="Contract text">'+contractHtml(o.body)+'</div><p><a class="button small" href="/api/tenant/lease-offers/'+o.id+'/file" target="_blank" rel="noopener">'+ic('folder')+' Open as PDF</a></p>'
    +'<form id="pform" class="sign-form" novalidate>'
    +(defs.length?'<div class="sign-step"><span>2</span>Fill in your details</div><div class="cf-grid">'+defs.map(f=>{const saved=(S.data.bank_accounts||[])[0]||{};const known={iban:saved.iban,account_holder:saved.holder};return formField(f,(o.form_values||{})[f.key]??known[f.key]);}).join('')+'</div>':'')
-   +'<div class="sign-step"><span>'+(defs.length?3:2)+'</span>Sign</div>'+((o.signers||[]).length>1?'<p class="modal-note">'+L('Everyone on this contract signs in their own portal: ','Iedereen op dit contract tekent in het eigen portaal: ')+o.signers.map(s=>safe(s.name)+(s.me?L(' (you)',' (u)'):'')+(s.signed?' ✓':'')).join(', ')+'</p>':'')+HavenSignature.html(o.me_name||o.tenant_name)
+   +'<div class="sign-step"><span>'+(defs.length?3:2)+'</span>Sign</div>'+((o.signers||[]).length>1?'<p class="modal-note">'+L('Everyone on this contract signs in their own portal: ','Iedereen op dit contract tekent in het eigen portaal: ')+o.signers.map(s=>safe(s.name)+(s.me?L(' (you)',' (u)'):'')+(s.signed?' ✓':'')).join(', ')+'</p>':'')+KreinSignature.html(o.me_name||o.tenant_name)
    +'<div class="sign-agree"><input type="checkbox" id="so-agree"><label for="so-agree">I have read the contract and I agree to it. My signature above is my electronic signature.</label></div>'
    +'<p class="form-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-do="close">Cancel</button><button type="submit" class="button primary" disabled id="so-sign">Sign contract</button></div></form></div></div>';
   if(!dialog.open)dialog.showModal();
   const f=document.querySelector('#pform'),btn=f.querySelector('#so-sign');
   const answers=()=>{const out={};f.querySelectorAll('[data-fkey]').forEach(el=>{out[el.dataset.fkey]=el.type==='checkbox'?el.checked:el.value;});return out;};
   const missing=()=>defs.filter(d=>{const v=answers()[d.key];return d.required&&(d.type==='checkbox'?v!==true:!String(v||'').trim());});
-  const pad=HavenSignature.bind(f,o.me_name||o.tenant_name,()=>check());
+  const pad=KreinSignature.bind(f,o.me_name||o.tenant_name,()=>check());
   function check(){const ok=pad.ready()&&f.querySelector('#so-agree').checked&&!missing().length;btn.disabled=!ok;const e=f.querySelector('.form-error');if(!ok&&pad.ready()&&f.querySelector('#so-agree').checked&&missing().length)e.textContent='Still to fill in: '+missing().map(d=>d.label).join(', ');else if(e.textContent.startsWith('Still to fill in'))e.textContent='';}
   f.addEventListener('input',check);f.addEventListener('change',check);
   requestAnimationFrame(()=>pad.refit());
@@ -117,7 +117,7 @@
   return '<article class="conversation-card"><header class="conversation-card-head"><div><span class="eyebrow">PRIVATE CONVERSATION</span><h3>'+safe(subject)+'</h3></div><div class="conversation-last">'+chip+'<span>'+t.items.length+' message'+(t.items.length===1?'':'s')+' · '+day(last.created_at)+'</span></div></header><div class="conversation-thread">'+bubbles+'</div>'
    +'<form class="inline-reply" data-thread="'+t.id+'" data-contract="'+first.contract_id+'" data-subject="'+safe(subject)+'"><textarea name="body" rows="2" maxlength="5000" placeholder="Write a reply… (Ctrl+Enter to send)" required></textarea><div class="inline-actions"><label class="reply-attach">'+ic('folder')+' Attach<input type="file" name="file" accept="application/pdf,image/png,image/jpeg,image/webp" hidden></label><span class="reply-file"></span><span class="reply-note">'+note+'</span><button class="button primary small">Send</button></div><p class="form-error" role="alert"></p></form></article>';}
 
- const seenStore={get(){try{return JSON.parse(localStorage.getItem('haven_seen_msgs'))||{};}catch(e){return {};}},set(v){try{localStorage.setItem('haven_seen_msgs',JSON.stringify(v));}catch(e){/* storage unavailable */}}};
+ const seenStore={get(){try{return JSON.parse(localStorage.getItem('krein_seen_msgs'))||{};}catch(e){return {};}},set(v){try{localStorage.setItem('krein_seen_msgs',JSON.stringify(v));}catch(e){/* storage unavailable */}}};
  const TM={thread:null,q:'',file:null,drafts:{},sending:null};
  const dayLabel=v=>{const d=new Date(v),t=new Date(),y=new Date();y.setDate(t.getDate()-1);const same=(a,b)=>a.toDateString()===b.toDateString();return same(d,t)?'Today':same(d,y)?'Yesterday':day(v);};
  const hhmm=v=>new Date(v).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
@@ -244,7 +244,7 @@
   const list=d.payment_notices||[];if(!list.length)return '';
   // a shared home shows both people's reports: who reported it, for which bill, from which account
   const mine=new Set((d.accounts||[]).map(a=>a.id)),shared=list.some(n=>n.tenant_id&&!mine.has(n.tenant_id))||(current(d).people||[]).length>1;
-  const month=p=>p?new Intl.DateTimeFormat(window.havenLang==='nl'?'nl-NL':'en-GB',{month:'long',year:'numeric'}).format(new Date(+p.slice(0,4),+p.slice(5,7)-1,15)):'';
+  const month=p=>p?new Intl.DateTimeFormat(window.kreinLang==='nl'?'nl-NL':'en-GB',{month:'long',year:'numeric'}).format(new Date(+p.slice(0,4),+p.slice(5,7)-1,15)):'';
   const others=((current(d)||{}).people||[]).filter(p=>!p.me);
   const who=n=>!n.tenant_id||mine.has(n.tenant_id)?'<strong>'+L('You','U')+'</strong>':safe(n.reporter||(others.find(p=>p.tenant_id===n.tenant_id)||(others.length===1?others[0]:{})).name||L('Your co-tenant','Uw medehuurder'));
   return box(shared?L('Payments reported in your home','Gemelde betalingen voor uw woning'):L('Payments you reported','Door u gemelde betalingen'),
@@ -290,14 +290,14 @@
    +(o.status==='returned'&&o.response_note?'<div class="notice"><span><strong>'+L('Your property manager asks: ','Uw beheerder vraagt: ')+'</strong>'+safe(o.response_note)+'</span></div>':'')
    +'<div class="sign-step"><span>1</span>'+L('Read the agreement','Lees de overeenkomst')+'</div><div class="contract-read" tabindex="0">'+contractHtml(o.body)+'</div><p><a class="button small" href="/api/contractor/agreement-offers/'+o.id+'/file">'+ic('folder')+' '+L('Open as PDF','Openen als pdf')+'</a></p>'
    +'<form id="pform" class="sign-form" novalidate><div class="sign-step"><span>2</span>'+L('Your company details','Uw bedrijfsgegevens')+'</div><div class="cf-grid">'+defs.map(f=>formField(f,(o.form_values||{})[f.key]??(f.key==='contact_person'?S.me.name:''))).join('')+'</div>'
-   +'<div class="sign-step"><span>3</span>'+L('Sign','Ondertekenen')+'</div>'+HavenSignature.html(S.me.name)
+   +'<div class="sign-step"><span>3</span>'+L('Sign','Ondertekenen')+'</div>'+KreinSignature.html(S.me.name)
    +'<div class="sign-agree"><input type="checkbox" id="so-agree"><label for="so-agree">'+L('I have read the agreement and I agree to it on behalf of my company. My signature above is my electronic signature.','Ik heb de overeenkomst gelezen en ga er namens mijn bedrijf mee akkoord. Mijn handtekening hierboven is mijn elektronische handtekening.')+'</label></div>'
    +'<p class="form-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-do="close">'+L('Cancel','Annuleren')+'</button><button type="submit" class="button primary" disabled id="so-sign">'+L('Sign and send','Ondertekenen en versturen')+'</button></div></form></div></div>';
   if(!dialog.open)dialog.showModal();
   const f=document.querySelector('#pform'),btn=f.querySelector('#so-sign'),err=f.querySelector('.form-error');
   const answers=()=>{const out={};f.querySelectorAll('[data-fkey]').forEach(el=>{out[el.dataset.fkey]=el.value;});return out;};
   const missing=()=>defs.filter(x=>x.required&&!String(answers()[x.key]||'').trim());
-  const pad=HavenSignature.bind(f,S.me.name,()=>check());
+  const pad=KreinSignature.bind(f,S.me.name,()=>check());
   function check(){btn.disabled=!(pad.ready()&&f.querySelector('#so-agree').checked&&!missing().length);}
   requestAnimationFrame(()=>pad.refit&&pad.refit());
   f.addEventListener('input',check);f.addEventListener('change',check);

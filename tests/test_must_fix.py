@@ -15,7 +15,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 OWNER_PASSWORD = 'OwnerStrongPass-2026'
 
 
@@ -39,8 +39,8 @@ class MustFixTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.manager = self.login('manager@haven.local')
-        self.platform = self.login('admin@haven.local')
+        self.manager = self.login('manager@krein.local')
+        self.platform = self.login('admin@krein.local')
         self.data = self.manager.get('/api/data?company_id=1').json()
 
     def tearDown(self):
@@ -52,7 +52,7 @@ class MustFixTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)
@@ -62,14 +62,14 @@ class MustFixTests(unittest.TestCase):
     # ---------- login IP spoofing
     def test_a_forged_forwarded_for_header_does_not_get_around_the_login_limit(self):
         c = TestClient(app)
-        with mock.patch.dict(os.environ, {'HAVEN_TRUSTED_PROXY_HOPS': '1'}):
+        with mock.patch.dict(os.environ, {'KREIN_TRUSTED_PROXY_HOPS': '1'}):
             codes = []
             for i in range(9):   # the visitor rotates the left part; our proxy always appends the same real address
-                codes.append(c.post('/api/login', headers={'X-Forwarded-For': f'10.0.0.{i}, 203.0.113.7'}, json={'email': 'finance@haven.local', 'password': 'wrong-password'}).status_code)
+                codes.append(c.post('/api/login', headers={'X-Forwarded-For': f'10.0.0.{i}, 203.0.113.7'}, json={'email': 'finance@krein.local', 'password': 'wrong-password'}).status_code)
             self.assertEqual(codes[-1], 429, codes)
             # another real address is not locked out by it
-            self.assertEqual(c.post('/api/login', headers={'X-Forwarded-For': '203.0.113.8'}, json={'email': 'finance@haven.local', 'password': PASSWORD}).status_code, 200)
-        with mock.patch.dict(os.environ, {'HAVEN_TRUSTED_PROXY_HOPS': '0'}):
+            self.assertEqual(c.post('/api/login', headers={'X-Forwarded-For': '203.0.113.8'}, json={'email': 'finance@krein.local', 'password': PASSWORD}).status_code, 200)
+        with mock.patch.dict(os.environ, {'KREIN_TRUSTED_PROXY_HOPS': '0'}):
             from app.security import client_ip
             req = mock.Mock(headers={'x-forwarded-for': '1.2.3.4'}, client=mock.Mock(host='198.51.100.1'))
             self.assertEqual(client_ip(req), '198.51.100.1')   # without a proxy the header is ignored
@@ -114,7 +114,7 @@ class MustFixTests(unittest.TestCase):
         template = next(t['id'] for t in data['doc_templates'] if t['kind'] == 'Lease')
         free = next(p['id'] for p in data['properties'] if p['name'].startswith('Garden'))
         with db.connect() as conn:
-            tc = dict(conn.execute("SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id JOIN users u ON u.id=a.user_id WHERE u.email='tenant@haven.local'").fetchone())
+            tc = dict(conn.execute("SELECT c.* FROM contracts c JOIN portal_accounts a ON a.tenant_id=c.tenant_id JOIN users u ON u.id=a.user_id WHERE u.email='tenant@krein.local'").fetchone())
         self.assertEqual(self.manager.post('/api/companies/1/signature', json={'name': 'Director Daan', 'title': 'CEO', 'signature': signature_png(), 'signature_mode': 'draw'}).status_code, 200)
         for old in data['portfolios']:
             self.manager.post(f'/api/portfolios/{old["id"]}/archive')
@@ -150,12 +150,12 @@ class MustFixTests(unittest.TestCase):
 
     def test_a_far_future_invoice_run_is_refused(self):
         far = f'{date.today().year + 10}-10'
-        r = self.login('finance@haven.local').post('/api/invoices/run', json={'company_id': 1, 'period': far})
+        r = self.login('finance@krein.local').post('/api/invoices/run', json={'company_id': 1, 'period': far})
         self.assertEqual(r.status_code, 422)
 
     def test_a_fully_credited_invoice_no_longer_blocks_the_end_date(self):
         c = self.data['contracts'][0]
-        finance = self.login('finance@haven.local')
+        finance = self.login('finance@krein.local')
         nxt = (date.today().replace(day=1) + timedelta(days=32)).strftime('%Y-%m')
         finance.post('/api/invoices/run', json={'company_id': 1, 'period': nxt})
         inv = next(i for i in finance.get(f'/api/invoices?company_id=1&period={nxt}&page_size=200').json()['items'] if i['contract_id'] == c['id'])

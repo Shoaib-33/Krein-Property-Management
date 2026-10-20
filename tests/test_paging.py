@@ -37,7 +37,7 @@ class PagingTests(unittest.TestCase):
                 for inv in conn.execute('SELECT * FROM invoices WHERE period=?', (period,)).fetchall():
                     conn.execute("INSERT INTO ledger(company_id,contract_id,invoice_id,kind,amount_cents,created_by,created_at,note) VALUES(1,?,?,'payment',?,1,?,'seed')", (inv['contract_id'], inv['id'], -inv['total_cents'], f'{period}-12T10:00:00+00:00'))
         self.client = TestClient(app)
-        r = self.client.post('/api/login', json={'email': 'finance@haven.local', 'password': 'HavenDemo!2026'})
+        r = self.client.post('/api/login', json={'email': 'finance@krein.local', 'password': 'KreinDemo!2026'})
         self.client.headers['X-CSRF-Token'] = r.json()['csrf']
 
     def tearDown(self):
@@ -95,7 +95,7 @@ class PagingTests(unittest.TestCase):
         # the audit log is for admins and managers only
         self.assertEqual(self.client.get('/api/audit?company_id=1').status_code, 403)
         manager = TestClient(app)
-        r = manager.post('/api/login', json={'email': 'manager@haven.local', 'password': 'HavenDemo!2026'})
+        r = manager.post('/api/login', json={'email': 'manager@krein.local', 'password': 'KreinDemo!2026'})
         manager.headers['X-CSRF-Token'] = r.json()['csrf']
         audit = manager.get('/api/audit?company_id=1&page_size=10').json()
         self.assertEqual(len(audit['items']), 10)

@@ -48,12 +48,12 @@
     modal('Check and approve the agreement', `<p class="modal-note">${e((byId('contractors', r.contractor_id) || {}).name || '')} signed on ${e(dateLabel(r.signed_at.slice(0, 10)))}. Check the company details, then approve. The final PDF with both signatures becomes the contractor's agreement.</p>
       <div class="table-wrap"><table class="ca-values">${rowsHtml}</table></div>
       ${r.signature ? `<p class="modal-note">Signature</p><img class="ca-sig" src="${e(r.signature)}" alt="Contractor signature">` : ''}
-      <form id="ca-approve">${r.client_signed ? '' : `<p class="modal-note"><strong>Sign for your company</strong> (your stored signature was not on it when it was sent)</p>${HavenSignature.html(state.me.name)}`}
+      <form id="ca-approve">${r.client_signed ? '' : `<p class="modal-note"><strong>Sign for your company</strong> (your stored signature was not on it when it was sent)</p>${KreinSignature.html(state.me.name)}`}
         <label class="ca-confirm"><input type="checkbox" id="ca-ok"> I checked the details and the signature.</label>
         <p class="form-error" role="alert"></p>
         <div class="modal-footer"><a class="button" href="/api/contractor-agreements/${id}/file" data-pv-title="Service agreement">View PDF</a><button type="button" class="button" data-ca="return" data-id="${id}">Return with a note</button><button type="submit" class="button primary">Approve</button></div></form>`);
     const f = document.getElementById('ca-approve'), err = f.querySelector('.form-error');
-    const pad = r.client_signed ? null : HavenSignature.bind(f, state.me.name, () => {});
+    const pad = r.client_signed ? null : KreinSignature.bind(f, state.me.name, () => {});
     if (pad && pad.refit) requestAnimationFrame(() => pad.refit());
     f.addEventListener('submit', async ev => {
       ev.preventDefault();

@@ -61,7 +61,7 @@
     const overdue = !['done', 'closed'].includes(r.status) && Date.parse(r.due_date + 'T23:59:59') < Date.now();
     return {late, overdue};
   }
-  const draftKey = k => `haven_draft_${state.company}_${k}`;
+  const draftKey = k => `krein_draft_${state.company}_${k}`;
   const readDraft = k => { try { return sessionStorage.getItem(draftKey(k)) || ''; } catch { return ''; } };
   const saveDraft = (k, v) => { try { v ? sessionStorage.setItem(draftKey(k), v) : sessionStorage.removeItem(draftKey(k)); } catch { /* storage unavailable */ } };
   const isTyping = () => document.activeElement?.matches?.('input,textarea,select');

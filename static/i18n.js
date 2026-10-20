@@ -5,14 +5,14 @@
    and a DOM observer translates whatever the screens draw, including toasts and errors from the server.
    Dates and amounts switch to Dutch formats. Anything without a Dutch entry simply stays in English. */
 (() => {
-  const KEY = 'haven.lang';
+  const KEY = 'krein.lang';
   const read = () => { try { return localStorage.getItem(KEY); } catch { return null; } };
   const save = v => { try { localStorage.setItem(KEY, v); } catch { /* storage unavailable */ } };
   // Dutch is the main language; English only when the person picked it in the switch
   const lang = read() === 'en' ? 'en' : 'nl';
   const root = document.documentElement;
   root.lang = lang;
-  window.havenLang = lang;
+  window.kreinLang = lang;
 
   /* ---------- Dutch formats for dates and numbers ---------- */
   if (lang === 'nl') {
@@ -33,7 +33,7 @@
   }
 
   /* ---------- translator ---------- */
-  const dict = window.HAVEN_NL || {ui: {}, api: {}};
+  const dict = window.KREIN_NL || {ui: {}, api: {}};
   const exact = new Map(), patterns = [];
   const squash = s => s.replace(/\s+/g, ' ').trim();
   const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -157,6 +157,6 @@
 
   document.addEventListener('DOMContentLoaded', () => { pending.add(document.body); schedule(); });
   if (document.readyState !== 'loading') { pending.add(document.body); schedule(); }
-  window.havenTranslate = translate;
-  window.havenT = (text) => (lang === 'nl' && tr(squash(String(text)))) || text;
+  window.kreinTranslate = translate;
+  window.kreinT = (text) => (lang === 'nl' && tr(squash(String(text)))) || text;
 })();

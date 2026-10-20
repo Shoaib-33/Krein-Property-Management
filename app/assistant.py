@@ -3,8 +3,8 @@
 Privacy: what the person types (the question and the last few chat turns) and the current page name are sent to the
 AI provider; no records from the database are sent. Before sending, email addresses, phone numbers, IBANs and other
 long numbers are masked (redact). The chat shows a notice saying so. Name these providers as processors in the
-privacy statement, or limit the AI with HAVEN_ASSISTANT_AI_FOR (for example "staff,owner" keeps tenants on the
-built-in guide) or switch it off by leaving the API keys empty. HAVEN_ASSISTANT_DAILY_LIMIT caps the AI calls per day
+privacy statement, or limit the AI with KREIN_ASSISTANT_AI_FOR (for example "staff,owner" keeps tenants on the
+built-in guide) or switch it off by leaving the API keys empty. KREIN_ASSISTANT_DAILY_LIMIT caps the AI calls per day
 for the whole server (default 2000). Without a key, over the cap, or when the AI is unavailable, a built-in guide
 answers from keywords, so the chat always works. The browser never sees the API key.
 """
@@ -21,7 +21,7 @@ from fastapi import APIRouter, Depends, Request
 from .security import current_user, portal_of
 
 router = APIRouter()
-log = logging.getLogger('haven.assistant')
+log = logging.getLogger('krein.assistant')
 API = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
 GROQ_API = 'https://api.groq.com/openai/v1/chat/completions'
 GROQ_DEFAULT_MODEL = 'openai/gpt-oss-20b'
@@ -208,7 +208,7 @@ def ask_gemini(who: str, page: str, history: list, message: str, lang: str = 'en
     key = os.environ.get('GEMINI_API_KEY', '').strip()
     if not key:
         return None
-    model = os.environ.get('HAVEN_GEMINI_MODEL', DEFAULT_MODEL).strip() or DEFAULT_MODEL
+    model = os.environ.get('KREIN_GEMINI_MODEL', DEFAULT_MODEL).strip() or DEFAULT_MODEL
     contents = [{'role': 'user' if h['role'] == 'user' else 'model', 'parts': [{'text': h['text']}]} for h in history]
     contents.append({'role': 'user', 'parts': [{'text': message}]})
     body = json.dumps({
@@ -232,8 +232,8 @@ def ask_gemini(who: str, page: str, history: list, message: str, lang: str = 'en
 
 
 def ai_allowed(who):
-    """HAVEN_ASSISTANT_AI_FOR lists who may use the AI (staff, owner, contractor, tenant); the others get the built-in guide."""
-    return who in {x.strip() for x in os.environ.get('HAVEN_ASSISTANT_AI_FOR', 'staff,owner,contractor,tenant').split(',')}
+    """KREIN_ASSISTANT_AI_FOR lists who may use the AI (staff, owner, contractor, tenant); the others get the built-in guide."""
+    return who in {x.strip() for x in os.environ.get('KREIN_ASSISTANT_AI_FOR', 'staff,owner,contractor,tenant').split(',')}
 
 
 def ai_configured(who=None):
@@ -262,7 +262,7 @@ _day = {'date': '', 'count': 0}
 def within_daily_limit():
     """A server-wide cap on paid AI calls per day, so a misused account cannot run up the provider bill."""
     try:
-        cap = int(os.environ.get('HAVEN_ASSISTANT_DAILY_LIMIT', '2000'))
+        cap = int(os.environ.get('KREIN_ASSISTANT_DAILY_LIMIT', '2000'))
     except ValueError:
         cap = 2000
     today = time.strftime('%Y-%m-%d')
@@ -278,13 +278,13 @@ def ask_groq(who: str, page: str, history: list, message: str, lang: str = 'en')
     key = os.environ.get('GROQ_API_KEY', '').strip()
     if not key:
         return None
-    model = os.environ.get('HAVEN_GROQ_MODEL', GROQ_DEFAULT_MODEL).strip() or GROQ_DEFAULT_MODEL
+    model = os.environ.get('KREIN_GROQ_MODEL', GROQ_DEFAULT_MODEL).strip() or GROQ_DEFAULT_MODEL
     messages = [{'role': 'system', 'content': system_prompt(who, page, lang)}]
     messages += [{'role': 'user' if h['role'] == 'user' else 'assistant', 'content': h['text']} for h in history]
     messages.append({'role': 'user', 'content': message})
     body = json.dumps({'model': model, 'messages': messages, 'temperature': 0.3, 'max_tokens': 800, 'reasoning_effort': 'low'}).encode()
     req = urllib.request.Request(GROQ_API, data=body, method='POST', headers={
-        'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'User-Agent': 'haven-help/1.0'})
+        'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'User-Agent': 'krein-help/1.0'})
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.load(resp)

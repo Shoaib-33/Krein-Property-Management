@@ -10,9 +10,9 @@ Tenants: name, email, phone, language, tenancies, rent, invoices, payments and r
 
 - **Access:** every person only sees their own records (tenant portal, owner portal, contractor portal, landlord view limited to his own units, staff by role).
 - **Right of access / portability (art. 15 and 20):** Tenants & contracts > Tenant directory > *Export data* gives a ZIP with all data about one tenant.
-- **Erasure after the retention period (art. 17, 5(1)(e)):** `python manage.py privacy-erase --apply` anonymises former tenants whose last tenancy ended more than `HAVEN_RETENTION_YEARS` (default 7, the Dutch fiscal retention period) years ago and who owe nothing. Amounts, dates and invoice numbers stay so the accounts remain correct. Run it regularly (for example monthly, from a scheduled job).
+- **Erasure after the retention period (art. 17, 5(1)(e)):** `python manage.py privacy-erase --apply` anonymises former tenants whose last tenancy ended more than `KREIN_RETENTION_YEARS` (default 7, the Dutch fiscal retention period) years ago and who owe nothing. Amounts, dates and invoice numbers stay so the accounts remain correct. Run it regularly (for example monthly, from a scheduled job).
 - **Audit log:** kept as the tamper-evident legal record of who did what. It contains names in some entries and is not anonymised.
-- **Help chat:** what people type is sent to Groq (USA) or Google (Gemini). Contact details and account numbers are masked before sending and the chat warns people not to type personal details. Turn the AI off for a group with `HAVEN_ASSISTANT_AI_FOR`, or completely by leaving the API keys empty.
+- **Help chat:** what people type is sent to Groq (USA) or Google (Gemini). Contact details and account numbers are masked before sending and the chat warns people not to type personal details. Turn the AI off for a group with `KREIN_ASSISTANT_AI_FOR`, or completely by leaving the API keys empty.
 
 ## What you need to arrange
 

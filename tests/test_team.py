@@ -12,7 +12,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 
 
 class TeamTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class TeamTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.platform = self.login('developer@haven.local', portal='developer')
+        self.platform = self.login('developer@krein.local', portal='developer')
 
     def tearDown(self):
         for c in self.clients:
@@ -38,7 +38,7 @@ class TeamTests(unittest.TestCase):
         client = TestClient(app)
         self.clients.append(client)
         if portal:
-            client.headers['X-Haven-Portal'] = portal
+            client.headers['X-Krein-Portal'] = portal
         response = client.post('/api/login', json={'email': email, 'password': password})
         self.assertEqual(response.status_code, 200, response.text)
         client.headers['X-CSRF-Token'] = response.json()['csrf']
@@ -56,7 +56,7 @@ class TeamTests(unittest.TestCase):
         self.assertTrue(invite['path'].startswith('/join/') and not invite['existing'])
         token = invite['path'].split('/')[-1]
         with db.connect() as conn:
-            member = conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'developer@haven.local')).fetchone()
+            member = conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'developer@krein.local')).fetchone()
         self.assertIsNone(member)                                                                  # not a member ...
         self.assertEqual(self.platform.get(f'/api/data?company_id={company_id}').status_code, 200)  # ... but can still open it
         self.assertIn(company_id, [c['id'] for c in self.platform.get('/api/me').json()['companies']])
@@ -77,28 +77,28 @@ class TeamTests(unittest.TestCase):
     def test_add_me_keeps_the_platform_admin_as_member(self):
         company_id = self.new_company(add_me=True)['id']
         with db.connect() as conn:
-            self.assertTrue(conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'developer@haven.local')).fetchone())
+            self.assertTrue(conn.execute('SELECT 1 FROM memberships WHERE company_id=? AND user_id=(SELECT id FROM users WHERE email=?)', (company_id, 'developer@krein.local')).fetchone())
 
     def test_one_person_can_join_a_second_company_but_only_as_themselves(self):
         company_id = self.new_company()['id']
-        self.assertEqual(self.platform.post('/api/staff/invite', json={'company_id': company_id, 'name': 'Daan', 'email': 'manager@haven.local', 'role': 'manager'}).status_code, 200)
-        invite = self.platform.post('/api/staff/invite', json={'company_id': company_id, 'name': 'Daan Bakker', 'email': 'manager@haven.local', 'role': 'manager'}).json()
+        self.assertEqual(self.platform.post('/api/staff/invite', json={'company_id': company_id, 'name': 'Daan', 'email': 'manager@krein.local', 'role': 'manager'}).status_code, 200)
+        invite = self.platform.post('/api/staff/invite', json={'company_id': company_id, 'name': 'Daan Bakker', 'email': 'manager@krein.local', 'role': 'manager'}).json()
         self.assertTrue(invite['existing'])
         token = invite['path'].split('/')[-1]
         anon = TestClient(app)
         self.assertEqual(anon.post(f'/api/join/{token}', json={}).status_code, 401)                   # must sign in first
-        other = self.login('finance@haven.local')
+        other = self.login('finance@krein.local')
         self.assertEqual(other.post(f'/api/join/{token}', json={}).status_code, 403)                  # someone else cannot accept it
-        manager = self.login('manager@haven.local')
+        manager = self.login('manager@krein.local')
         self.assertEqual(manager.post(f'/api/join/{token}', json={}).status_code, 200)
         companies = {c['id']: c['role'] for c in manager.get('/api/me').json()['companies']}
         self.assertEqual(companies.get(company_id), 'manager')
         self.assertIn(1, companies)                                                                    # still in the first company
         self.assertEqual(manager.get(f'/api/data?company_id={company_id}').status_code, 200)
-        self.assertEqual(self.platform.post('/api/staff/invite', json={'company_id': company_id, 'name': 'Daan', 'email': 'manager@haven.local', 'role': 'manager'}).status_code, 409)
+        self.assertEqual(self.platform.post('/api/staff/invite', json={'company_id': company_id, 'name': 'Daan', 'email': 'manager@krein.local', 'role': 'manager'}).status_code, 409)
 
     def test_only_a_company_admin_can_invite_and_invitations_can_be_cancelled(self):
-        manager = self.login('manager@haven.local')
+        manager = self.login('manager@krein.local')
         self.assertEqual(manager.post('/api/staff/invite', json={'company_id': 1, 'name': 'X Y', 'email': 'xy@example.com', 'role': 'finance'}).status_code, 403)
         invite = self.platform.post('/api/staff/invite', json={'company_id': 1, 'name': 'X Y', 'email': 'xy@example.com', 'role': 'finance'}).json()
         pending = self.platform.get('/api/staff-invites?company_id=1').json()
@@ -132,13 +132,13 @@ class TeamTests(unittest.TestCase):
         everything = self.platform.get('/api/group/overview').json()
         names = {c['name'] for c in everything['companies']}
         self.assertEqual(names, {'Krein Residential BV', 'Canal House BV'})
-        haven = next(c for c in everything['companies'] if c['name'] == 'Krein Residential BV')
-        self.assertEqual(haven['houses'], haven['occupied'] + haven['reserved'] + haven['vacant'])
-        self.assertGreater(haven['rent_roll_cents'], 0)
+        krein = next(c for c in everything['companies'] if c['name'] == 'Krein Residential BV')
+        self.assertEqual(krein['houses'], krein['occupied'] + krein['reserved'] + krein['vacant'])
+        self.assertGreater(krein['rent_roll_cents'], 0)
         self.assertEqual(everything['totals']['houses'], sum(c['houses'] for c in everything['companies']))
         data = self.platform.get('/api/data?company_id=1').json()
-        self.assertEqual(haven['houses'], len(data['properties']))
-        manager = self.login('manager@haven.local').get('/api/group/overview').json()
+        self.assertEqual(krein['houses'], len(data['properties']))
+        manager = self.login('manager@krein.local').get('/api/group/overview').json()
         self.assertEqual([c['name'] for c in manager['companies']], ['Krein Residential BV'])
         # property staff see counts only
         token = self.platform.post('/api/staff/invite', json={'company_id': 1, 'name': 'Pim', 'email': 'pim@example.com', 'role': 'property'}).json()['path'].split('/')[-1]
@@ -148,13 +148,13 @@ class TeamTests(unittest.TestCase):
         self.assertEqual(TestClient(app).get('/api/group/overview').status_code, 401)
 
     def test_big_screens_are_compressed_pdfs_are_not_and_https_sets_hsts(self):
-        manager = self.login('manager@haven.local')
+        manager = self.login('manager@krein.local')
         data = manager.get('/api/data?company_id=1', headers={'Accept-Encoding': 'gzip'})
         self.assertEqual(data.headers.get('content-encoding'), 'gzip')
         invoice = manager.get('/api/invoices?company_id=1&page_size=5').json()['items'][0]['id']
         self.assertIsNone(manager.get(f'/api/invoices/{invoice}/pdf', headers={'Accept-Encoding': 'gzip'}).headers.get('content-encoding'))
         self.assertNotIn('strict-transport-security', manager.get('/').headers)
-        with mock.patch.dict(os.environ, {'HAVEN_SECURE_COOKIES': '1'}):
+        with mock.patch.dict(os.environ, {'KREIN_SECURE_COOKIES': '1'}):
             self.assertIn('max-age=31536000', manager.get('/').headers.get('strict-transport-security', ''))
 
 

@@ -236,7 +236,7 @@
     } catch (err) { toast(err.message); }
   });
 
-  document.addEventListener('haven-period', ev => { if (ev.detail === 'bank') { ui.data = null; } });
+  document.addEventListener('krein-period', ev => { if (ev.detail === 'bank') { ui.data = null; } });
   // a fresh workspace load (another company, new data) reloads the bank list next time it is opened
   const baseRefresh = refresh;
   refresh = async (...args) => { const r = await baseRefresh(...args); if (state.page !== 'bank') ui.data = null; return r; };

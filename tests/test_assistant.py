@@ -35,8 +35,8 @@ class AssistantTests(unittest.TestCase):
         self.temp.cleanup()
 
     def login(self, email, portal=None):
-        headers = {'X-Haven-Portal': portal} if portal else {}
-        r = self.client.post('/api/login', json={'email': email, 'password': 'HavenDemo!2026'}, headers=headers)
+        headers = {'X-Krein-Portal': portal} if portal else {}
+        r = self.client.post('/api/login', json={'email': email, 'password': 'KreinDemo!2026'}, headers=headers)
         self.assertEqual(r.status_code, 200, r.text)
         self.headers = dict(headers, **{'X-CSRF-Token': r.json()['csrf']})
 
@@ -44,7 +44,7 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(self.client.post('/api/assistant/chat', json={'message': 'hi'}).status_code, 401)
 
     def test_guide_answers_without_key_and_stays_in_audience(self):
-        self.login('tenant@haven.local', 'tenant')
+        self.login('tenant@krein.local', 'tenant')
         info = self.client.get('/api/assistant/info', headers=self.headers).json()
         self.assertFalse(info['ai'])
         reply = self.client.post('/api/assistant/chat', headers=self.headers, json={'message': 'How do I report a leak?'}).json()
@@ -55,7 +55,7 @@ class AssistantTests(unittest.TestCase):
         self.assertTrue(all(a['page'] in assistant.PAGES['tenant'] for a in reply['actions']))
 
     def test_gemini_reply_is_used_and_actions_are_validated(self):
-        self.login('manager@haven.local')
+        self.login('manager@krein.local')
         sent = {}
 
         def fake(who, page, history, message, lang='en'):
@@ -72,15 +72,15 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(sent['history'], [{'role': 'user', 'text': 'earlier'}])
 
     def test_falls_back_when_gemini_fails_and_prompt_has_no_private_data(self):
-        self.login('manager@haven.local')
+        self.login('manager@krein.local')
         with mock.patch.object(assistant, 'ask_gemini', lambda *a: None):
             data = self.client.post('/api/assistant/chat', headers=self.headers, json={'message': 'where are late payments'}).json()
         self.assertEqual((data['source'], data['actions'][0]['page']), ('guide', 'arrears'))
         prompt = assistant.system_prompt('staff', 'overview')
-        self.assertNotIn('haven.local', prompt)
+        self.assertNotIn('krein.local', prompt)
 
     def test_greetings_get_a_friendly_answer_and_a_failed_ai_is_reported(self):
-        self.login('tenant@haven.local', 'tenant')
+        self.login('tenant@krein.local', 'tenant')
         hello = self.client.post('/api/assistant/chat', headers=self.headers, json={'message': 'hello'}).json()
         self.assertEqual(hello['reply'], assistant.HELLO)
         self.assertIn('welcome', self.client.post('/api/assistant/chat', headers=self.headers, json={'message': 'thanks!'}).json()['reply'])
@@ -91,7 +91,7 @@ class AssistantTests(unittest.TestCase):
         self.assertEqual(down['source'], 'guide')
 
     def test_rate_limit(self):
-        self.login('manager@haven.local')
+        self.login('manager@krein.local')
         last = None
         for _ in range(assistant.RATE_PER_MINUTE + 1):
             last = self.client.post('/api/assistant/chat', headers=self.headers, json={'message': 'tasks'}).json()

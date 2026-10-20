@@ -76,7 +76,7 @@ FEATURES = [
 ]
 BY_KEY = {f[0]: f for f in FEATURES}
 _PATTERNS = [(re.compile('^' + p), f[0]) for f in FEATURES for p in f[5]]
-request_path = contextvars.ContextVar('haven_request_path', default='')
+request_path = contextvars.ContextVar('krein_request_path', default='')
 
 
 def feature_for(path):

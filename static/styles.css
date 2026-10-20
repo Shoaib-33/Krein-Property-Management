@@ -16,7 +16,7 @@
 .unit-chip{display:inline-flex;align-items:center;border:1px solid #dce9e1;background:#f3f8f5;color:#466357;border-radius:999px;padding:5px 10px;font-size:11px;line-height:1.4}
 @media(max-width:650px){.building-group-row{align-items:flex-start;flex-direction:column;gap:9px}.building-group-units{justify-content:flex-start}}
 
-/* Haven interface polish: clearer hierarchy, more room, and stronger interaction feedback. */
+/* Krein interface polish: clearer hierarchy, more room, and stronger interaction feedback. */
 :root{--bg:#f4f7f5;--panel:#fff;--ink:#19372d;--muted:#667b72;--line:#dfe9e3;--green:#176b55;--soft:#e8f3ed;--sidebar:256px}
 body{font-size:15px;line-height:1.55;color:var(--ink);background:var(--bg)}
 .sidebar{box-shadow:4px 0 24px #19372d08}

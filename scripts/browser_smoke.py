@@ -17,7 +17,7 @@ sys.path.insert(0, str(ROOT))
 
 def main():
     with tempfile.TemporaryDirectory() as directory:
-        os.environ['HAVEN_DATA_DIR'] = directory
+        os.environ['KREIN_DATA_DIR'] = directory
         from manage import demo
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
@@ -39,8 +39,8 @@ def main():
                 errors=[]
                 page.on('pageerror', lambda err: errors.append(str(err)))
                 page.goto('http://127.0.0.1:8765')
-                page.locator('#email').fill('admin@haven.local')
-                page.locator('#password').fill('HavenDemo!2026')
+                page.locator('#email').fill('admin@krein.local')
+                page.locator('#password').fill('KreinDemo!2026')
                 page.get_by_role('button',name='Sign in to Krein').click()
                 page.locator('.summary-grid').wait_for()
                 out=ROOT/'test-results'

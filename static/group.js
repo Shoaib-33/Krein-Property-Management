@@ -38,7 +38,7 @@
     const open = ev.target.closest('[data-group-open]');
     if (!open) return;
     ev.preventDefault();
-    state.company = Number(open.dataset.groupOpen); sessionStorage.setItem('haven_company', state.company);
+    state.company = Number(open.dataset.groupOpen); sessionStorage.setItem('krein_company', state.company);
     state.page = 'overview'; state.filter = 'All'; history.replaceState(null, '', '#overview');
     await refresh();
   });

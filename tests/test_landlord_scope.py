@@ -13,7 +13,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 LANDLORD_PASSWORD = 'LandlordStrong-2026'
 HIDDEN_KEYS = ('audit', 'staff', 'contractors', 'work_orders', 'settlements', 'cost_lines', 'service_charge_groups', 'automation_rules', 'automation_runs', 'rules', 'sla_policies',
                'contractor_accounts', 'contractor_agreement_submissions', 'custom_fields', 'canned_replies', 'valuations', 'rent_proposals', 'published_statements', 'outbound_emails_other')
@@ -32,8 +32,8 @@ class LandlordScopeTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.clients = []
-        self.manager = self.login('manager@haven.local')
-        self.platform = self.login('admin@haven.local')
+        self.manager = self.login('manager@krein.local')
+        self.platform = self.login('admin@krein.local')
         for old in self.manager.get('/api/data?company_id=1').json()['portfolios']:   # the demo already groups the units; free them for this test
             self.assertEqual(self.manager.post(f'/api/portfolios/{old["id"]}/archive').status_code, 200)
         data = self.manager.get('/api/data?company_id=1').json()
@@ -58,7 +58,7 @@ class LandlordScopeTests(unittest.TestCase):
     def login(self, email, password=PASSWORD, portal=None):
         c = TestClient(app)
         self.clients.append(c)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': password})
         self.assertEqual(r.status_code, 200, r.text)
         c.headers.update(h)
@@ -256,16 +256,16 @@ class LandlordScopeTests(unittest.TestCase):
     def test_admin_and_landlord_can_be_signed_in_in_the_same_browser(self):
         c = TestClient(app)
         self.clients.append(c)
-        self.assertEqual(c.post('/api/login', json={'email': 'admin@haven.local', 'password': PASSWORD}).status_code, 200)
-        landlord = c.post('/api/login', headers={'X-Haven-Portal': 'landlord'}, json={'email': 'landlord.a@example.com', 'password': LANDLORD_PASSWORD})
+        self.assertEqual(c.post('/api/login', json={'email': 'admin@krein.local', 'password': PASSWORD}).status_code, 200)
+        landlord = c.post('/api/login', headers={'X-Krein-Portal': 'landlord'}, json={'email': 'landlord.a@example.com', 'password': LANDLORD_PASSWORD})
         self.assertEqual(landlord.status_code, 200)
-        self.assertEqual(c.get('/api/me').json()['email'], 'admin@haven.local')
-        self.assertEqual(c.get('/api/me', headers={'X-Haven-Portal': 'landlord'}).json()['email'], 'landlord.a@example.com')
+        self.assertEqual(c.get('/api/me').json()['email'], 'admin@krein.local')
+        self.assertEqual(c.get('/api/me', headers={'X-Krein-Portal': 'landlord'}).json()['email'], 'landlord.a@example.com')
         self.assertEqual(c.get('/api/me', headers={'Referer': 'http://testserver/landlord'}).json()['email'], 'landlord.a@example.com')
         self.assertEqual(c.get('/landlord').status_code, 200)
 
     def test_a_person_with_a_company_wide_role_cannot_be_turned_into_a_landlord(self):
-        manager_owner = self.manager.post('/api/owners', json={'company_id': 1, 'name': 'Staff Owner', 'email': 'manager@haven.local', 'phone': '', 'payout_details': ''}).json()['id']
+        manager_owner = self.manager.post('/api/owners', json={'company_id': 1, 'name': 'Staff Owner', 'email': 'manager@krein.local', 'phone': '', 'payout_details': ''}).json()['id']
         self.assertEqual(self.platform.post(f'/api/owners/{manager_owner}/full-access', json={'enabled': True}).status_code, 409)
 
 

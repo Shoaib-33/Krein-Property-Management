@@ -11,7 +11,7 @@ from app import db
 from app.main import app
 from manage import demo
 
-PASSWORD = 'HavenDemo!2026'
+PASSWORD = 'KreinDemo!2026'
 
 
 class ExistingLoginInviteTests(unittest.TestCase):
@@ -25,7 +25,7 @@ class ExistingLoginInviteTests(unittest.TestCase):
         with contextlib.redirect_stdout(io.StringIO()):
             demo()
         self.manager = TestClient(app)
-        r = self.manager.post('/api/login', json={'email': 'manager@haven.local', 'password': PASSWORD})
+        r = self.manager.post('/api/login', json={'email': 'manager@krein.local', 'password': PASSWORD})
         self.manager.headers['X-CSRF-Token'] = r.json()['csrf']
 
     def tearDown(self):
@@ -34,7 +34,7 @@ class ExistingLoginInviteTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_a_staff_member_who_is_also_a_tenant_links_the_tenancy_to_the_same_login(self):
-        tenant = self.manager.post('/api/records/tenants', json={'company_id': 1, 'name': 'Sophie de Vries', 'email': 'finance@haven.local', 'phone': '', 'language': 'en'}).json()['id']
+        tenant = self.manager.post('/api/records/tenants', json={'company_id': 1, 'name': 'Sophie de Vries', 'email': 'finance@krein.local', 'phone': '', 'language': 'en'}).json()['id']
         invite = self.manager.post('/api/accounts/invite', json={'kind': 'tenant', 'target_id': tenant})
         self.assertEqual(invite.status_code, 200, invite.text)
         self.assertTrue(invite.json()['existing'])
@@ -44,15 +44,15 @@ class ExistingLoginInviteTests(unittest.TestCase):
         self.assertEqual(public.post(f'/api/invitations/{token}', json={'password': 'not-her-password-at-all'}).status_code, 401)   # someone else cannot take it
         self.assertEqual(public.post(f'/api/invitations/{token}', json={'password': PASSWORD}).status_code, 200)
         portal = TestClient(app)
-        r = portal.post('/api/login', headers={'X-Haven-Portal': 'tenant'}, json={'email': 'finance@haven.local', 'password': PASSWORD})
+        r = portal.post('/api/login', headers={'X-Krein-Portal': 'tenant'}, json={'email': 'finance@krein.local', 'password': PASSWORD})
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(portal.get('/api/tenant/data', headers={'X-Haven-Portal': 'tenant'}).status_code, 200)   # her tenant portal
+        self.assertEqual(portal.get('/api/tenant/data', headers={'X-Krein-Portal': 'tenant'}).status_code, 200)   # her tenant portal
         staff = TestClient(app)
-        self.assertEqual(staff.post('/api/login', json={'email': 'finance@haven.local', 'password': PASSWORD}).status_code, 200)
+        self.assertEqual(staff.post('/api/login', json={'email': 'finance@krein.local', 'password': PASSWORD}).status_code, 200)
         self.assertEqual(staff.get('/api/data?company_id=1').status_code, 200)   # and still her staff work
 
     def test_guessing_the_existing_password_is_limited(self):
-        tenant = self.manager.post('/api/records/tenants', json={'company_id': 1, 'name': 'X', 'email': 'finance@haven.local', 'phone': '', 'language': 'en'}).json()['id']
+        tenant = self.manager.post('/api/records/tenants', json={'company_id': 1, 'name': 'X', 'email': 'finance@krein.local', 'phone': '', 'language': 'en'}).json()['id']
         token = self.manager.post('/api/accounts/invite', json={'kind': 'tenant', 'target_id': tenant}).json()['path'].split('/')[-1]
         public = TestClient(app)
         codes = [public.post(f'/api/invitations/{token}', json={'password': f'wrong-password-{n:02d}'}).status_code for n in range(9)]

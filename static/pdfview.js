@@ -43,5 +43,5 @@
     open(u.pathname, a.dataset.pvTitle || (/invoice/.test(u.pathname) ? 'Invoice' : /lease-offers/.test(u.pathname) ? 'Contract' : 'Document'));
   }, true);
 
-  window.HavenPdf = {open};
+  window.KreinPdf = {open};
 })();

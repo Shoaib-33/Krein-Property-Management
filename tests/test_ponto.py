@@ -19,8 +19,8 @@ from app import db
 from app.main import app
 from manage import demo
 
-PW = 'HavenDemo!2026'
-KEYS = {'HAVEN_PONTO_CLIENT_ID': 'test-client', 'HAVEN_PONTO_CLIENT_SECRET': 'test-secret', 'HAVEN_PONTO_SANDBOX': '1', 'HAVEN_PUBLIC_URL': 'https://haven.test'}
+PW = 'KreinDemo!2026'
+KEYS = {'KREIN_PONTO_CLIENT_ID': 'test-client', 'KREIN_PONTO_CLIENT_SECRET': 'test-secret', 'KREIN_PONTO_SANDBOX': '1', 'KREIN_PUBLIC_URL': 'https://krein.test'}
 
 
 class FakePonto:
@@ -72,8 +72,8 @@ class PontoTests(unittest.TestCase):
         with db.transaction() as conn:
             conn.execute('UPDATE invoices SET released_at=COALESCE(released_at,?)', (db.now(),))
             conn.execute("UPDATE companies SET bank_mode='auto'")
-        self.admin = self.login('admin@haven.local')
-        self.tenant = self.login('tenant@haven.local', 'tenant')
+        self.admin = self.login('admin@krein.local')
+        self.tenant = self.login('tenant@krein.local', 'tenant')
         self.inv = sorted([i for i in self.tenant.get('/api/tenant/data').json()['invoices'] if i['balance_cents'] == 120000], key=lambda i: i['due_date'])[0]
 
     def tearDown(self):
@@ -82,7 +82,7 @@ class PontoTests(unittest.TestCase):
 
     def login(self, email, portal=None):
         c = TestClient(app)
-        h = {'X-Haven-Portal': portal} if portal else {}
+        h = {'X-Krein-Portal': portal} if portal else {}
         r = c.post('/api/login', headers=h, json={'email': email, 'password': PW})
         c.headers.update(h); c.headers['X-CSRF-Token'] = r.json()['csrf']
         return c
@@ -92,7 +92,7 @@ class PontoTests(unittest.TestCase):
         self.assertEqual(r.status_code, 200, r.text)
         q = urllib.parse.parse_qs(urllib.parse.urlparse(r.json()['url']).query)
         self.assertTrue(r.json()['url'].startswith('https://sandbox-authorization.myponto.com'))
-        self.assertEqual((q['scope'][0], q['code_challenge_method'][0], q['redirect_uri'][0]), ('ai offline_access', 'S256', 'https://haven.test/api/ponto/callback'))
+        self.assertEqual((q['scope'][0], q['code_challenge_method'][0], q['redirect_uri'][0]), ('ai offline_access', 'S256', 'https://krein.test/api/ponto/callback'))
         fake.code_challenge = q['code_challenge'][0]
         back = TestClient(app).get('/api/ponto/callback', params={'state': q['state'][0], 'code': 'the-code'}, follow_redirects=False)
         self.assertEqual(back.status_code, 303)
@@ -148,7 +148,7 @@ class PontoTests(unittest.TestCase):
     def test_disconnect_and_who_may_connect(self):
         fake = FakePonto(self.inv['number'])
         with patch.dict(os.environ, KEYS), patch('app.ponto.http', fake):
-            fin = self.login('finance@haven.local')
+            fin = self.login('finance@krein.local')
             self.assertEqual(fin.post('/api/ponto/connect', json={'company_id': 1}).status_code, 403)   # finance may check, not connect
             self.connect(fake)
             self.assertEqual(fin.post('/api/ponto/sync', json={'company_id': 1}).status_code, 200)

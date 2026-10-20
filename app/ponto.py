@@ -5,10 +5,10 @@ feeds the incoming payments into the same matching as an uploaded statement (app
 a certain match is booked as approved and the tenant is told; anything else waits under "Please check".
 
 It switches itself on when the server settings hold the Ponto keys:
-  HAVEN_PONTO_CLIENT_ID, HAVEN_PONTO_CLIENT_SECRET   the integration created in the Ponto dashboard
-  HAVEN_PONTO_SANDBOX=1                               while testing with Ponto's sandbox banks (default 0 = live)
-  HAVEN_PONTO_CERT, HAVEN_PONTO_KEY(, _PASSWORD)      the certificate files Ponto gives for the integration, when it does
-  HAVEN_PONTO_SYNC_MINUTES                            how often Krein looks for new payments (default 60)
+  KREIN_PONTO_CLIENT_ID, KREIN_PONTO_CLIENT_SECRET   the integration created in the Ponto dashboard
+  KREIN_PONTO_SANDBOX=1                               while testing with Ponto's sandbox banks (default 0 = live)
+  KREIN_PONTO_CERT, KREIN_PONTO_KEY(, _PASSWORD)      the certificate files Ponto gives for the integration, when it does
+  KREIN_PONTO_SYNC_MINUTES                            how often Krein looks for new payments (default 60)
 Without them everything works as before (statement upload).
 
 Flow: an administrator clicks Connect -> logs in at the bank through Ponto and picks the account(s) -> Ponto returns to
@@ -53,19 +53,19 @@ class PontoError(Exception):
 
 # ---------------------------------------------------------------- settings
 def settings():
-    cid, secret = os.environ.get('HAVEN_PONTO_CLIENT_ID', '').strip(), os.environ.get('HAVEN_PONTO_CLIENT_SECRET', '').strip()
+    cid, secret = os.environ.get('KREIN_PONTO_CLIENT_ID', '').strip(), os.environ.get('KREIN_PONTO_CLIENT_SECRET', '').strip()
     if not cid or not secret:
         return None
-    public = os.environ.get('HAVEN_PUBLIC_URL', '').strip().rstrip('/') or 'http://localhost:8000'
-    return {'client_id': cid, 'client_secret': secret, 'sandbox': os.environ.get('HAVEN_PONTO_SANDBOX', '0').strip() in ('1', 'true', 'yes'),
-            'cert': os.environ.get('HAVEN_PONTO_CERT', '').strip(), 'key': os.environ.get('HAVEN_PONTO_KEY', '').strip(),
-            'key_password': os.environ.get('HAVEN_PONTO_KEY_PASSWORD', '') or None,
-            'redirect': os.environ.get('HAVEN_PONTO_REDIRECT_URL', '').strip() or public + '/api/ponto/callback'}
+    public = os.environ.get('KREIN_PUBLIC_URL', '').strip().rstrip('/') or 'http://localhost:8000'
+    return {'client_id': cid, 'client_secret': secret, 'sandbox': os.environ.get('KREIN_PONTO_SANDBOX', '0').strip() in ('1', 'true', 'yes'),
+            'cert': os.environ.get('KREIN_PONTO_CERT', '').strip(), 'key': os.environ.get('KREIN_PONTO_KEY', '').strip(),
+            'key_password': os.environ.get('KREIN_PONTO_KEY_PASSWORD', '') or None,
+            'redirect': os.environ.get('KREIN_PONTO_REDIRECT_URL', '').strip() or public + '/api/ponto/callback'}
 
 
 def sync_minutes():
     try:
-        return max(15, min(24 * 60, int(os.environ.get('HAVEN_PONTO_SYNC_MINUTES', '60'))))
+        return max(15, min(24 * 60, int(os.environ.get('KREIN_PONTO_SYNC_MINUTES', '60'))))
     except ValueError:
         return 60
 
@@ -297,7 +297,7 @@ def ponto_connect(data: dict, user=Depends(current_user)):
     """Start connecting (or approving again): returns the Ponto page where the administrator logs in at the bank."""
     cfg = settings()
     if not cfg:
-        raise HTTPException(409, 'Add the Ponto keys (HAVEN_PONTO_CLIENT_ID and HAVEN_PONTO_CLIENT_SECRET) to the server settings first.')
+        raise HTTPException(409, 'Add the Ponto keys (KREIN_PONTO_CLIENT_ID and KREIN_PONTO_CLIENT_SECRET) to the server settings first.')
     try:
         company_id = int(data.get('company_id'))
     except (TypeError, ValueError):

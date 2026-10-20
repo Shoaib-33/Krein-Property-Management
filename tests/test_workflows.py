@@ -38,10 +38,10 @@ class WorkflowTests(unittest.TestCase):
         self.temp.cleanup()
 
     def login(self, role):
-        self.client.headers.pop('X-Haven-Portal', None)
+        self.client.headers.pop('X-Krein-Portal', None)
         if role == 'developer':   # the developer signs in on its own page (/developer)
-            self.client.headers['X-Haven-Portal'] = 'developer'
-        response = self.client.post('/api/login', json={'email': f'{role}@haven.local', 'password': 'HavenDemo!2026'})
+            self.client.headers['X-Krein-Portal'] = 'developer'
+        response = self.client.post('/api/login', json={'email': f'{role}@krein.local', 'password': 'KreinDemo!2026'})
         self.assertEqual(response.status_code, 200, response.text)
         self.csrf = response.json()['csrf']
         self.client.headers['X-CSRF-Token'] = self.csrf
@@ -93,9 +93,9 @@ class WorkflowTests(unittest.TestCase):
         password='TenantAccess!2026'
         activated=self.client.post(f'/api/invitations/{token}',json={'password':password})
         self.assertEqual(activated.status_code,200,activated.text)
-        signed_in=self.client.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':activated.json()['email'],'password':password})
+        signed_in=self.client.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':activated.json()['email'],'password':password})
         self.assertEqual(signed_in.status_code,200,signed_in.text)
-        identity=self.client.get('/api/me',headers={'X-Haven-Portal':'tenant'}).json()
+        identity=self.client.get('/api/me',headers={'X-Krein-Portal':'tenant'}).json()
         self.assertEqual(identity['name'],next(t['name'] for t in self.data['tenants'] if t['id']==tenant))
         self.assertTrue(identity['tenant_access'])
 
@@ -107,9 +107,9 @@ class WorkflowTests(unittest.TestCase):
         password='TenantAccess!2026'
         activated=self.client.post(f'/api/invitations/{token}',json={'password':password})
         self.assertEqual(activated.status_code,200,activated.text)
-        signed_in=self.client.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':activated.json()['email'],'password':password})
+        signed_in=self.client.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':activated.json()['email'],'password':password})
         self.assertEqual(signed_in.status_code,200,signed_in.text)
-        submitted=self.client.post('/api/tenant/requests',headers={'X-Haven-Portal':'tenant','X-CSRF-Token':signed_in.json()['csrf']},json={'contract_id':contract['id'],'kind':'General request','subject':'Please contact me','body':'I need help with my tenancy.'})
+        submitted=self.client.post('/api/tenant/requests',headers={'X-Krein-Portal':'tenant','X-CSRF-Token':signed_in.json()['csrf']},json={'contract_id':contract['id'],'kind':'General request','subject':'Please contact me','body':'I need help with my tenancy.'})
         self.assertEqual(submitted.status_code,200,submitted.text)
         landlord_data=self.client.get('/api/data?company_id=1').json()
         self.assertTrue(any(r['id']==submitted.json()['id'] for r in landlord_data['requests']))
@@ -121,8 +121,8 @@ class WorkflowTests(unittest.TestCase):
         activated=self.client.post(f'/api/invitations/{token}',json={'password':'TenantAccess!2026'}).json()
         staff_client=self.client
         tenant=TestClient(app)
-        signed=tenant.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':activated['email'],'password':'TenantAccess!2026'}).json()
-        headers={'X-Haven-Portal':'tenant','X-CSRF-Token':signed['csrf']}
+        signed=tenant.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':activated['email'],'password':'TenantAccess!2026'}).json()
+        headers={'X-Krein-Portal':'tenant','X-CSRF-Token':signed['csrf']}
         rid=tenant.post('/api/tenant/requests',headers=headers,json={'contract_id':contract['id'],'kind':'Complaint','subject':'Noise','body':'Loud music at night.'}).json()['id']
         self.assertEqual(self.post(f'/api/requests/{rid}/respond',{'response':'We will speak to them.','status':'in progress'}).status_code,200)
         answer=[m for m in staff_client.get('/api/data?company_id=1').json()['portal_messages'] if m['subject']=='Response: Noise'][0]
@@ -205,7 +205,7 @@ class WorkflowTests(unittest.TestCase):
         if not listed['email_configured']:
             self.assertTrue(first['email_note'])
             self.assertEqual(self.post(f"/api/invoices/{first['id']}/email",{}).status_code,409)
-        with patch.dict(os.environ,{'HAVEN_SMTP_HOST':'smtp.invalid','HAVEN_SMTP_FROM':'billing@haven.test','HAVEN_PUBLIC_URL':'https://haven.test'}):
+        with patch.dict(os.environ,{'KREIN_SMTP_HOST':'smtp.invalid','KREIN_SMTP_FROM':'billing@krein.test','KREIN_PUBLIC_URL':'https://krein.test'}):
             with patch('app.email_delivery.kick',lambda:None):
                 queued=self.post(f"/api/invoices/{first['id']}/email",{})
             self.assertIn(queued.status_code,(200,409,422),queued.text)  # 409 when it already waits in the queue, 422 when the demo tenant has no valid email
@@ -216,8 +216,8 @@ class WorkflowTests(unittest.TestCase):
     def test_review_mode_keeps_new_invoices_as_drafts_until_they_are_sent(self):
         self.assertEqual(self.post('/api/companies/1/invoice-review',{'enabled':True}).status_code,200)
         tenant=TestClient(app)
-        login=tenant.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':'tenant@haven.local','password':'HavenDemo!2026'})
-        th={'X-Haven-Portal':'tenant','X-CSRF-Token':login.json()['csrf']}
+        login=tenant.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':'tenant@krein.local','password':'KreinDemo!2026'})
+        th={'X-Krein-Portal':'tenant','X-CSRF-Token':login.json()['csrf']}
         before=len(tenant.get('/api/tenant/data',headers=th).json()['invoices'])
         run=self.post('/api/invoices/run',{'company_id':1,'period':AHEAD})
         self.assertEqual(run.status_code,200,run.text)
@@ -265,8 +265,8 @@ class WorkflowTests(unittest.TestCase):
         self.assertGreater(upcoming['next']['amount_cents'],0)
         self.assertEqual(len(upcoming['next']['date']),10)
         tenant=TestClient(app)
-        login=tenant.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':'tenant@haven.local','password':'HavenDemo!2026'})
-        mine=tenant.get('/api/tenant/data',headers={'X-Haven-Portal':'tenant','X-CSRF-Token':login.json()['csrf']}).json()['payment_schedules']
+        login=tenant.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':'tenant@krein.local','password':'KreinDemo!2026'})
+        mine=tenant.get('/api/tenant/data',headers={'X-Krein-Portal':'tenant','X-CSRF-Token':login.json()['csrf']}).json()['payment_schedules']
         self.assertTrue(mine and 'next' in mine[0] and 'due' in mine[0])
         tenant.close()
 
@@ -336,8 +336,8 @@ class WorkflowTests(unittest.TestCase):
 
     def test_new_invoices_are_emailed_with_pdf_when_smtp_is_configured(self):
         smtp_env={
-            'HAVEN_SMTP_HOST':'smtp.example.test','HAVEN_SMTP_PORT':'587',
-            'HAVEN_SMTP_FROM':'haven@example.test','HAVEN_PUBLIC_URL':'https://haven.example.test',
+            'KREIN_SMTP_HOST':'smtp.example.test','KREIN_SMTP_PORT':'587',
+            'KREIN_SMTP_FROM':'krein@example.test','KREIN_PUBLIC_URL':'https://krein.example.test',
         }
         with patch.dict(os.environ,smtp_env), patch('app.email_delivery.smtplib.SMTP') as smtp:
             server=smtp.return_value
@@ -394,8 +394,8 @@ class WorkflowTests(unittest.TestCase):
             conn.execute('UPDATE invoices SET due_date=? WHERE id=?',((date.today()-timedelta(days=9)).isoformat(),invoice['id']))
             conn.execute('UPDATE invoices SET due_date=? WHERE id=?',((date.today()-timedelta(days=3)).isoformat(),followup_invoice['id']))
         smtp_env={
-            'HAVEN_SMTP_HOST':'smtp.example.test','HAVEN_SMTP_PORT':'587',
-            'HAVEN_SMTP_FROM':'haven@example.test','HAVEN_PUBLIC_URL':'https://haven.example.test',
+            'KREIN_SMTP_HOST':'smtp.example.test','KREIN_SMTP_PORT':'587',
+            'KREIN_SMTP_FROM':'krein@example.test','KREIN_PUBLIC_URL':'https://krein.example.test',
         }
         with patch.dict(os.environ,smtp_env):
             with db.transaction() as conn:
@@ -425,33 +425,33 @@ class WorkflowTests(unittest.TestCase):
 
     def test_tenant_and_staff_can_reply_in_one_private_portal_thread(self):
         self.login('manager')
-        tenant_login=self.client.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':'tenant@haven.local','password':'HavenDemo!2026'})
+        tenant_login=self.client.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':'tenant@krein.local','password':'KreinDemo!2026'})
         self.assertEqual(tenant_login.status_code,200,tenant_login.text)
-        self.client.headers['X-Haven-Portal']='tenant'
+        self.client.headers['X-Krein-Portal']='tenant'
         self.client.headers['X-CSRF-Token']=tenant_login.json()['csrf']
         tenant_contracts=self.client.get('/api/tenant/data').json()['contracts']
         contract_id=tenant_contracts[0]['id']
-        self.client.headers.pop('X-Haven-Portal',None)
+        self.client.headers.pop('X-Krein-Portal',None)
         self.login('manager')
         started=self.post('/api/portal/messages',{'contract_id':contract_id,'subject':'Repair appointment','body':'Can we arrange a visit next week?'})
         self.assertEqual(started.status_code,200,started.text)
         thread_id=started.json()['id']
 
-        tenant_login=self.client.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':'tenant@haven.local','password':'HavenDemo!2026'})
+        tenant_login=self.client.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':'tenant@krein.local','password':'KreinDemo!2026'})
         self.assertEqual(tenant_login.status_code,200,tenant_login.text)
-        self.client.headers['X-Haven-Portal']='tenant'
+        self.client.headers['X-Krein-Portal']='tenant'
         self.client.headers['X-CSRF-Token']=tenant_login.json()['csrf']
         tenant_reply=self.client.post('/api/tenant/messages',data={'contract_id':contract_id,'thread_id':thread_id,'subject':'ignored on reply','body':'Tuesday works for me.'})
         self.assertEqual(tenant_reply.status_code,200,tenant_reply.text)
 
-        self.client.headers.pop('X-Haven-Portal',None)
+        self.client.headers.pop('X-Krein-Portal',None)
         self.login('manager')
         staff_reply=self.post('/api/portal/messages',{'contract_id':contract_id,'thread_id':thread_id,'body':'Confirmed for Tuesday morning.'})
         self.assertEqual(staff_reply.status_code,200,staff_reply.text)
 
-        tenant_login=self.client.post('/api/login',headers={'X-Haven-Portal':'tenant'},json={'email':'tenant@haven.local','password':'HavenDemo!2026'})
+        tenant_login=self.client.post('/api/login',headers={'X-Krein-Portal':'tenant'},json={'email':'tenant@krein.local','password':'KreinDemo!2026'})
         self.assertEqual(tenant_login.status_code,200,tenant_login.text)
-        self.client.headers['X-Haven-Portal']='tenant'
+        self.client.headers['X-Krein-Portal']='tenant'
         self.client.headers['X-CSRF-Token']=tenant_login.json()['csrf']
         tenant_data=self.client.get('/api/tenant/data').json()
         thread=[m for m in tenant_data['messages'] if m['thread_id']==thread_id]
@@ -509,7 +509,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.client.get('/api/public/'+third).status_code,404)
 
     def test_roles_documents_and_immutable_ledger(self):
-        response=self.post('/api/staff',{'company_id':1,'name':'Property Staff','email':'property@haven.local','password':'HavenDemo!2026','role':'property'})
+        response=self.post('/api/staff',{'company_id':1,'name':'Property Staff','email':'property@krein.local','password':'KreinDemo!2026','role':'property'})
         self.assertEqual(response.status_code,200,response.text)
         self.login('property')
         view=self.client.get('/api/data?company_id=1').json()
@@ -710,7 +710,7 @@ class WorkflowTests(unittest.TestCase):
             doc=conn.execute('SELECT file_key FROM documents WHERE id=?',(document_id,)).fetchone()
             path=db.DATA_DIR/'uploads'/doc['file_key']
             contract=self.data['contracts'][0]
-            user_id=conn.execute('SELECT id FROM users WHERE email="admin@haven.local"').fetchone()['id']
+            user_id=conn.execute('SELECT id FROM users WHERE email="admin@krein.local"').fetchone()['id']
         with db.transaction() as conn:
             conn.execute('INSERT INTO shared_documents(company_id,contract_id,document_id,shared_by,shared_at) VALUES(?,?,?,?,?)',(1,contract['id'],document_id,user_id,'2026-10-13T00:00:00Z'))
         removed=self.client.delete(f'/api/documents/{document_id}')
@@ -780,16 +780,16 @@ def _owner_statement_flow(self):
     self.assertEqual(self.post(f'/api/owner-statements/{sid}/paid', {'paid_on': today.isoformat(), 'reference': 'MANUAL-1', 'confirmed': True}).status_code, 200)
     # Owner portal: separate session, own data only.
     owner = TestClient(app)
-    r = owner.post('/api/login', headers={'X-Haven-Portal': 'owner'}, json={'email': 'owner@haven.local', 'password': 'HavenDemo!2026'})
+    r = owner.post('/api/login', headers={'X-Krein-Portal': 'owner'}, json={'email': 'owner@krein.local', 'password': 'KreinDemo!2026'})
     self.assertEqual(r.status_code, 200, r.text)
-    headers = {'X-Haven-Portal': 'owner', 'X-CSRF-Token': r.json()['csrf']}
+    headers = {'X-Krein-Portal': 'owner', 'X-CSRF-Token': r.json()['csrf']}
     data = owner.get('/api/owner/data', headers=headers).json()
     self.assertEqual([s['id'] for s in data['statements']], [sid])
     self.assertEqual(data['statements'][0]['status'], 'paid')
     self.assertEqual(len(data['units']), 6)
     self.assertEqual(owner.get(f'/api/owner/statements/{sid}/pdf', headers=headers).status_code, 200)
     self.assertEqual(owner.get('/api/data?company_id=1', headers=headers).status_code, 403)
-    self.assertEqual(owner.get('/api/tenant/data', headers={'X-Haven-Portal': 'tenant'}).status_code, 401)
+    self.assertEqual(owner.get('/api/tenant/data', headers={'X-Krein-Portal': 'tenant'}).status_code, 401)
     owner.close()
 
 
