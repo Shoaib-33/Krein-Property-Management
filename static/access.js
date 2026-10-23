@@ -112,13 +112,22 @@
     try {
       if (act === 'only-admins' || act === 'all-staff') { team.all = act === 'all-staff'; render(); return; }
       if (act === 'add') {
-        return formModal('Add administrator', [selectField('company_id', 'Company', team.data.companies.map(c => [c.id, c.name]), {value: state.company, wide: true}), ['name', 'Full name'], ['email', 'Email address', 'email'],
-          ['password', 'Password (optional, at least 12 characters)', 'password', {required: false, wide: true, hint: 'Leave empty to create an invitation link instead: they choose their own password.'}]],
+        // two ways to give access, one at a time: a link (they choose their own password) or a password set here (no link)
+        formModal('Add administrator', [selectField('company_id', 'Company', team.data.companies.map(c => [c.id, c.name]), {value: state.company, wide: true}), ['name', 'Full name'], ['email', 'Email address', 'email'],
+          selectField('method', 'How do they get their password?', [['invite', 'Send them a link: they choose their own password'], ['password', 'I set the password now']], {wide: true}),
+          ['password', 'Password (at least 12 characters)', 'password', {required: false, wide: true, hint: 'The login works straight away. Give the password to the person yourself; no link is made.'}]],
         async d => {
-          const r = await api('/api/developer/admins', {method: 'POST', body: {company_id: Number(d.company_id), name: d.name, email: d.email, password: d.password || ''}});
+          const own = d.method === 'password';
+          if (own && (d.password || '').length < 12) throw new Error('Use a password of at least 12 characters.');
+          const r = await api('/api/developer/admins', {method: 'POST', body: {company_id: Number(d.company_id), name: d.name, email: d.email, password: own ? d.password : ''}});
           team.data = null;
-          if (r.invite) setTimeout(() => linkModal('Invitation ready', `Send this private link to <strong>${e(r.invite.email)}</strong>. It is valid for ${r.invite.expires_in_days} days.`, r.invite.path), 50);
+          if (r.invite) setTimeout(() => linkModal('Invitation ready', `Send this private link to <strong>${e(r.invite.email)}</strong>. They open it and choose their own password. It is valid for ${r.invite.expires_in_days} days.`, r.invite.path), 50);
+          else setTimeout(() => linkModal('Login ready', `<strong>${e(d.email)}</strong> can sign in now with the password you set, on the normal sign-in page below (not the developer page). Give them the password yourself.`, '/'), 50);
         }, {submit: 'Add administrator', success: 'Administrator added.'});
+        const method = document.querySelector('#record-form [name=method]'), pw = document.querySelector('#record-form [name=password]');
+        const sync = () => { const own = method.value === 'password'; pw.closest('.field').hidden = !own; pw.required = own; if (!own) pw.value = ''; };
+        method.addEventListener('change', sync); sync();
+        return;
       }
       if (act === 'edit') {
         return formModal(`Edit ${p.name}`, [['name', 'Full name', 'text', {value: p.name}], ['email', 'Sign-in email', 'email', {value: p.email}]],
