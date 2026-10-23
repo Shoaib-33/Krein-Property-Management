@@ -9,7 +9,7 @@ from fastapi.responses import FileResponse, Response
 from .clock import local_today
 from . import db, sla
 from .db import audit, connect, now, transaction
-from .security import authorize, current_user, expiry, linked, password_hash, record, token_hash, verify_password
+from .security import authorize, current_user, expiry, linked, password_hash, password_matches, record, token_hash
 from .portal_access import contractor_job, notify, notify_staff, notify_tenant, share_document, tenant_contract, tenant_record
 from .main import date_field, euros, insert, integer, invoice_balance, invoice_pdf_bytes, money, pdf_response, read_upload, save_document, submit_proof, task, text_field, choice
 
@@ -18,13 +18,14 @@ router = APIRouter()
 
 @router.post('/api/account/password')
 def change_password(data: dict, user=Depends(current_user)):
-    old = text_field(data, 'current_password', maximum=1024)
+    text_field(data, 'current_password', maximum=1024)
+    old = data['current_password']
     new = text_field(data, 'new_password', maximum=128)
     if len(new) < 12:
         raise HTTPException(422, 'Use at least 12 characters for your new password.')
     with transaction() as conn:
         current = conn.execute('SELECT password_hash FROM users WHERE id=?', (user['id'],)).fetchone()
-        if not verify_password(old, current['password_hash']):
+        if not password_matches(old, current['password_hash']):
             raise HTTPException(403, 'Current password is incorrect.')
         conn.execute('UPDATE users SET password_hash=? WHERE id=?', (password_hash(new), user['id']))
         conn.execute('DELETE FROM sessions WHERE user_id=?', (user['id'],))
@@ -84,7 +85,7 @@ def accept_invitation(token: str,data: dict):
         # an existing login: the person proves it is theirs with their current password (8 tries per invitation)
         if tries and tries['attempts']>=8:
             raise HTTPException(429,'Too many attempts. Use Forgot password on the sign-in page, then open this link again.')
-        if not verify_password(password,has_login['password_hash']):
+        if not password_matches(data['password'],has_login['password_hash']):
             with transaction() as conn:   # stored on its own, so the refusal below does not undo it
                 conn.execute('INSERT OR REPLACE INTO login_attempts VALUES(?,?,?)',(key_,(tries['attempts'] if tries else 0)+1,_time.time()+3600))
             raise HTTPException(401,'This is not the password of your existing Krein login. Use Forgot password on the sign-in page if you do not remember it.')
@@ -95,7 +96,7 @@ def accept_invitation(token: str,data: dict):
             raise HTTPException(409,'This record is already linked to an account.')
         user=conn.execute('SELECT * FROM users WHERE email=?',(i['email'],)).fetchone()
         if user and user['active']:
-            if not has_login or not verify_password(password,user['password_hash']):   # checked above; the login changed in between
+            if not has_login or not password_matches(data['password'],user['password_hash']):   # checked above; the login changed in between
                 raise HTTPException(409,'Open the invitation link again.')
             uid=user['id']
         elif user:

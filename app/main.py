@@ -22,7 +22,7 @@ from .clock import local_today
 from . import db, sla
 from .cbs import CBSDataError, cpi_annual_rate
 from .db import audit, connect, now, transaction
-from .security import PORTALS, authorize, client_ip, current_user, session_cookie, expiry, linked, needs_rehash, password_hash, record, token_hash, verify_password
+from .security import PORTALS, authorize, client_ip, current_user, session_cookie, expiry, linked, needs_rehash, password_hash, password_matches, record, token_hash, verify_password
 
 ROOT = Path(__file__).resolve().parent.parent
 from .config import load_local_env
@@ -440,7 +440,8 @@ def health():
 @app.post('/api/login')
 def login(data: dict, request: Request):
     email = text_field(data, 'email', maximum=254).lower()
-    password = text_field(data, 'password', maximum=1024)
+    text_field(data, 'password', maximum=1024)
+    password = data['password']   # as typed: a space can be part of a password
     ip = client_ip(request)
     attempt_key = hashlib.sha256((email + '|' + ip).encode()).hexdigest()
     ip_key = hashlib.sha256(('ip|' + ip).encode()).hexdigest()   # one address trying many accounts (password spraying)
@@ -452,7 +453,7 @@ def login(data: dict, request: Request):
     now_ = time.time()
     if (attempt and attempt['attempts'] >= 8 and attempt['blocked_until'] > now_) or (from_ip and from_ip['attempts'] >= 30 and from_ip['blocked_until'] > now_):
         raise HTTPException(429, 'Too many attempts. Try again in 15 minutes.')
-    valid = verify_password(password, user['password_hash']) if user else verify_password(password, 'pbkdf2:600000:' + 'a'*32 + ':' + '0'*64)
+    valid = password_matches(password, user['password_hash']) if user else verify_password(password, 'pbkdf2:600000:' + 'a'*32 + ':' + '0'*64)
     rehashed = password_hash(password) if valid and needs_rehash(user['password_hash']) else None
     with transaction() as conn:
         attempt = conn.execute('SELECT * FROM login_attempts WHERE key=?', (attempt_key,)).fetchone()

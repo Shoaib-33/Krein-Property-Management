@@ -34,6 +34,15 @@ def verify_password(password, encoded):
     return hmac.compare_digest(actual, digest)
 
 
+def password_matches(typed, encoded):
+    """The password exactly as typed, spaces included. Some screens saved passwords without the spaces at their ends and
+    others as typed, so a password typed with such a space is also tried without it."""
+    if verify_password(typed, encoded):
+        return True
+    trimmed = typed.strip()
+    return trimmed != typed and verify_password(trimmed, encoded)
+
+
 def needs_rehash(encoded):
     return _parse_hash(encoded)[0] < PBKDF2_ROUNDS
 
