@@ -1,5 +1,6 @@
 import contextlib
 import io
+import json
 import os
 import tempfile
 import unittest
@@ -25,7 +26,7 @@ class AssistantTests(unittest.TestCase):
             demo()
         self.client = TestClient(app)
         assistant._hits.clear()
-        self.env = mock.patch.dict(os.environ, {'GEMINI_API_KEY': '', 'GROQ_API_KEY': ''})
+        self.env = mock.patch.dict(os.environ, {'GEMINI_API_KEY': '', 'OPENROUTER_API_KEY': ''})
         self.env.start()
 
     def tearDown(self):
@@ -70,6 +71,29 @@ class AssistantTests(unittest.TestCase):
         self.assertIn('Answer in Dutch', assistant.system_prompt('staff', 'overview', 'nl'))
         self.assertNotIn('Answer in Dutch', assistant.system_prompt('staff', 'overview', 'en'))
         self.assertEqual(sent['history'], [{'role': 'user', 'text': 'earlier'}])
+
+    def test_openrouter_is_asked_first(self):
+        self.login('manager@krein.local')
+        seen = {}
+
+        class Reply(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def fake_urlopen(req, timeout=None):
+            seen.update(url=req.full_url, auth=req.get_header('Authorization'), body=json.loads(req.data))
+            return Reply(json.dumps({'choices': [{'message': {'content': 'Late payments are under Arrears. [[go:arrears|Open Arrears]]'}}]}).encode())
+        with mock.patch.dict(os.environ, {'OPENROUTER_API_KEY': 'or-test', 'KREIN_OPENROUTER_MODEL': 'some/model'}),                 mock.patch.object(assistant.urllib.request, 'urlopen', fake_urlopen), mock.patch.object(assistant, 'ask_gemini', lambda *a: self.fail('Gemini asked')):
+            data = self.client.post('/api/assistant/chat', headers=self.headers, json={'message': 'where are late payments'}).json()
+        self.assertEqual(data['source'], 'openrouter')
+        self.assertEqual(data['actions'], [{'label': 'Open Arrears', 'page': 'arrears'}])
+        self.assertEqual(seen['url'], 'https://openrouter.ai/api/v1/chat/completions')
+        self.assertEqual(seen['auth'], 'Bearer or-test')
+        self.assertEqual(seen['body']['model'], 'some/model')
+        self.assertEqual(seen['body']['provider'], {'data_collection': 'deny'})
 
     def test_falls_back_when_gemini_fails_and_prompt_has_no_private_data(self):
         self.login('manager@krein.local')

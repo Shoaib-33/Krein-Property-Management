@@ -24,9 +24,9 @@ services:
         sync: false          # the country whose date Krein shows, e.g. Europe/Amsterdam or Asia/Dhaka (servers run on UTC, which can be a day behind)
       - key: KREIN_DEMO_PASSWORD
         sync: false          # REQUIRED for a public demo: the password of every demo login (12+ characters, your own choice)
-      - key: GROQ_API_KEY
-        sync: false          # optional: turns the Help chat into the AI assistant (free key from console.groq.com)
-      - key: KREIN_GROQ_MODEL
+      - key: OPENROUTER_API_KEY
+        sync: false          # optional: turns the Help chat into the AI assistant (key from openrouter.ai/settings/keys)
+      - key: KREIN_OPENROUTER_MODEL
         value: openai/gpt-oss-20b
       - key: GEMINI_API_KEY
         sync: false          # optional fallback for the Help chat

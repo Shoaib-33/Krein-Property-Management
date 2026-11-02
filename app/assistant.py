@@ -1,4 +1,4 @@
-"""In-app help assistant: answers "where do I find...?" questions with an AI model (Groq first, then Google Gemini).
+"""In-app help assistant: answers "where do I find...?" questions with an AI model (OpenRouter first, then Google Gemini).
 
 Privacy: what the person types (the question and the last few chat turns) and the current page name are sent to the
 AI provider; no records from the database are sent. Before sending, email addresses, phone numbers, IBANs and other
@@ -23,8 +23,8 @@ from .security import current_user, portal_of
 router = APIRouter()
 log = logging.getLogger('krein.assistant')
 API = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
-GROQ_API = 'https://api.groq.com/openai/v1/chat/completions'
-GROQ_DEFAULT_MODEL = 'openai/gpt-oss-20b'
+OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions'
+OPENROUTER_DEFAULT_MODEL = 'openai/gpt-oss-20b'
 DEFAULT_MODEL = 'gemini-flash-latest'  # Google's alias for the newest Flash model, which has a free tier.
 MAX_MESSAGE, MAX_TURNS, MAX_TURN_CHARS = 600, 8, 800
 RATE_PER_MINUTE = 15
@@ -239,7 +239,7 @@ def ai_allowed(who):
 def ai_configured(who=None):
     if who is not None and not ai_allowed(who):
         return False
-    return bool(os.environ.get('GROQ_API_KEY', '').strip() or os.environ.get('GEMINI_API_KEY', '').strip())
+    return bool(os.environ.get('OPENROUTER_API_KEY', '').strip() or os.environ.get('GEMINI_API_KEY', '').strip())
 
 
 _PII = [
@@ -274,34 +274,38 @@ def within_daily_limit():
     return True
 
 
-def ask_groq(who: str, page: str, history: list, message: str, lang: str = 'en'):
-    key = os.environ.get('GROQ_API_KEY', '').strip()
+def ask_openrouter(who: str, page: str, history: list, message: str, lang: str = 'en'):
+    key = os.environ.get('OPENROUTER_API_KEY', '').strip()
     if not key:
         return None
-    model = os.environ.get('KREIN_GROQ_MODEL', GROQ_DEFAULT_MODEL).strip() or GROQ_DEFAULT_MODEL
+    model = os.environ.get('KREIN_OPENROUTER_MODEL', OPENROUTER_DEFAULT_MODEL).strip() or OPENROUTER_DEFAULT_MODEL
     messages = [{'role': 'system', 'content': system_prompt(who, page, lang)}]
     messages += [{'role': 'user' if h['role'] == 'user' else 'assistant', 'content': h['text']} for h in history]
     messages.append({'role': 'user', 'content': message})
-    body = json.dumps({'model': model, 'messages': messages, 'temperature': 0.3, 'max_tokens': 800, 'reasoning_effort': 'low'}).encode()
-    req = urllib.request.Request(GROQ_API, data=body, method='POST', headers={
-        'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'User-Agent': 'krein-help/1.0'})
+    # data_collection 'deny': OpenRouter only routes to providers that do not store or train on the prompts
+    body = json.dumps({'model': model, 'messages': messages, 'temperature': 0.3, 'max_tokens': 800,
+                       'reasoning': {'effort': 'low', 'exclude': True}, 'provider': {'data_collection': 'deny'}}).encode()
+    headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + key, 'User-Agent': 'krein-help/1.0', 'X-Title': 'Krein Help'}
+    if os.environ.get('KREIN_PUBLIC_URL', '').strip():
+        headers['HTTP-Referer'] = os.environ['KREIN_PUBLIC_URL'].strip()   # shows the app in the OpenRouter dashboard
+    req = urllib.request.Request(OPENROUTER_API, data=body, method='POST', headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
             data = json.load(resp)
         return (data['choices'][0]['message']['content'] or '').strip() or None
     except urllib.error.HTTPError as err:
-        log.warning('Groq request failed: HTTP %s %s', err.code, err.read(300).decode('utf-8', 'replace').replace(key, '<key>'))
+        log.warning('OpenRouter request failed: HTTP %s %s', err.code, err.read(300).decode('utf-8', 'replace').replace(key, '<key>'))
         return None
     except (urllib.error.URLError, TimeoutError, KeyError, IndexError, ValueError) as err:
-        log.warning('Groq request failed: %s', type(err).__name__)
+        log.warning('OpenRouter request failed: %s', type(err).__name__)
         return None
 
 
 def ask_ai(who, page, history, message, lang='en'):
-    """Groq first when it has a key, then Gemini; None means neither answered."""
-    reply = ask_groq(who, page, history, message, lang)
+    """OpenRouter first when it has a key, then Gemini; None means neither answered."""
+    reply = ask_openrouter(who, page, history, message, lang)
     if reply:
-        return reply, 'groq'
+        return reply, 'openrouter'
     reply = ask_gemini(who, page, history, message, lang)
     return (reply, 'gemini') if reply else (None, '')
 
@@ -321,7 +325,7 @@ def info(request: Request, user=Depends(current_user)):
     who = audience(request)
     ai = ai_configured(who)
     return {'greeting': GREETING[who], 'suggestions': SUGGESTIONS[who], 'ai': ai,
-            'privacy_note': 'Answers come from an AI service (Groq or Google). Do not type personal details such as names, addresses or bank numbers.' if ai else ''}
+            'privacy_note': 'Answers come from an AI service (OpenRouter or Google). Do not type personal details such as names, addresses or bank numbers.' if ai else ''}
 
 
 @router.post('/api/assistant/chat')

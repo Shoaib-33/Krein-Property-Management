@@ -163,10 +163,10 @@ Two-pane chat for tenants: searchable conversation list with unread/answered/sol
 
 Every signed-in screen (landlord, tenant, owner, contractor) has a **Help** bubble in the bottom-right corner. It explains where things are in Krein and offers buttons that open the right page.
 
-- **With Groq (tried first):** put a free key from https://console.groq.com/keys in `.env` as `GROQ_API_KEY=...` and restart. The model defaults to `openai/gpt-oss-20b`; override it with `KREIN_GROQ_MODEL`.
+- **With OpenRouter (tried first):** put a key from https://openrouter.ai/settings/keys in `.env` as `OPENROUTER_API_KEY=...` and restart. The model defaults to `openai/gpt-oss-20b`; override it with `KREIN_OPENROUTER_MODEL` (any model id from https://openrouter.ai/models). Requests ask OpenRouter to use only providers that do not store or train on prompts.
 - **With Gemini (fallback):** put a free key from https://aistudio.google.com/apikey in `.env` as `GEMINI_API_KEY=...` and restart. The model defaults to `gemini-flash-latest` (Google's alias for the newest Flash model); override it with `KREIN_GEMINI_MODEL`.
 - **Without a key** (or if Gemini is unreachable or over its free quota) a built-in keyword guide answers instead, so the bubble always works.
-- **Privacy:** the browser never sees the key. What the person types (the question and the last few chat turns) and the current page name are sent to Groq or Google; no records from the database are sent, and the assistant cannot read or change anything. Email addresses, phone numbers, IBANs and other long numbers are masked before sending, and the chat shows a notice not to type personal details. Name Groq and Google as processors in your privacy statement (see `docs/PRIVACY.md`).
+- **Privacy:** the browser never sees the key. What the person types (the question and the last few chat turns) and the current page name are sent to OpenRouter or Google; no records from the database are sent, and the assistant cannot read or change anything. Email addresses, phone numbers, IBANs and other long numbers are masked before sending, and the chat shows a notice not to type personal details. Name OpenRouter and Google as processors in your privacy statement (see `docs/PRIVACY.md`).
 - **Limits:** each user can ask 15 questions a minute; `KREIN_ASSISTANT_DAILY_LIMIT` (default 2000) caps AI calls per day for the whole server. `KREIN_ASSISTANT_AI_FOR` (default `staff,owner,contractor,tenant`) chooses who gets the AI; for example `staff,owner` keeps tenants on the built-in guide.
 
 ## Contracts for signature
@@ -204,7 +204,7 @@ For a demo you can show to others, deploy the included Docker setup to [Render](
 
 1. Put the project in a **private** GitHub repository. `.gitignore` already keeps `.env`, `data/` and backups out of it.
 2. In Render choose **New > Blueprint**, pick the repository and apply. It reads `render.yaml` (a free Docker web service). Or create a **Web Service** by hand with *Runtime: Docker* and the environment variables below.
-3. During the blueprint setup Render asks for `KREIN_DEMO_PASSWORD` (your own password, 12+ characters, used by every demo login) and optionally `GROQ_API_KEY` (free key from console.groq.com, turns the Help chat into the AI assistant). After the first deploy, copy the `https://….onrender.com` address into `KREIN_PUBLIC_URL`.
+3. During the blueprint setup Render asks for `KREIN_DEMO_PASSWORD` (your own password, 12+ characters, used by every demo login) and optionally `OPENROUTER_API_KEY` (key from openrouter.ai/settings/keys, turns the Help chat into the AI assistant). After the first deploy, copy the `https://….onrender.com` address into `KREIN_PUBLIC_URL`.
 4. Open the address. The demo data (with a logo, a landlord signature and the Dutch contract template) is loaded on every start. Logins (the password you chose in `KREIN_DEMO_PASSWORD`): `admin@krein.local`, `manager@krein.local`, `tenant@krein.local` (open `/tenant`), `owner@krein.local` (open `/owner`), `contractor@krein.local` (open `/contractor`).
 
 | Variable | Value |
@@ -215,7 +215,7 @@ For a demo you can show to others, deploy the included Docker setup to [Render](
 | `KREIN_TIMEZONE` | the timezone whose date Krein shows, e.g. `Europe/Amsterdam` or `Asia/Dhaka`. Servers run on UTC, so without it the date can be a day behind your own |
 | `KREIN_DEMO_PASSWORD` | your own password for all demo logins (12+ characters). Without it the public default is used, so always set it online |
 | `KREIN_PUBLIC_URL` | your Render address |
-| `GROQ_API_KEY` | optional, for the AI Help chat |
+| `OPENROUTER_API_KEY` | optional, for the AI Help chat |
 | `GEMINI_API_KEY` | optional fallback |
 
 Things to know: on the **free plan** the service sleeps after about 15 minutes without visitors (the next visit takes up to a minute to wake it) and its disk is erased on every restart, so the demo returns to its sample data. Anything entered during a demo is lost. A paid plan with a persistent disk keeps the data. The demo logins are public knowledge, so never put real tenant data in a demo deployment, and share the address only with people you want to have it. To run it with your own administrator instead of sample data, remove `KREIN_DEMO_SEED` and set `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` and `KREIN_BOOTSTRAP_DEVELOPER_PASSWORD` (12+ characters).
@@ -256,7 +256,7 @@ The agreement PDF follows the usual Dutch layout: letterhead with your logo, key
 
 - **Tenant data export:** Tenants & contracts > Tenant directory > **Export data** downloads a ZIP with everything Krein holds about that tenant (data.json plus the files of their tenancies).
 - **Erasure after the retention period:** `python manage.py privacy-erase` lists former tenants whose last tenancy ended more than `KREIN_RETENTION_YEARS` years ago (default 7) and who owe nothing; `python manage.py privacy-erase --apply` anonymises them (name, contact details, messages, form answers, signatures and files are removed; amounts and invoice numbers stay). Run it, for example, once a month.
-- See `docs/PRIVACY.md` for the processors (hosting, email provider, Groq/Google for the help chat) and text for your privacy statement.
+- See `docs/PRIVACY.md` for the processors (hosting, email provider, OpenRouter/Google for the help chat) and text for your privacy statement.
 
 ### Tenancies, tenants and arrears
 
