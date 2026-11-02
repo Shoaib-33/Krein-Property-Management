@@ -1,0 +1,27 @@
+# Cloud Build: every push to main builds the image and deploys it to Cloud Run (krein-tenant-management-dev).
+# Started by a Cloud Build trigger through the GitHub app, so it uses no GitHub Actions minutes.
+# Only the image changes on deploy: env vars, secrets, the Cloud Storage volume and scaling stay as set on the service.
+substitutions:
+  _REGION: europe-west4
+  _SERVICE: krein-tenant-management
+  _IMAGE: europe-west4-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/krein-tenant-management
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args: ['build', '-t', '${_IMAGE}:${SHORT_SHA}', '-t', '${_IMAGE}:latest', '.']
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args: ['push', '--all-tags', '${_IMAGE}']
+
+  # max-instances=1: SQLite has one writer, so a deploy must never run two copies side by side for long
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: ['run', 'deploy', '${_SERVICE}', '--image=${_IMAGE}:${SHORT_SHA}', '--region=${_REGION}', '--max-instances=1', '--quiet']
+
+images: ['${_IMAGE}:${SHORT_SHA}', '${_IMAGE}:latest']
+options:
+  logging: CLOUD_LOGGING_ONLY
+timeout: 1200s
