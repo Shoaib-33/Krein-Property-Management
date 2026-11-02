@@ -9,3 +9,8 @@ test-results
 data
 tests
 docs
+.tmp-venv
+.playwright-mcp
+.claude
+data-clean
+test-statements

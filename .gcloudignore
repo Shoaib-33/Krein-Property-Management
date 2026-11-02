@@ -1,0 +1,3 @@
+# Files Cloud Build must not receive (same as .dockerignore; secrets live in .env and Secret Manager)
+.gcloudignore
+#!include:.dockerignore

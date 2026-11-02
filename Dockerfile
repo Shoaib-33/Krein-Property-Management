@@ -7,6 +7,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
+# Litestream: keeps the SQLite database in Cloud Storage on hosts without a lasting disk (only used when
+# LITESTREAM_REPLICA_URL is set, see scripts/start.sh)
+ADD https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestream-v0.3.13-linux-amd64.tar.gz /tmp/litestream.tar.gz
+RUN tar -xzf /tmp/litestream.tar.gz -C /usr/local/bin litestream && rm /tmp/litestream.tar.gz
+COPY deploy/litestream.yml /etc/litestream.yml
+
 COPY requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -23,4 +29,4 @@ EXPOSE 7860
 # Hugging Face uses 7860; Render and most hosts pass the port in $PORT.
 # --proxy-headers only makes the app see https (for secure cookies and the same-origin check); the visitor's IP for the
 # login limit is read by app/security.client_ip with KREIN_TRUSTED_PROXY_HOPS. Set it to 0 if no proxy is in front.
-CMD ["sh", "-c", "python -m scripts.hf_start && exec uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-7860} --proxy-headers --forwarded-allow-ips='*'"]
+CMD ["sh", "scripts/start.sh"]

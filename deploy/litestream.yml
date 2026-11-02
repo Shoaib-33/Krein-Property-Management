@@ -1,0 +1,5 @@
+# Litestream streams every SQLite change to Cloud Storage (used on Cloud Run, where the disk is wiped on restart).
+dbs:
+  - path: ${KREIN_DATA_DIR}/krein.db
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}
