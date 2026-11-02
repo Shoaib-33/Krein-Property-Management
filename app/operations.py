@@ -34,6 +34,9 @@ def staff_extras(conn,user,company_id,role):
     result['shared_documents']=[dict(r) for r in conn.execute('SELECT * FROM shared_documents WHERE company_id=? AND (revoked=0 OR shared_at>=?) ORDER BY id DESC',(company_id,since))]
     for table,key in [('portal_accounts','tenant_id'),('contractor_accounts','contractor_id')]:
         result[table]=[dict(r) for r in conn.execute(f'SELECT a.{key},a.user_id,a.enabled,u.name,u.email FROM {table} a JOIN users u ON u.id=a.user_id WHERE a.company_id=?',(company_id,))]
+    if role in ('admin','manager','property','landlord'):
+        # open invitations, with their link and whether the email went out (the link is cleared once it is used or replaced)
+        result['account_invitations']=[dict(r) for r in conn.execute("SELECT id,kind,target_id,email,token,expires_at,created_at,email_status,email_error,emailed_at FROM account_invitations WHERE company_id=? AND revoked=0 AND used_at IS NULL AND expires_at>? AND token IS NOT NULL ORDER BY id",(company_id,now()))]
     if role in ('admin','manager','property'):
         from .contractor_agreements import public_offer
         result['contractor_offers']=[public_offer(r) for r in conn.execute("SELECT * FROM contractor_offers WHERE company_id=? AND status<>'withdrawn' ORDER BY id DESC",(company_id,))]

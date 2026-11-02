@@ -608,7 +608,7 @@ def archive_tenant(tenant_id: int, data: dict, user=Depends(current_user)):
             if not other:
                 conn.execute("UPDATE users SET active=0,name='Removed tenant',email='removed-'||id||'@removed.invalid',password_hash='!' WHERE id=?", (uid,))
                 conn.execute('DELETE FROM sessions WHERE user_id=?', (uid,))
-        conn.execute("UPDATE account_invitations SET revoked=1 WHERE kind='tenant' AND target_id=? AND company_id=? AND used_at IS NULL", (tenant_id, company_id))
+        conn.execute("UPDATE account_invitations SET revoked=1,token=NULL WHERE kind='tenant' AND target_id=? AND company_id=? AND used_at IS NULL", (tenant_id, company_id))
         audit(conn, user['id'], company_id, 'archived', 'tenant', tenant_id, {'name': tenant['name']})
     return {'archived': True}
 

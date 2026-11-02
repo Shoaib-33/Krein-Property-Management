@@ -128,6 +128,7 @@ def filter_payload(conn, result, scope):
     out['collects_rent'] = bool(O) and bool(conn.execute(f'SELECT 1 FROM owners WHERE collects_rent=1 AND id IN ({marks(O)})', tuple(O)).fetchone())
     out['tenant_bank_accounts'] = [r for r in result.get('tenant_bank_accounts', []) if r.get('tenant_id') in T]
     out['portal_accounts'] = [r for r in result.get('portal_accounts', []) if r.get('tenant_id') in T]
+    out['account_invitations'] = [r for r in result.get('account_invitations', []) if r.get('kind') == 'tenant' and r.get('target_id') in T]
     out['lease_offers'] = [r for r in result.get('lease_offers', []) if r.get('property_id') in P]
     out['invoices'] = [r for r in result.get('invoices', []) if r.get('contract_id') in C]
     invoice_ids = {r['id'] for r in out['invoices']}

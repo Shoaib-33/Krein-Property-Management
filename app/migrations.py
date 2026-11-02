@@ -583,6 +583,14 @@ ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
 '''
 
 # V40: platform-wide settings the developer can change, such as the software's name (app/brand.py)
+# V41: a pending invitation keeps its link (cleared once it is used or replaced) and whether it was emailed (app/portals.py)
+V41 = '''
+ALTER TABLE account_invitations ADD COLUMN token TEXT;
+ALTER TABLE account_invitations ADD COLUMN email_status TEXT;
+ALTER TABLE account_invitations ADD COLUMN email_error TEXT;
+ALTER TABLE account_invitations ADD COLUMN emailed_at TEXT;
+'''
+
 V40 = '''
 CREATE TABLE platform_settings (
  key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_by INTEGER REFERENCES users(id), updated_at TEXT NOT NULL
@@ -962,6 +970,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (40, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=41').fetchone():
+            statement = ''
+            for line in V41.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (41, now()))
         conn.commit()
     except Exception:
         conn.rollback()

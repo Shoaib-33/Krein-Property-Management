@@ -162,7 +162,11 @@ function tenantsPage(){
  const found=active.filter(t=>!q||`${t.name} ${t.email} ${t.phone}`.toLowerCase().includes(q)),list=window.orderHouseholds?orderHouseholds(found):found;
  const homeOf=t=>{const cs=(window.contractsOfTenant?contractsOfTenant(t.id):rows('contracts').filter(c=>c.tenant_id===t.id));return cs.find(c=>['active','notice given'].includes(c.status)&&!(c.end_date&&c.end_date<today()))||cs[0];};
  const openOf=t=>{const mine=new Set((window.contractsOfTenant?contractsOfTenant(t.id):[]).map(c=>c.id));return rows('invoices').filter(i=>(mine.has(i.contract_id)||contract(i.contract_id).tenant_id===t.id)&&i.released_at&&balance(i)>0).reduce((s,i)=>{const own=window.personBill?personBill(i,t.id):null;return s+(own?own.open:balance(i));},0);};
- const portalOf=t=>{const a=rows('portal_accounts').find(a=>a.tenant_id===t.id);return a?badge(a.enabled?'Portal active':'Paused',a.enabled?'green':'amber'):badge('No portal login','gray');};
+ const canInvite=['admin','manager','property','landlord'].includes(company().role);
+ const portalOf=t=>{const a=rows('portal_accounts').find(a=>a.tenant_id===t.id);if(a)return badge(a.enabled?'Portal active':'Paused',a.enabled?'green':'amber');
+  const inv=pendingInvite('tenant',t.id);
+  if(inv)return `${badge('Invited','amber')}<small>${inviteMailText(inv)}</small>${canInvite?`<button type="button" class="button link" data-action="invite-view" data-id="${t.id}">View link</button>`:''}`;
+  return `${badge('No portal login','gray')}${canInvite&&t.email?`<button type="button" class="button link" data-action="invite" data-id="${t.id}">Invite</button>`:''}`;};
  const bankOf=t=>{const n=rows('tenant_bank_accounts').filter(b=>b.tenant_id===t.id).length;return n?badge(`${n} bank account${n===1?'':'s'}`,'blue'):'<span class="muted">No IBAN</span>';};
  const openCell=t=>{const open=openOf(t);return open?`<strong class="late-text">${money(open)}</strong>`:'<span class="muted">Nothing open</span>';};
  // a household (a tenant and the partner / co-tenants who rent with them) is one row: the home once, each person's own details under each other
@@ -419,11 +423,38 @@ function showSearch(query){
  const results=[...rows('properties').filter(p=>`${p.name} ${p.address}`.toLowerCase().includes(q)).map(p=>[p.name,p.address,'property-detail',p.id]),...rows('contracts').filter(c=>`${tenantFor(c.id).name} ${tenantFor(c.id).email}`.toLowerCase().includes(q)).map(c=>[tenantFor(c.id).name,propertyFor(c.id).name,'contract-detail',c.id]),...rows('invoices').filter(i=>i.number.toLowerCase().includes(q)).map(i=>[i.number,tenantFor(i.contract_id).name,'invoice-detail',i.id]),...rows('repairs').filter(r=>r.title.toLowerCase().includes(q)).map(r=>[r.title,propertyFor(r.contract_id).name,'repair-detail',r.id])];
  modal(`Search results for “${query}”`,`<div class="search-results">${results.slice(0,30).map(([label,sub,act,id])=>`<div class="search-result"><div><strong>${e(label)}</strong><small>${e(sub)}</small></div>${actionBtn('Open',act,id)}</div>`).join('')||empty('No matching records','Try a tenant name, address, invoice number or repair title.')}</div>`);
 }
+// the open invitation of a tenant, contractor or owner, with its link and whether the email went out
+const pendingInvite=(kind,id)=>rows('account_invitations').find(i=>i.kind===kind&&i.target_id===id);
+function inviteMailText(inv){
+ if(inv.email_status==='sent')return `Email sent ${e((inv.emailed_at||'').slice(0,10))}`;
+ if(inv.email_status==='failed')return 'Email failed';
+ return 'Email not sent';
+}
 async function createInvitation(kind,id){
  const r=await api('/api/accounts/invite',{method:'POST',body:{kind,target_id:id}});
- const url=location.origin+r.path;
- modal('Invitation ready to share',`<p class="modal-note">Send this private link to <strong>${e(r.email)}</strong> by email or WhatsApp. The link works once and expires in ${r.expires_in_days} days.</p>${r.existing?`<div class="notice"><span><strong>This person already has a Krein login with this email</strong> (for example as staff, or as tenant of another unit). When they open the link they sign in with their current password, and this is added to the same login.</span></div>`:''}<div class="link-output">${e(url)}</div><div class="modal-footer">${button('Copy invite link','copy-link',`data-url="${e(url)}"`,'primary')}</div>`);
+ invitationModal(kind,id,r);
  await refresh();
+}
+async function resendInvitation(kind,id){
+ const r=await api('/api/accounts/invite/resend',{method:'POST',body:{kind,target_id:id}});
+ invitationModal(kind,id,r);
+ await refresh();
+}
+function viewInvitation(kind,id){
+ const inv=pendingInvite(kind,id);
+ if(!inv)return createInvitation(kind,id);
+ invitationModal(kind,id,{path:'/activate/'+inv.token,email:inv.email,expires_at:inv.expires_at,email_status:inv.email_status||'not_sent',email_error:inv.email_error,emailed_at:inv.emailed_at,saved:true});
+}
+function invitationModal(kind,id,r){
+ const url=location.origin+r.path;
+ const sent=r.email_status==='sent';
+ const status=sent?`<div class="notice">${icon('check')}<span><strong>Invitation email sent</strong> to ${e(r.email)}${r.emailed_at?` on ${e(r.emailed_at.slice(0,10))}`:''}. It has the link and short steps to activate the account.</span></div>`
+  :r.email_status==='failed'?`<div class="notice warning">${icon('info')}<span><strong>The invitation email could not be sent.</strong> ${e(r.email_error||'')} Share the link below yourself.</span></div>`
+  :r.email_status==='not_configured'?`<div class="notice warning">${icon('info')}<span><strong>No email was sent:</strong> email (SMTP) is not set up. Share the link below yourself.</span></div>`
+  :`<div class="notice warning">${icon('info')}<span><strong>No email was sent.</strong> Share the link below yourself.</span></div>`;
+ const expires=r.expires_at?`The link works once and expires on ${e(r.expires_at.slice(0,10))}.`:`The link works once and expires in ${r.expires_in_days} days.`;
+ const ids=`data-id="${id}" data-kind="${kind}"`;
+ modal(r.saved?'Invitation':sent?'Invitation sent':'Invitation ready to share',`${status}<p class="modal-note">${sent?'You can also send this private link':'Send this private link'} to <strong>${e(r.email)}</strong> by email or WhatsApp. ${expires}</p>${r.existing?`<div class="notice"><span><strong>This person already has a Krein login with this email</strong> (for example as staff, or as tenant of another unit). When they open the link they sign in with their current password, and this is added to the same login.</span></div>`:''}<div class="link-output">${e(url)}</div><div class="modal-footer">${button('New link','invite-new',ids)}${button(sent?'Send email again':'Send email','invite-resend',ids)}${button('Copy invite link','copy-link',`data-url="${e(url)}"`,'primary')}</div>`);
 }
 function editCompany(){formModal('Edit company',[['name','Company name','text',{value:company().name}],['kvk','KvK number','text',{value:company().kvk,required:false}],['address','Registered address','text',{wide:true,value:company().address}],['payment_instructions','Invoice payment instructions','textarea',{wide:true,value:company().payment_instructions}]],data=>api(`/api/companies/${state.company}`,{method:'PATCH',body:data}),{success:'Company profile updated.'});}
 function addContractor(){formModal('Add contractor',[['name','Company / contractor name'],['email','Email','email'],['phone','Phone number','tel',{required:false}],['trade','Trade / service']],data=>api('/api/contractors',{method:'POST',body:{...data,company_id:state.company}}),{intro:'After you invite the contractor, they can submit their signed agreement through their portal. You review it before assigning tenant work.'});}
@@ -455,6 +486,9 @@ async function handleAction(el){
  else if(action==='close-modal')closeModal();
  else if(action==='form')openRecordForm(el.dataset.kind);
  else if(action==='invite')await createInvitation('tenant',id);
+ else if(action==='invite-view')viewInvitation('tenant',id);
+ else if(action==='invite-resend')await resendInvitation(el.dataset.kind,id);
+ else if(action==='invite-new'){if(!confirm('Make a new invitation link? The old link stops working, and the new one is emailed when email is set up.'))return;await createInvitation(el.dataset.kind,id);}
  else if(action==='tenant-archive'){const tenant=byId('tenants',id);if(!confirm(`Remove ${tenant.name} from the tenant directory? Their tenancy must have ended first. Historical contracts and financial records will be kept.`))return;await api(`/api/tenants/${id}/archive`,{method:'POST',body:{company_id:state.company}});await refresh();toast('Tenant contact removed. Historical records were kept.');}
  else if(action==='tenant-restore'){await api(`/api/tenants/${id}/restore`,{method:'POST',body:{company_id:state.company}});await refresh();toast('Tenant contact restored.');}
  else if(action==='contractor-invite')await createInvitation('contractor',id);

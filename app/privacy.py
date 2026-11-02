@@ -125,7 +125,7 @@ def erase_tenant(conn, tenant_id):
         conn.execute(f'UPDATE communications SET body=? WHERE contract_id IN ({marks})', (REMOVED, *contracts))
         conn.execute(f'UPDATE payment_proofs SET reference=?,note=? WHERE invoice_id IN (SELECT id FROM invoices WHERE contract_id IN ({marks}))', (REMOVED, REMOVED, *contracts))
         conn.execute('UPDATE lease_offers SET signer_name=?,signed_ip=NULL,form_values=NULL,tenant_signature=NULL WHERE tenant_id=?', (label, tenant_id))
-        conn.execute("UPDATE account_invitations SET email=?,name=? WHERE kind='tenant' AND target_id=?", (f'erased-{tenant_id}@removed.invalid', label, tenant_id))
+        conn.execute("UPDATE account_invitations SET email=?,name=?,token=NULL WHERE kind='tenant' AND target_id=?", (f'erased-{tenant_id}@removed.invalid', label, tenant_id))
         files = conn.execute(f'SELECT id,file_key FROM documents WHERE contract_id IN ({marks}) OR id IN (SELECT document_id FROM lease_offers WHERE tenant_id=?) OR id IN (SELECT final_document_id FROM lease_offers WHERE tenant_id=?)',
                              (*contracts, tenant_id, tenant_id)).fetchall()
         for f in files:

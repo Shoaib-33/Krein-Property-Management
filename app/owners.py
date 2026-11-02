@@ -122,7 +122,7 @@ def archive_owner(owner_id: int, user=Depends(current_user)):
             raise HTTPException(409, "This owner still has portfolios. Remove them first, or give them to another owner with Edit portfolio.")
         conn.execute('UPDATE owners SET archived_at=? WHERE id=?', (now(), owner_id))
         conn.execute('UPDATE owner_accounts SET enabled=0 WHERE owner_id=?', (owner_id,))
-        conn.execute("UPDATE account_invitations SET revoked=1 WHERE kind='owner' AND target_id=? AND used_at IS NULL", (owner_id,))
+        conn.execute("UPDATE account_invitations SET revoked=1,token=NULL WHERE kind='owner' AND target_id=? AND used_at IS NULL", (owner_id,))
         for row in conn.execute('SELECT user_id FROM owner_accounts WHERE owner_id=?', (owner_id,)).fetchall():
             uid = row['user_id']
             other = (conn.execute('SELECT 1 FROM memberships WHERE user_id=?', (uid,)).fetchone() or conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (uid,)).fetchone()

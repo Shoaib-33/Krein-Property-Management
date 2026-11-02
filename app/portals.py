@@ -1,4 +1,5 @@
 import json
+import logging
 import secrets
 import time as _time
 from datetime import date, datetime, timedelta
@@ -49,11 +50,65 @@ def invite_account(data: dict, user=Depends(current_user)):
         account_table, target_key = {'tenant': ('portal_accounts', 'tenant_id'), 'contractor': ('contractor_accounts', 'contractor_id'), 'owner': ('owner_accounts', 'owner_id')}[kind]
         if conn.execute(f'SELECT 1 FROM {account_table} WHERE {target_key}=?', (target['id'],)).fetchone():
             raise HTTPException(409, 'This record already has a portal account. Enable its access instead.')
-        conn.execute('UPDATE account_invitations SET revoked=1 WHERE company_id=? AND kind=? AND target_id=? AND used_at IS NULL', (target['company_id'],kind,target['id']))
+        conn.execute('UPDATE account_invitations SET revoked=1,token=NULL WHERE company_id=? AND kind=? AND target_id=? AND used_at IS NULL', (target['company_id'],kind,target['id']))
         token = secrets.token_urlsafe(32)
-        iid = insert(conn,'account_invitations',{'company_id':target['company_id'],'email':email,'name':target['name'],'kind':kind,'target_id':target['id'],'token_hash':token_hash(token),'expires_at':expiry(7),'created_by':user['id'],'created_at':now()})
+        iid = insert(conn,'account_invitations',{'company_id':target['company_id'],'email':email,'name':target['name'],'kind':kind,'target_id':target['id'],'token_hash':token_hash(token),'token':token,'expires_at':expiry(7),'created_by':user['id'],'created_at':now()})
         audit(conn,user['id'],target['company_id'],'invited',kind,target['id'],{'invitation_id':iid})
-    return {'path':'/activate/'+token,'email':email,'expires_in_days':7,'existing':bool(existing and existing['active'])}
+    return {'path':'/activate/'+token,'email':email,'expires_in_days':7,'existing':bool(existing and existing['active']),**_send_invitation(iid, user)}
+
+
+@router.post('/api/accounts/invite/resend')
+def resend_invitation(data: dict, user=Depends(current_user)):
+    """Emails the pending invitation of a record again (same link)."""
+    kind = choice(data, 'kind', ('tenant','contractor','owner'))
+    table = {'tenant': 'tenants', 'contractor': 'contractors', 'owner': 'owners'}[kind]
+    with connect() as conn:
+        target = record(conn, table, integer(data,'target_id'), user, ('manager','property') + (('landlord',) if kind == 'tenant' else ()))
+        if kind == 'tenant':
+            from .scope import require_own_tenant
+            require_own_tenant(conn, target['id'])
+        row = conn.execute('SELECT id,email,token FROM account_invitations WHERE company_id=? AND kind=? AND target_id=? AND revoked=0 AND used_at IS NULL AND expires_at>? AND token IS NOT NULL ORDER BY id DESC LIMIT 1',
+                           (target['company_id'],kind,target['id'],now())).fetchone()
+    if not row:
+        raise HTTPException(404, 'There is no open invitation. Create a new invitation link.')
+    return {'path':'/activate/'+row['token'],'email':row['email'],**_send_invitation(row['id'], user)}
+
+
+def _send_invitation(iid, user):
+    """Emails invitation iid when email is set up and records the outcome on it, so staff can see whether it went out."""
+    with connect() as conn:
+        i = conn.execute('SELECT i.*,c.name company FROM account_invitations i JOIN companies c ON c.id=i.company_id WHERE i.id=?', (iid,)).fetchone()
+        existing = bool(conn.execute('SELECT 1 FROM users WHERE email=? AND active=1', (i['email'],)).fetchone())
+    status, error = _email_invitation(i['email'], i['name'], i['company'], '/activate/'+i['token'], existing)
+    with transaction() as conn:
+        conn.execute('UPDATE account_invitations SET email_status=?,email_error=?,emailed_at=? WHERE id=?', (status, error or None, now() if status == 'sent' else None, iid))
+        audit(conn,user['id'],i['company_id'],'invitation_email_'+status,i['kind'],i['target_id'],{'invitation_id':iid,'email':i['email']})
+    return {'email_status':status,'email_error':error}
+
+
+def _email_invitation(email, name, company, path, existing):
+    """Emails the invitation when email (SMTP) is set up. Returns (status, error): 'sent', 'failed' or 'not_configured'."""
+    from .email_delivery import send_plain, smtp_settings, valid_recipient
+    settings = smtp_settings()
+    if not settings:
+        return 'not_configured', ''
+    if not valid_recipient(email):
+        return 'failed', 'The email address is not valid.'
+    url = settings['public_url'] + path
+    step_en = 'Sign in with your current Krein password' if existing else 'Choose a password (at least 12 characters)'
+    step_nl = 'Log in met uw huidige Krein-wachtwoord' if existing else 'Kies een wachtwoord (minimaal 12 tekens)'
+    try:
+        send_plain(email, f'Your invitation to {company} / Uw uitnodiging van {company}',
+                   f'Hello {name},\n\n{company} has invited you to Krein. To activate your account:\n\n'
+                   f'1. Open this link: {url}\n2. {step_en}.\n3. Sign in and you are ready.\n\n'
+                   'The link works once and expires in 7 days.\n\n'
+                   f'---\n\nBeste {name},\n\n{company} heeft u uitgenodigd voor Krein. Zo activeert u uw account:\n\n'
+                   f'1. Open deze link: {url}\n2. {step_nl}.\n3. Log in en u bent klaar.\n\n'
+                   'De link werkt één keer en is 7 dagen geldig.')
+    except Exception as exc:
+        logging.exception('Invitation email could not be sent.')
+        return 'failed', str(exc)[:200] or 'The email could not be sent.'
+    return 'sent', ''
 
 
 def invitation(conn, token):
@@ -107,7 +162,7 @@ def accept_invitation(token: str,data: dict):
         else:
             uid=insert(conn,'users',{'name':i['name'],'email':i['email'],'password_hash':password_hash(password)})
         insert(conn,table,{'user_id':uid,key:i['target_id'],'company_id':i['company_id'],'created_at':now()})
-        conn.execute('UPDATE account_invitations SET used_at=? WHERE id=?',(now(),i['id']))
+        conn.execute('UPDATE account_invitations SET used_at=?,token=NULL WHERE id=?',(now(),i['id']))
         audit(conn,uid,i['company_id'],'activated',i['kind'],i['target_id'],{})
         notify(conn,i['company_id'],[uid],'Welcome to Krein','Your account is ready.','home')
     return {'ok':True,'email':i['email']}
