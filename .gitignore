@@ -14,3 +14,4 @@ test-results/
 
 .tmp-venv/
 test-statements/
+.playwright-mcp/
