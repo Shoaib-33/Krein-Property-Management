@@ -1,0 +1,4 @@
+# Everything the app needs, plus what the tests use (not installed in the Docker image)
+-r requirements.txt
+httpx2==2.16.0      # FastAPI's TestClient
+pymupdf==2.1        # reads the text of generated PDFs (import fitz)

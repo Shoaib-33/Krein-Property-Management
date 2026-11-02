@@ -78,6 +78,7 @@ Never commit `.env`: it holds passwords and keys.
 ## Tests
 
 ```powershell
+python -m pip install -r requirements-dev.txt   # the app's packages plus the test tools
 python -m unittest discover -s tests
 ```
 

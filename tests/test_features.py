@@ -8,6 +8,7 @@ from pathlib import Path
 from fastapi.testclient import TestClient
 
 from app import db
+from app.clock import local_today
 from app.main import app
 from manage import demo
 
@@ -78,7 +79,10 @@ class FeatureTests(unittest.TestCase):
         rule = {'company_id': 1, 'name': 'Nudge at 5 days', 'trigger': 'invoice_overdue', 'days': 5, 'action': 'create_task', 'title': 'Call {tenant} about {invoice} ({amount}, {days} days late)', 'owner': 'Finance team'}
         self.assertEqual(self.post('/api/automation-rules', {**rule, 'trigger': 'drop_table'}).status_code, 422)
         rid = self.post('/api/automation-rules', rule).json()['id']
-        dry = self.post('/api/automation-rules/run', {'company_id': 1, 'dry_run': True}).json()
+        # the demo's invoices fall due on the 1st of this month; make them 10 days late so the test passes on any day of the month
+        with db.transaction() as conn:
+            conn.execute('UPDATE invoices SET due_date=? WHERE company_id=1', ((local_today() - timedelta(days=10)).isoformat(),))
+        dry =self.post('/api/automation-rules/run', {'company_id': 1, 'dry_run': True}).json()
         self.assertGreater(dry['total'], 0)
         before = len(self.data()['tasks'])
         first = self.post('/api/automation-rules/run', {'company_id': 1}).json()
