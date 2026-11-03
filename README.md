@@ -93,6 +93,7 @@ Creates a ZIP with a consistent database snapshot and the uploaded files. Backup
 ## Deployment
 
 - **Production**: Docker on a server with a persistent disk (planned: Google Cloud, region europe-west4), HTTPS through a reverse proxy, nightly backups. Start with an empty database: set `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` and `KREIN_BOOTSTRAP_DEVELOPER_PASSWORD`; never set `KREIN_SAMPLE_DATA` or `KREIN_DEMO_SEED`.
+- **Google Cloud Run**: every push to `main` deploys ([cloudbuild.yaml](cloudbuild.yaml)). Cloud Run wipes the disk on every restart, so the service needs `LITESTREAM_REPLICA_URL` (for example `gcs://<bucket>/db`; Litestream keeps the database in Cloud Storage) and `KREIN_UPLOADS_DIR` (a Cloud Storage volume, for example `/mnt/uploads`, for uploaded files). Without `LITESTREAM_REPLICA_URL` the container refuses to start, so a deploy can never quietly begin with an empty database ([scripts/start.sh](scripts/start.sh)).
 - **Demo**: [render.yaml](render.yaml) deploys the sample data to Render. The free plan resets the data whenever the service restarts; see the notes in the file.
 
 ## Documentation
