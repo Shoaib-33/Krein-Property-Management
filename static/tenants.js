@@ -137,6 +137,7 @@
       f.portal && f.portal.enabled ? `<button type="button" class="button small" data-reset-link="tenant:${t.id}" title="A one-time link to choose a new password">Password reset link</button>` : '',
       `<a class="button small" href="/api/tenants/${t.id}/export">Export data</a>`,
       t.archived_at ? `<button type="button" class="button small" data-action="tenant-restore" data-id="${t.id}">Restore</button>` : `<button type="button" class="button small danger" data-action="tenant-archive" data-id="${t.id}">Remove</button>`,
+      state.me.developer ? `<button type="button" class="button small danger" data-action="tenant-delete" data-id="${t.id}" title="Developer only: removes the tenant and all their records">Delete permanently</button>` : '',
     ].join('');
     const head = `<div class="tf-back">${back}</div><div class="page-heading"><div><div class="eyebrow">TENANT</div><h1>${e(t.name)}</h1>
       <p class="subtitle">${e(t.email)}${t.phone ? ' · ' + e(t.phone) : ''} · ${t.language === 'nl' ? 'Dutch' : 'English'} ${portal}${t.archived_at ? ' ' + badge('Removed', 'gray') : ''}</p></div><div class="actions">${actions}</div></div>`;

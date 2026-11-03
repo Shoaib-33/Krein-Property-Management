@@ -588,6 +588,26 @@ V42 = '''
 ALTER TABLE sessions ADD COLUMN last_active TEXT;
 '''
 
+# V43: the developer may delete a tenant permanently (app/developer.py). The financial records still refuse every delete,
+# except inside that one transaction (a row in record_deletion); changing them stays impossible.
+V43 = '''
+CREATE TABLE record_deletion (active INTEGER NOT NULL);
+DROP TRIGGER ledger_no_delete;
+CREATE TRIGGER ledger_no_delete BEFORE DELETE ON ledger WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Ledger entries are immutable'); END;
+DROP TRIGGER invoice_no_delete;
+CREATE TRIGGER invoice_no_delete BEFORE DELETE ON invoices WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Issued invoices are immutable'); END;
+DROP TRIGGER rent_no_delete;
+CREATE TRIGGER rent_no_delete BEFORE DELETE ON rent_versions WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Rent history is immutable'); END;
+DROP TRIGGER portal_message_no_delete;
+CREATE TRIGGER portal_message_no_delete BEFORE DELETE ON portal_messages WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Messages are immutable'); END;
+DROP TRIGGER repair_update_no_delete;
+CREATE TRIGGER repair_update_no_delete BEFORE DELETE ON repair_updates WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Repair updates are immutable'); END;
+DROP TRIGGER credit_note_no_delete;
+CREATE TRIGGER credit_note_no_delete BEFORE DELETE ON credit_notes WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Credit notes are immutable'); END;
+DROP TRIGGER invoice_revision_no_delete;
+CREATE TRIGGER invoice_revision_no_delete BEFORE DELETE ON invoice_revisions WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Invoice revisions are immutable'); END;
+'''
+
 # V41: a pending invitation keeps its link (cleared once it is used or replaced) and whether it was emailed (app/portals.py)
 V41 = '''
 ALTER TABLE account_invitations ADD COLUMN token TEXT;
@@ -659,7 +679,25 @@ CREATE INDEX tenants_co_of ON tenants(co_of);
 # PostgreSQL (DATABASE_URL): app/schema_postgres.sql already contains every migration up to POSTGRES_BASELINE. A later
 # migration is added twice: as V43 (and so on) above for SQLite, and here in PostgreSQL syntax under the same number.
 POSTGRES_BASELINE = 42
-POSTGRES = {}
+POSTGRES = {
+    43: '''
+CREATE TABLE record_deletion (active BIGINT NOT NULL);
+CREATE FUNCTION krein_refuse_unless_deletion() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF TG_OP = 'DELETE' AND EXISTS (SELECT 1 FROM record_deletion) THEN
+    RETURN OLD;
+  END IF;
+  RAISE EXCEPTION '%', TG_ARGV[0] USING ERRCODE = '23000';
+END $$;
+CREATE OR REPLACE TRIGGER ledger_no_change BEFORE UPDATE OR DELETE ON ledger FOR EACH ROW EXECUTE FUNCTION krein_refuse_unless_deletion('Ledger entries are immutable');
+CREATE OR REPLACE TRIGGER invoice_no_delete BEFORE DELETE ON invoices FOR EACH ROW EXECUTE FUNCTION krein_refuse_unless_deletion('Issued invoices are immutable');
+CREATE OR REPLACE TRIGGER rent_no_change BEFORE UPDATE OR DELETE ON rent_versions FOR EACH ROW EXECUTE FUNCTION krein_refuse_unless_deletion('Rent history is immutable');
+CREATE OR REPLACE TRIGGER portal_message_no_delete BEFORE DELETE ON portal_messages FOR EACH ROW EXECUTE FUNCTION krein_refuse_unless_deletion('Messages are immutable');
+CREATE OR REPLACE TRIGGER repair_update_no_delete BEFORE DELETE ON repair_updates FOR EACH ROW EXECUTE FUNCTION krein_refuse_unless_deletion('Repair updates are immutable');
+CREATE OR REPLACE TRIGGER credit_note_no_delete BEFORE DELETE ON credit_notes FOR EACH ROW EXECUTE FUNCTION krein_refuse_unless_deletion('Credit notes are immutable');
+CREATE OR REPLACE TRIGGER invoice_revision_no_change BEFORE UPDATE OR DELETE ON invoice_revisions FOR EACH ROW EXECUTE FUNCTION krein_refuse_unless_deletion('Invoice revisions are immutable');
+''',
+}
 
 
 def migrate_postgres(conn):
@@ -1008,6 +1046,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (42, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=43').fetchone():
+            statement = ''
+            for line in V43.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (43, now()))
         conn.commit()
     except Exception:
         conn.rollback()

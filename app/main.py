@@ -613,15 +613,8 @@ def archive_tenant(tenant_id: int, data: dict, user=Depends(current_user)):
             return {'archived': True}
         conn.execute('UPDATE tenants SET archived_at=? WHERE id=? AND company_id=?', (now(), tenant_id, company_id))
         conn.execute('UPDATE portal_accounts SET enabled=0 WHERE tenant_id=? AND company_id=?', (tenant_id, company_id))
-        # free the email: a login that belonged only to this tenant is closed and anonymised, so the same person can be invited again later
-        for row in conn.execute('SELECT user_id FROM portal_accounts WHERE tenant_id=? AND company_id=?', (tenant_id, company_id)).fetchall():
-            uid = row['user_id']
-            other = (conn.execute('SELECT 1 FROM memberships WHERE user_id=?', (uid,)).fetchone() or conn.execute('SELECT 1 FROM owner_accounts WHERE user_id=?', (uid,)).fetchone()
-                     or conn.execute('SELECT 1 FROM contractor_accounts WHERE user_id=?', (uid,)).fetchone()
-                     or conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (uid,)).fetchone())
-            if not other:
-                conn.execute("UPDATE users SET active=0,name='Removed tenant',email='removed-'||id||'@removed.invalid',password_hash='!' WHERE id=?", (uid,))
-                conn.execute('DELETE FROM sessions WHERE user_id=?', (uid,))
+        from .privacy import close_tenant_logins
+        close_tenant_logins(conn, [r['user_id'] for r in conn.execute('SELECT user_id FROM portal_accounts WHERE tenant_id=? AND company_id=?', (tenant_id, company_id)).fetchall()])
         conn.execute("UPDATE account_invitations SET revoked=1,token=NULL WHERE kind='tenant' AND target_id=? AND company_id=? AND used_at IS NULL", (tenant_id, company_id))
         audit(conn, user['id'], company_id, 'archived', 'tenant', tenant_id, {'name': tenant['name']})
     return {'archived': True}

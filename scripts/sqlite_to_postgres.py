@@ -25,17 +25,20 @@ def main(source=ROOT / 'data' / 'krein.db'):
         raise SystemExit(f'{source} does not exist.')
     import psycopg
     from app import pg
-    from app.migrations import POSTGRES_BASELINE
+    from app.migrations import POSTGRES, POSTGRES_BASELINE, migrate_postgres
+    latest = max([POSTGRES_BASELINE, *POSTGRES])
 
     src = sqlite3.connect(f'file:{source}?mode=ro', uri=True)
     src.row_factory = sqlite3.Row
     version = src.execute('SELECT MAX(version) FROM schema_migrations').fetchone()[0]
-    if version != POSTGRES_BASELINE:
-        raise SystemExit(f'{source} is at database version {version}, PostgreSQL starts at {POSTGRES_BASELINE}. '
+    if version != latest:
+        raise SystemExit(f'{source} is at database version {version}, this Krein is at {latest}. '
                          'Start Krein once on this SQLite file (without DATABASE_URL) so it is brought up to date, then copy.')
 
     database = pg.database(url)
     pg.create_schema(database)
+    with database.connect() as conn:
+        migrate_postgres(conn)
     order = re.findall(r'^CREATE TABLE (\w+) \(', pg.SCHEMA_FILE.read_text(encoding='utf-8'), re.M)   # parents before children
     with psycopg.connect(url) as dst:
         if dst.execute('SELECT 1 FROM users LIMIT 1').fetchone():

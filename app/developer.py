@@ -192,3 +192,88 @@ def rename_company(company_id: int, data: dict, user=Depends(current_user)):
         conn.execute('UPDATE companies SET name=? WHERE id=?', (name, company_id))
         audit(conn, user['id'], company_id, 'renamed', 'company', company_id, {'from': old['name'], 'to': name})
     return {'id': company_id, 'name': name}
+
+
+# ---- Deleting a tenant permanently: for a tenant added by mistake (or for testing). Everything that belongs to the tenant
+# goes: contracts, invoices, payments and ledger entries, documents and uploaded files, messages, repairs and the login.
+# The financial tables refuse deletes, except inside this one transaction (a row in record_deletion, migration V43).
+# Bank statement lines stay (the money really came in) and go back to "to check". The audit log keeps every earlier event
+# and records the deletion itself, with the reason.
+KEEP = {'bank_lines', 'contractors', 'valuations', 'cost_lines', 'owner_expenses', 'contractor_agreement_submissions'}
+COLLECT = {'portal_accounts': 'user_id', 'bank_bookings': 'line_id', 'documents': 'file_key'}   # read before the rows go
+
+
+def _has_id(conn, table):
+    from . import db
+    if db.postgres_url():
+        return bool(conn.execute("SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema() AND table_name=? AND column_name='id'", (table,)).fetchone())
+    return any(r['name'] == 'id' for r in conn.execute(f'PRAGMA table_info("{table}")'))
+
+
+def _purge(conn, table, ids, doomed, collected):
+    """Delete rows by id, after everything that points at them (children first, so every foreign key holds)."""
+    from .db import tables_referencing
+    ids = set(ids) - doomed.setdefault(table, set())
+    if not ids:
+        return
+    doomed[table] |= ids
+    marks = ','.join('?' for _ in ids)
+    for child, column in tables_referencing(conn, table):
+        if child in KEEP:
+            if child == 'bank_lines':
+                collected.setdefault('bank_lines', set()).update(r[0] for r in conn.execute(f'SELECT id FROM bank_lines WHERE {column} IN ({marks})', tuple(ids)))
+            conn.execute(f'UPDATE {child} SET {column}=NULL WHERE {column} IN ({marks})', tuple(ids))
+        elif _has_id(conn, child):
+            _purge(conn, child, [r[0] for r in conn.execute(f'SELECT id FROM {child} WHERE {column} IN ({marks})', tuple(ids))], doomed, collected)
+        else:
+            if child in COLLECT:
+                collected.setdefault(child, set()).update(r[0] for r in conn.execute(f'SELECT {COLLECT[child]} FROM {child} WHERE {column} IN ({marks})', tuple(ids)))
+            conn.execute(f'DELETE FROM {child} WHERE {column} IN ({marks})', tuple(ids))
+    if table in COLLECT:
+        collected.setdefault(table, set()).update(r[0] for r in conn.execute(f'SELECT {COLLECT[table]} FROM {table} WHERE id IN ({marks})', tuple(ids)))
+    conn.execute(f'DELETE FROM {table} WHERE id IN ({marks})', tuple(ids))
+
+
+def delete_tenant(conn, tenant_id):
+    """Inside the caller's transaction. Returns (rows removed per table, uploaded files to delete once it is committed)."""
+    from . import db
+    from .privacy import close_tenant_logins
+    doomed, collected = {}, {}
+    conn.execute('INSERT INTO record_deletion VALUES(1)')
+    try:
+        _purge(conn, 'tenants', [tenant_id], doomed, collected)
+    finally:
+        conn.execute('DELETE FROM record_deletion')
+    for entity, table in (('tenant', 'tenants'), ('contract', 'contracts')):
+        gone = doomed.get(table) or set()
+        if gone:
+            conn.execute(f"DELETE FROM custom_values WHERE field_id IN (SELECT id FROM custom_fields WHERE entity=?) AND entity_id IN ({','.join('?' for _ in gone)})", (entity, *gone))
+    tenants = doomed['tenants']
+    conn.execute(f"DELETE FROM account_invitations WHERE kind='tenant' AND target_id IN ({','.join('?' for _ in tenants)})", tuple(tenants))
+    lines = collected.get('bank_lines', set()) | collected.get('bank_bookings', set())
+    if lines:
+        conn.execute(f"UPDATE bank_lines SET status='unmatched',tenant_id=NULL,invoice_id=NULL,reason=?,decided_by=NULL,decided_at=NULL "
+                     f"WHERE status IN ('booked','suggested') AND id IN ({','.join('?' for _ in lines)})", ('The tenant this payment was linked to was deleted.', *lines))
+    close_tenant_logins(conn, sorted(collected.get('portal_accounts', set())))
+    files = [db.DATA_DIR / 'uploads' / key for key in collected.get('documents', set()) if key]
+    return {table: len(ids) for table, ids in sorted(doomed.items())}, files
+
+
+@router.post('/api/developer/tenants/{tenant_id}/delete')
+def delete_tenant_permanently(tenant_id: int, data: dict, user=Depends(current_user)):
+    require_developer(user)
+    reason = ' '.join(str(data.get('reason') or '').split())
+    if not 5 <= len(reason) <= 500:
+        raise HTTPException(422, 'Give the reason for deleting this tenant (5-500 characters).')
+    with transaction() as conn:
+        tenant = conn.execute('SELECT * FROM tenants WHERE id=?', (tenant_id,)).fetchone()
+        if not tenant:
+            raise HTTPException(404, 'Tenant not found.')
+        if ' '.join(str(data.get('confirm') or '').split()).lower() != ' '.join(tenant['name'].split()).lower():
+            raise HTTPException(422, f'Type the tenant\'s name exactly ({tenant["name"]}) to confirm.')
+        removed, files = delete_tenant(conn, tenant_id)
+        audit(conn, user['id'], tenant['company_id'], 'deleted_permanently', 'tenant', tenant_id, {'name': tenant['name'], 'reason': reason, 'removed': removed})
+    for path in files:   # the files go only after the database change is committed
+        if path.is_file():
+            path.unlink()
+    return {'deleted': True, 'removed': removed}

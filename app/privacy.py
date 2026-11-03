@@ -106,6 +106,18 @@ def candidates(conn, today=None):
     return out
 
 
+def close_tenant_logins(conn, user_ids):
+    """Free the email: a login that belonged only to this tenant (no staff, owner, contractor or other open tenant access) is
+    closed and anonymised, so the same person can be invited again later."""
+    for uid in user_ids:
+        other = (conn.execute('SELECT 1 FROM memberships WHERE user_id=?', (uid,)).fetchone() or conn.execute('SELECT 1 FROM owner_accounts WHERE user_id=?', (uid,)).fetchone()
+                 or conn.execute('SELECT 1 FROM contractor_accounts WHERE user_id=?', (uid,)).fetchone()
+                 or conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (uid,)).fetchone())
+        if not other:
+            conn.execute("UPDATE users SET active=0,name='Removed tenant',email='removed-'||id||'@removed.invalid',password_hash='!' WHERE id=?", (uid,))
+            conn.execute('DELETE FROM sessions WHERE user_id=?', (uid,))
+
+
 def erase_tenant(conn, tenant_id):
     """Anonymise one former tenant inside the caller's transaction. Returns the uploaded files to delete once it is committed."""
     contracts = [r[0] for r in conn.execute('SELECT id FROM contracts WHERE tenant_id=?', (tenant_id,))] or [0]

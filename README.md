@@ -12,7 +12,7 @@ Web application for managing Dutch residential rentals: homes, tenants and co-te
 - **Repairs and tickets**: tenant reports with photos and video, priorities and deadlines, contractor work orders, completion with photo evidence.
 - **Messages**: inbox for conversations with tenants.
 - **Also**: deposits, service-charge settlements, rent indexation, inspections, owners and owner statements, documents, tasks, automation rules, templates, audit log, CSV exports.
-- **Platform**: a developer console (`/developer`) to manage administrators and switch features on or off per role.
+- **Platform**: a developer console (`/developer`) to manage administrators and switch features on or off per role. The developer can also delete a tenant added by mistake permanently, with everything that belongs to them (the reason is kept in the audit log).
 
 ## Portals
 
