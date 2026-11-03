@@ -95,15 +95,11 @@ def _email_invitation(email, name, company, path, existing):
     if not valid_recipient(email):
         return 'failed', 'The email address is not valid.'
     url = settings['public_url'] + path
-    step_en = 'Sign in with your current Krein password' if existing else 'Choose a password (at least 12 characters)'
-    step_nl = 'Log in met uw huidige Krein-wachtwoord' if existing else 'Kies een wachtwoord (minimaal 12 tekens)'
-    try:
-        send_plain(email, f'Your invitation to {company} / Uw uitnodiging van {company}',
-                   f'Hello {name},\n\n{company} has invited you to Krein. To activate your account:\n\n'
-                   f'1. Open this link: {url}\n2. {step_en}.\n3. Sign in and you are ready.\n\n'
-                   'The link works once and expires in 7 days.\n\n'
-                   f'---\n\nBeste {name},\n\n{company} heeft u uitgenodigd voor Krein. Zo activeert u uw account:\n\n'
-                   f'1. Open deze link: {url}\n2. {step_nl}.\n3. Log in en u bent klaar.\n\n'
+    step = 'Log in met uw huidige Krein-wachtwoord' if existing else 'Kies een wachtwoord (minimaal 12 tekens)'
+    try:   # in Dutch only
+        send_plain(email, f'Uw uitnodiging van {company}',
+                   f'Beste {name},\n\n{company} heeft u uitgenodigd voor Krein. Zo activeert u uw account:\n\n'
+                   f'1. Open deze link: {url}\n2. {step}.\n3. Log in en u bent klaar.\n\n'
                    'De link werkt één keer en is 7 dagen geldig.')
     except Exception as exc:
         logging.exception('Invitation email could not be sent.')

@@ -87,7 +87,8 @@ class InvitationEmailTests(unittest.TestCase):
         self.assertEqual(r['email_status'], 'sent')
         self.assertEqual(sent['to'], 'anna@example.test')
         self.assertIn('https://krein.example.test' + r['path'], sent['body'])
-        self.assertIn('Choose a password', sent['body'])
+        self.assertIn('Kies een wachtwoord', sent['body'])
+        self.assertNotIn('Choose a password', sent['body'])   # Dutch only
 
     def test_a_failed_email_is_reported_and_the_link_still_works(self):
         import os
