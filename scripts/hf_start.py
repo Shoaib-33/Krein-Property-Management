@@ -41,6 +41,8 @@ def load_sample():
     Every login gets the password in KREIN_DEMO_PASSWORD, never the one written in the repository."""
     import shutil
     from pathlib import Path
+    if db.postgres_url():
+        raise SystemExit('KREIN_SAMPLE_DATA loads a SQLite sample file; it cannot be used together with DATABASE_URL.')
     password = os.environ.get('KREIN_DEMO_PASSWORD', '').strip()
     if len(password) < 12:
         raise SystemExit('Set KREIN_DEMO_PASSWORD (12+ characters): the password of every login in the public sample demo.')

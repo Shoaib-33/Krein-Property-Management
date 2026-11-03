@@ -249,7 +249,7 @@ def kick():
 
 def pending_summary(conn, company_id):
     """For the staff screens: what is waiting, and whether email is set up at all."""
-    row = conn.execute("SELECT SUM(status='queued' OR status='sending'),SUM(status='failed') FROM outbound_email_jobs WHERE company_id=?", (company_id,)).fetchone()
+    row = conn.execute("SELECT SUM(CASE WHEN status IN ('queued','sending') THEN 1 ELSE 0 END),SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) FROM outbound_email_jobs WHERE company_id=?", (company_id,)).fetchone()
     return {'configured': bool(smtp_settings()), 'waiting': row[0] or 0, 'failed': row[1] or 0}
 
 

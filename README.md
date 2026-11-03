@@ -27,7 +27,7 @@ Web application for managing Dutch residential rentals: homes, tenants and co-te
 
 ## Tech stack
 
-Python 3.12 · FastAPI · SQLite (WAL, append-only financial records) · plain HTML, CSS and JavaScript (no build step) · ReportLab for PDFs · Docker.
+Python 3.12 · FastAPI · PostgreSQL in production, SQLite locally (append-only financial records) · plain HTML, CSS and JavaScript (no build step) · ReportLab for PDFs · Docker.
 
 ## Project structure
 
@@ -66,6 +66,7 @@ Settings are read from environment variables (or `.env` for local use). See [.en
 |---|---|
 | `KREIN_PUBLIC_URL` | The public address, used in emails and links |
 | `KREIN_DATA_DIR` | Where the database and uploaded files are stored (default `data/`) |
+| `DATABASE_URL` | PostgreSQL (Cloud SQL) instead of the SQLite file, for example `postgresql://krein:<password>@/krein?host=/cloudsql/<instance>` |
 | `KREIN_SMTP_*` | Outgoing email (invoices, reminders, invitations) |
 | `KREIN_TIMEZONE` | For example `Europe/Amsterdam` |
 | `KREIN_SECURE_COOKIES` | `1` when served over HTTPS |
@@ -82,6 +83,8 @@ python -m pip install -r requirements-dev.txt   # the app's packages plus the te
 python -m unittest discover -s tests
 ```
 
+To run the same tests on PostgreSQL, point `DATABASE_URL` at an empty test database and set `KREIN_PG_SCHEMA_PER_DATA_DIR=1` (every test then gets its own schema).
+
 ## Backup
 
 ```powershell
@@ -93,7 +96,8 @@ Creates a ZIP with a consistent database snapshot and the uploaded files. Backup
 ## Deployment
 
 - **Production**: Docker on a server with a persistent disk (planned: Google Cloud, region europe-west4), HTTPS through a reverse proxy, nightly backups. Start with an empty database: set `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` and `KREIN_BOOTSTRAP_DEVELOPER_PASSWORD`; never set `KREIN_SAMPLE_DATA` or `KREIN_DEMO_SEED`.
-- **Google Cloud Run**: every push to `main` deploys ([cloudbuild.yaml](cloudbuild.yaml)). Cloud Run wipes the disk on every restart, so the service needs `LITESTREAM_REPLICA_URL` (for example `gcs://<bucket>/db`; Litestream keeps the database in Cloud Storage) and `KREIN_UPLOADS_DIR` (a Cloud Storage volume, for example `/mnt/uploads`, for uploaded files). Without `LITESTREAM_REPLICA_URL` the container refuses to start, so a deploy can never quietly begin with an empty database ([scripts/start.sh](scripts/start.sh)).
+- **Google Cloud Run**: every push to `main` deploys ([cloudbuild.yaml](cloudbuild.yaml)). Cloud Run wipes the disk on every restart, so the database is PostgreSQL on Cloud SQL (`DATABASE_URL`, with the Cloud SQL instance connected to the service) and uploaded files go to a Cloud Storage volume (`KREIN_UPLOADS_DIR`, for example `/mnt/uploads`). Without `DATABASE_URL` (or the older `LITESTREAM_REPLICA_URL`) the container refuses to start, so a deploy can never quietly begin with an empty database ([scripts/start.sh](scripts/start.sh)).
+- **Moving from SQLite to PostgreSQL**: create an empty database, then `DATABASE_URL=... python -m scripts.sqlite_to_postgres data/krein.db`. It creates the tables, copies every row with its own id and checks the counts. The PostgreSQL tables are in [app/schema_postgres.sql](app/schema_postgres.sql); [app/pg.py](app/pg.py) translates the app's SQLite-style queries. A new database change is added to [app/migrations.py](app/migrations.py) twice: for SQLite and under `POSTGRES`.
 - **Demo**: [render.yaml](render.yaml) deploys the sample data to Render. The free plan resets the data whenever the service restarts; see the notes in the file.
 
 ## Documentation

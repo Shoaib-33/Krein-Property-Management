@@ -495,7 +495,10 @@ def tenant_offers(conn, user_id):
 ,a.tenant_id me,(SELECT name FROM tenants WHERE id=a.tenant_id) me_name
              FROM lease_offers o JOIN portal_accounts a ON a.company_id=o.company_id AND (a.tenant_id=o.tenant_id OR a.tenant_id IN (SELECT tenant_id FROM lease_offer_signers WHERE offer_id=o.id))
              JOIN properties p ON p.id=o.property_id JOIN tenants t ON t.id=o.tenant_id JOIN companies co ON co.id=o.company_id
-             WHERE a.user_id=? AND a.enabled=1 AND o.status<>'withdrawn' GROUP BY o.id ORDER BY o.id DESC'''
+             WHERE a.user_id=? AND a.enabled=1 AND o.status<>'withdrawn'
+             AND a.tenant_id=(SELECT MIN(a2.tenant_id) FROM portal_accounts a2 WHERE a2.user_id=a.user_id AND a2.enabled=1 AND a2.company_id=o.company_id
+                              AND (a2.tenant_id=o.tenant_id OR a2.tenant_id IN (SELECT tenant_id FROM lease_offer_signers WHERE offer_id=o.id)))
+             ORDER BY o.id DESC'''
     out = []
     for r in conn.execute(sql, (user_id,)):
         item = dict(r)

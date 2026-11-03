@@ -25,7 +25,7 @@ def staff_extras(conn,user,company_id,role):
         return result
     from . import history
     since=history.cutoff()
-    result['contractors']=[dict(r) for r in conn.execute('SELECT * FROM contractors WHERE company_id=? ORDER BY rowid DESC',(company_id,))]
+    result['contractors']=[dict(r) for r in conn.execute('SELECT * FROM contractors WHERE company_id=? ORDER BY id DESC',(company_id,))]
     result['requests']=[dict(r) for r in conn.execute(f"SELECT * FROM requests WHERE company_id=? AND {history.recent('requests')} ORDER BY id DESC",(company_id,since))]
     # repair history follows the repairs that are sent (open ones, or created within the window)
     kept_repairs=f"SELECT id FROM repairs WHERE company_id=? AND {history.recent('repairs')}"

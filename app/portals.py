@@ -204,14 +204,14 @@ def tenant_data(user=Depends(current_user)):
         accounts=[dict(r) for r in conn.execute('SELECT t.*,a.user_id FROM portal_accounts a JOIN tenants t ON t.id=a.tenant_id WHERE a.user_id=? AND a.enabled=1',(user['id'],))]
         if not accounts:
             raise HTTPException(403,'Tenant access is not enabled for this account.')
-        contracts=[dict(r) for r in conn.execute('SELECT c.*,p.name property_name,p.address,p.city,p.postcode,p.area,p.rooms,p.energy_label,co.name company_name,co.payment_instructions FROM contracts c JOIN contract_people cp ON cp.contract_id=c.id JOIN portal_accounts a ON a.tenant_id=cp.tenant_id AND a.company_id=c.company_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE a.user_id=? AND a.enabled=1 GROUP BY c.id ORDER BY c.start_date DESC',(user['id'],))]
+        contracts=[dict(r) for r in conn.execute('SELECT c.*,p.name property_name,p.address,p.city,p.postcode,p.area,p.rooms,p.energy_label,co.name company_name,co.payment_instructions FROM contracts c JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE EXISTS (SELECT 1 FROM contract_people cp JOIN portal_accounts a ON a.tenant_id=cp.tenant_id WHERE cp.contract_id=c.id AND a.company_id=c.company_id AND a.user_id=? AND a.enabled=1) ORDER BY c.start_date DESC',(user['id'],))]
         ids=[c['id'] for c in contracts]
         company_ids=sorted({a['company_id'] for a in accounts})
         from .main import video_limit
         from .access import off_map
         result={'accounts':accounts,'contracts':contracts,'today':local_today().isoformat(),'video_limit_mb':video_limit()//(1024*1024),'access_off':off_map(conn)['tenant']}
         tmarks=','.join('?' for _ in accounts)
-        result['bank_accounts']=[dict(r) for r in conn.execute(f'SELECT id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE tenant_id IN ({tmarks}) GROUP BY iban ORDER BY id',tuple(a['id'] for a in accounts))]
+        result['bank_accounts']=[dict(r) for r in conn.execute(f'SELECT id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE id IN (SELECT MIN(id) FROM tenant_bank_accounts WHERE tenant_id IN ({tmarks}) GROUP BY iban) ORDER BY id',tuple(a['id'] for a in accounts))]
         from .lease_offers import tenant_offers
         result['lease_offers']=tenant_offers(conn,user['id'])
         from .schedule import payment_schedule

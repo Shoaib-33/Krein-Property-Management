@@ -97,7 +97,7 @@ def list_invoices(company_id: int, q: str = '', status: str = 'All', period: str
         if q.strip():
             where.append("(i.number LIKE ? ESCAPE '\\' OR t.name LIKE ? ESCAPE '\\' OR p.name LIKE ? ESCAPE '\\' OR t.email LIKE ? ESCAPE '\\')")
             params += [like(q.strip())] * 4
-        job = lambda col: f"(SELECT j.{col} FROM outbound_email_jobs j WHERE j.invoice_id=i.id AND j.kind='invoice_issued')"
+        job = lambda col: f"(SELECT j.{col} FROM outbound_email_jobs j WHERE j.invoice_id=i.id AND j.kind='invoice_issued' ORDER BY j.id LIMIT 1)"   # one invoice can have an email per co-tenant: show the first
         base = f'''SELECT {INVOICE_COLUMNS}, t.name AS tenant_name, t.email AS tenant_email, p.name AS property_name, {BALANCE} AS balance_cents,
                    {job('id')} AS email_job_id, {job('status')} AS email_status, {job('sent_at')} AS email_sent_at, {job('last_error')} AS email_error, {job('recipient')} AS email_to,
                    CASE WHEN {BALANCE}<=0 THEN 'Paid' WHEN {BALANCE}<i.total_cents THEN 'Partially paid' WHEN i.due_date<? THEN 'Overdue' ELSE 'Unpaid' END AS status
@@ -105,9 +105,9 @@ def list_invoices(company_id: int, q: str = '', status: str = 'All', period: str
                    WHERE {' AND '.join(where)}'''
         today = local_today().isoformat()
         email = email.lower() if email.lower() in ('sent', 'queued', 'failed') else ('none' if email == 'Not emailed' else 'draft' if email == 'Drafts' else '')
-        sql = f'SELECT * FROM ({base}) WHERE 1=1' + (' AND status=?' if status else '') + (' AND released_at IS NULL' if email == 'draft' else ' AND released_at IS NOT NULL AND email_status IS NULL' if email == 'none' else ' AND email_status=?' if email else '')
+        sql = f'SELECT * FROM ({base}) AS x WHERE 1=1' + (' AND status=?' if status else '') + (' AND released_at IS NULL' if email == 'draft' else ' AND released_at IS NOT NULL AND email_status IS NULL' if email == 'none' else ' AND email_status=?' if email else '')
         args = [today, *params] + ([status] if status else []) + ([email] if email and email not in ('none', 'draft') else [])
-        total = conn.execute(f'SELECT COUNT(*) FROM ({sql})', args).fetchone()[0]
+        total = conn.execute(f'SELECT COUNT(*) FROM ({sql}) AS y', args).fetchone()[0]
         items = rows_for(conn, f'{sql} ORDER BY due_date DESC, id DESC LIMIT ? OFFSET ?', (*args, page_size, offset))
         ledger, proofs = records_for(conn, [i['id'] for i in items])
     from .email_delivery import smtp_settings

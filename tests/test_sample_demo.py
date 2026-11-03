@@ -14,6 +14,7 @@ SAMPLE = Path(__file__).resolve().parent.parent / 'sample-data' / 'krein.db'
 
 
 @unittest.skipUnless(SAMPLE.exists(), 'no sample database in this checkout')
+@unittest.skipIf(db.postgres_url(), 'the sample demo is a SQLite file')
 class SampleDemoTests(unittest.TestCase):
     def setUp(self):
         self.original = db.DATA_DIR

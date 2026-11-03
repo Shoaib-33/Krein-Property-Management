@@ -28,7 +28,7 @@ KEEP_OPEN = {
     'repairs': "status NOT IN ('done','closed')",
     'tasks': "status<>'done'",
     'requests': "status IN ('open','in progress')",
-    'communications': '0',
+    'communications': '1=0',   # a real condition, not 0: PostgreSQL needs a true/false value
 }
 
 

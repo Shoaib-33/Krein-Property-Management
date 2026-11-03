@@ -656,6 +656,23 @@ CREATE INDEX tenants_co_of ON tenants(co_of);
 '''
 
 
+# PostgreSQL (DATABASE_URL): app/schema_postgres.sql already contains every migration up to POSTGRES_BASELINE. A later
+# migration is added twice: as V43 (and so on) above for SQLite, and here in PostgreSQL syntax under the same number.
+POSTGRES_BASELINE = 42
+POSTGRES = {}
+
+
+def migrate_postgres(conn):
+    from .db import now
+    conn.execute('BEGIN IMMEDIATE')
+    done = {r[0] for r in conn.execute('SELECT version FROM schema_migrations')}
+    for version in sorted(POSTGRES):
+        if version not in done:
+            conn.executescript(POSTGRES[version])
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (version, now()))
+    conn.commit()
+
+
 def migrate(conn):
     conn.execute('CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)')
     # Execute each statement (including multi-line triggers) inside one transaction.

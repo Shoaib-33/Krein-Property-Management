@@ -21,12 +21,45 @@ class ClosingConnection(sqlite3.Connection):
             self.close()
 
 
+def postgres_url():
+    """DATABASE_URL (for example postgresql://user:password@/krein?host=/cloudsql/<instance>) switches the app to
+    PostgreSQL; without it the database is the SQLite file data/krein.db."""
+    return os.environ.get('DATABASE_URL', '').strip()
+
+
+def _postgres():
+    from . import pg
+    # tests: each temporary data folder gets its own schema, as each would get its own SQLite file
+    schema = 'krein_' + hashlib.sha1(str(DATA_DIR).encode()).hexdigest()[:16] if os.environ.get('KREIN_PG_SCHEMA_PER_DATA_DIR') == '1' else None
+    return pg.database(postgres_url(), schema)
+
+
 def connect():
     DATA_DIR.mkdir(parents=True, exist_ok=True)
+    if postgres_url():
+        return _postgres().connect()
     connection = sqlite3.connect(DATA_DIR / 'krein.db', timeout=20, factory=ClosingConnection)
     connection.row_factory = sqlite3.Row
     connection.execute('PRAGMA foreign_keys = ON')
     return connection
+
+
+def tables_referencing(conn, target):
+    """[(table, column)] for every foreign key that points at the target table."""
+    if postgres_url():
+        return [(r[0], r[1]) for r in conn.execute('''SELECT k.table_name, k.column_name FROM information_schema.referential_constraints r
+            JOIN information_schema.key_column_usage k ON k.constraint_name=r.constraint_name AND k.constraint_schema=r.constraint_schema
+            JOIN information_schema.constraint_column_usage u ON u.constraint_name=r.unique_constraint_name AND u.constraint_schema=r.unique_constraint_schema
+            WHERE u.table_name=? AND k.constraint_schema=current_schema() ORDER BY k.table_name''', (target,))]
+    found = []
+    for item in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
+        table = item['name']
+        if not table.replace('_', '').isalnum():
+            continue
+        for fk in conn.execute(f'PRAGMA foreign_key_list("{table}")').fetchall():
+            if fk['table'] == target and fk['from']:
+                found.append((table, fk['from']))
+    return found
 
 
 @contextmanager
@@ -212,6 +245,15 @@ CREATE INDEX IF NOT EXISTS ledger_invoice ON ledger(invoice_id);
 
 
 def init_db():
+    if postgres_url():
+        from . import pg
+        from .migrations import migrate_postgres
+        database = _postgres()
+        pg.create_schema(database)
+        with database.connect() as conn:
+            migrate_postgres(conn)
+        (DATA_DIR / 'uploads').mkdir(parents=True, exist_ok=True)
+        return
     with connect() as conn:
         conn.execute('PRAGMA journal_mode=WAL')
         conn.executescript(SCHEMA)

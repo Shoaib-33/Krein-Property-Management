@@ -171,6 +171,8 @@ def main():
         import sqlite3
         import zipfile
         from datetime import datetime
+        if db.postgres_url():
+            raise SystemExit('The database is PostgreSQL: it is backed up by Cloud SQL (automatic daily backups and point-in-time recovery), or with pg_dump.')
         db.init_db()
         destination=db.DATA_DIR / ('backup-'+datetime.now().strftime('%Y%m%d-%H%M%S')+'.zip')
         snapshot=db.DATA_DIR / 'backup-snapshot.db'

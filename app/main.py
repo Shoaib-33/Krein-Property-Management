@@ -1216,16 +1216,11 @@ def delete_document(document_id: int, user=Depends(current_user)):
         # Sharing is access metadata and is removed with the file. Evidence used by
         # financial, maintenance, inspection or compliance records stays immutable.
         references = []
-        for item in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall():
-            table = item['name']
-            if table in ('documents', 'shared_documents') or not table.replace('_', '').isalnum():
+        for table, column in db.tables_referencing(conn, 'documents'):
+            if table in ('documents', 'shared_documents') or table in references:
                 continue
-            for fk in conn.execute(f'PRAGMA foreign_key_list("{table}")').fetchall():
-                if fk['table'] == 'documents' and fk['from']:
-                    column = fk['from']
-                    if conn.execute(f'SELECT 1 FROM "{table}" WHERE "{column}"=? LIMIT 1', (document_id,)).fetchone():
-                        references.append(table)
-                        break
+            if conn.execute(f'SELECT 1 FROM {table} WHERE {column}=? LIMIT 1', (document_id,)).fetchone():
+                references.append(table)
         if references:
             raise HTTPException(409, 'This document is attached to a saved record and cannot be removed. Revoke tenant sharing instead.')
         conn.execute('DELETE FROM shared_documents WHERE document_id=?', (document_id,))
