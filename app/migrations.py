@@ -592,19 +592,19 @@ ALTER TABLE sessions ADD COLUMN last_active TEXT;
 # except inside that one transaction (a row in record_deletion); changing them stays impossible.
 V43 = '''
 CREATE TABLE record_deletion (active INTEGER NOT NULL);
-DROP TRIGGER ledger_no_delete;
+DROP TRIGGER IF EXISTS ledger_no_delete;
 CREATE TRIGGER ledger_no_delete BEFORE DELETE ON ledger WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Ledger entries are immutable'); END;
-DROP TRIGGER invoice_no_delete;
+DROP TRIGGER IF EXISTS invoice_no_delete;
 CREATE TRIGGER invoice_no_delete BEFORE DELETE ON invoices WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Issued invoices are immutable'); END;
-DROP TRIGGER rent_no_delete;
+DROP TRIGGER IF EXISTS rent_no_delete;
 CREATE TRIGGER rent_no_delete BEFORE DELETE ON rent_versions WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Rent history is immutable'); END;
-DROP TRIGGER portal_message_no_delete;
+DROP TRIGGER IF EXISTS portal_message_no_delete;
 CREATE TRIGGER portal_message_no_delete BEFORE DELETE ON portal_messages WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Messages are immutable'); END;
-DROP TRIGGER repair_update_no_delete;
+DROP TRIGGER IF EXISTS repair_update_no_delete;
 CREATE TRIGGER repair_update_no_delete BEFORE DELETE ON repair_updates WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Repair updates are immutable'); END;
-DROP TRIGGER credit_note_no_delete;
+DROP TRIGGER IF EXISTS credit_note_no_delete;
 CREATE TRIGGER credit_note_no_delete BEFORE DELETE ON credit_notes WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Credit notes are immutable'); END;
-DROP TRIGGER invoice_revision_no_delete;
+DROP TRIGGER IF EXISTS invoice_revision_no_delete;
 CREATE TRIGGER invoice_revision_no_delete BEFORE DELETE ON invoice_revisions WHEN NOT EXISTS (SELECT 1 FROM record_deletion) BEGIN SELECT RAISE(ABORT,'Invoice revisions are immutable'); END;
 '''
 

@@ -132,6 +132,22 @@ def edit_property(property_id:int,data:dict,user=Depends(current_user)):
     return {'ok':True}
 
 
+@router.post('/api/properties/{property_id}/delete')
+def delete_property(property_id:int,user=Depends(current_user)):
+    """A home added by mistake, before anything happened on it. A home with a tenancy, offer or costs keeps its history;
+    only the developer can delete that one (app/developer.py)."""
+    from .developer import delete_records, remove_files
+    with transaction() as conn:
+        p=record(conn,'properties',property_id,user,OPS)
+        for table,what in (('contracts','a tenancy'),('lease_offers','a contract offer'),('settlements','a service-charge settlement'),('cost_lines','service costs'),('owner_expenses','owner expenses')):
+            if conn.execute(f'SELECT 1 FROM {table} WHERE property_id=?',(property_id,)).fetchone():
+                raise HTTPException(409,f'This home has {what} on record, so it cannot be deleted. Ask the developer if it was added by mistake.')
+        removed,files=delete_records(conn,'properties',property_id)
+        audit(conn,user['id'],p['company_id'],'deleted','property',property_id,{'name':p['name'],'address':p['address'],'removed':removed})
+    remove_files(files)
+    return {'deleted':True}
+
+
 @router.post('/api/staff/{staff_id}/role')
 def update_role(staff_id:int,data:dict,user=Depends(current_user)):
     company_id=integer(data,'company_id')

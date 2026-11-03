@@ -113,6 +113,32 @@ class TenantDeleteTests(unittest.TestCase):
         self.assertEqual(self.count('SELECT COUNT(*) FROM tenants WHERE id=?', (self.tenant['id'],)), 1)
         self.assertEqual(self.delete(confirm=self.tenant['name'].upper()).status_code, 200)
 
+    def test_an_unused_home_can_be_deleted_by_staff(self):
+        admin = self.login('admin@krein.local')
+        r = admin.post('/api/records/properties', json={'company_id': 1, 'name': 'Typo Street 1', 'address': 'Typo Street 1', 'city': 'Utrecht', 'postcode': '3511AA', 'kind': 'Apartment', 'rooms': 2, 'area': 60, 'energy_label': 'Unknown'})
+        self.assertEqual(r.status_code, 200, r.text)
+        pid = r.json()['id']
+        self.assertEqual(admin.post(f'/api/properties/{pid}/delete', json={}).status_code, 200)
+        self.assertEqual(self.count('SELECT COUNT(*) FROM properties WHERE id=?', (pid,)), 0)
+        with db.connect() as conn:
+            self.assertTrue(conn.execute("SELECT 1 FROM audit WHERE action='deleted' AND entity='property' AND entity_id=?", (pid,)).fetchone())
+
+    def test_a_home_with_a_tenancy_only_by_the_developer(self):
+        with db.connect() as conn:
+            home = dict(conn.execute('SELECT p.* FROM properties p JOIN contracts c ON c.property_id=p.id WHERE c.tenant_id=?', (self.tenant['id'],)).fetchone())
+            contracts = [r[0] for r in conn.execute('SELECT id FROM contracts WHERE property_id=?', (home['id'],))]
+        admin = self.login('admin@krein.local')
+        r = admin.post(f'/api/properties/{home["id"]}/delete', json={})
+        self.assertEqual(r.status_code, 409)
+        self.assertIn('tenancy', r.json()['detail'])
+        r = self.dev.post(f'/api/developer/properties/{home["id"]}/delete', json={'confirm': home['name'], 'reason': 'Added twice by mistake'})
+        self.assertEqual(r.status_code, 200, r.text)
+        marks = ','.join('?' for _ in contracts)
+        self.assertEqual(self.count('SELECT COUNT(*) FROM properties WHERE id=?', (home['id'],)), 0)
+        self.assertEqual(self.count(f'SELECT COUNT(*) FROM invoices WHERE contract_id IN ({marks})', contracts), 0)
+        self.assertEqual(self.count('SELECT COUNT(*) FROM tenants WHERE id=?', (self.tenant['id'],)), 1)   # the tenant stays as a contact
+        self.assertEqual(self.finance.get('/api/data?company_id=1').status_code, 200)
+
 
 if __name__ == '__main__':
     unittest.main()
