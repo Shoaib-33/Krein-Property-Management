@@ -47,7 +47,8 @@ class NumberedCanvas(pdfcanvas.Canvas):
         self.setFont('Helvetica', 7.5)
         self.setFillColor(MUTED)
         self.drawString(22 * mm, 12 * mm, getattr(self, 'footer_text', ''))
-        self.drawCentredString(width / 2, 12 * mm, f'Pagina {self._pageNumber} van {self._total}  ·  Page {self._pageNumber} of {self._total}')
+        # on its own line, so a long company name in the footer text never runs into it
+        self.drawString(22 * mm, 8.5 * mm, f'Pagina {self._pageNumber} van {self._total}  ·  Page {self._pageNumber} of {self._total}')
         if not getattr(self, 'initials', True):
             self.restoreState()
             return
