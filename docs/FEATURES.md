@@ -95,6 +95,7 @@ The interface is English, with bilingual invoice labels. Full Dutch interface lo
 - Local database: SQLite, foreign keys, serialized financial writes, immutable invoice/ledger/audit triggers.
 - Attachments: `data/uploads`, served only through authenticated endpoints.
 - Access: per-company server checks, role checks, hashed passwords, server-side sessions, CSRF protection.
+- Automatic sign-out: after 30 minutes without activity (mouse, keys, touch, scrolling) a person is signed out, in every portal; a minute before, a warning appears. The page's own background refresh does not count as activity, and a tab still in use keeps the session going. Change the time with `KREIN_IDLE_MINUTES` (0 switches it off). A sign-in lasts 24 hours at most either way.
 - Files accepted: PDF/PNG/JPEG by header, maximum 10 MB. Attachments download rather than execute inline.
 - Money: integer cents; input rejects excess decimals; prorating uses decimal rounding.
 

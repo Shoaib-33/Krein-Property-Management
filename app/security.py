@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, Request
 
-from .db import connect
+from .db import connect, transaction
 
 
 PBKDF2_ROUNDS = 600000
@@ -88,13 +88,35 @@ def session_cookie(request: Request):
     return 'krein_' + portal + '_session' if portal else 'krein_session'
 
 
+def idle_minutes():
+    """Minutes without activity after which a person is signed out (KREIN_IDLE_MINUTES, default 30; 0 switches it off)."""
+    try:
+        return max(0, int(os.environ.get('KREIN_IDLE_MINUTES', '30')))
+    except ValueError:
+        return 30
+
+
+def idle_left(last_active):
+    """Seconds until the session ends for inactivity; None when there is no limit."""
+    limit = idle_minutes()
+    if not limit or not last_active:
+        return None
+    return limit * 60 - (datetime.now(timezone.utc) - datetime.fromisoformat(last_active)).total_seconds()
+
+
 def current_user(request: Request):
     cookie = session_cookie(request)
     token = request.cookies.get(cookie, '')
     with connect() as conn:
-        row = conn.execute('SELECT u.*,s.csrf,s.expires_at FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND u.active=1', (token_hash(token),)).fetchone()
+        row = conn.execute('SELECT u.*,s.csrf,s.expires_at,s.last_active,s.token_hash session_key FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=? AND u.active=1', (token_hash(token),)).fetchone()
     if not row or row['expires_at'] <= datetime.now(timezone.utc).isoformat(timespec='seconds'):
         raise HTTPException(401, 'Please sign in to continue.')
+    # only real activity (POST /api/session/active from the page) keeps a session going; the page's own background refresh does not
+    left = idle_left(row['last_active'])
+    if left is not None and left <= 0:
+        with transaction() as conn:
+            conn.execute('DELETE FROM sessions WHERE token_hash=?', (row['session_key'],))
+        raise HTTPException(401, f'You were signed out after {idle_minutes()} minutes without activity. Please sign in again.')
     if request.method not in ('GET', 'HEAD', 'OPTIONS') and not hmac.compare_digest(request.headers.get('X-CSRF-Token', ''), row['csrf']):
         raise HTTPException(403, 'Session verification failed. Refresh and try again.')
     return dict(row)

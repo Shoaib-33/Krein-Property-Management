@@ -583,6 +583,11 @@ ALTER TABLE lease_offers ADD COLUMN split_mode TEXT NOT NULL DEFAULT '';
 '''
 
 # V40: platform-wide settings the developer can change, such as the software's name (app/brand.py)
+# V42: when the person last did something; a session without activity for KREIN_IDLE_MINUTES ends (app/security.py)
+V42 = '''
+ALTER TABLE sessions ADD COLUMN last_active TEXT;
+'''
+
 # V41: a pending invitation keeps its link (cleared once it is used or replaced) and whether it was emailed (app/portals.py)
 V41 = '''
 ALTER TABLE account_invitations ADD COLUMN token TEXT;
@@ -978,6 +983,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (41, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=42').fetchone():
+            statement = ''
+            for line in V42.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (42, now()))
         conn.commit()
     except Exception:
         conn.rollback()

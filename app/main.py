@@ -467,7 +467,7 @@ def login(data: dict, request: Request):
             if rehashed:
                 conn.execute('UPDATE users SET password_hash=? WHERE id=?', (rehashed, user['id']))
             token, csrf = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
-            conn.execute('INSERT INTO sessions VALUES(?,?,?,?)', (token_hash(token), user['id'], expiry(), csrf))
+            conn.execute('INSERT INTO sessions(token_hash,user_id,expires_at,csrf,last_active) VALUES(?,?,?,?,?)', (token_hash(token), user['id'], expiry(), csrf, now()))
             audit(conn, user['id'], None, 'signed_in', 'user', user['id'], {})
     if not valid:
         raise HTTPException(401, 'Email or password is incorrect.')
@@ -481,6 +481,20 @@ def login(data: dict, request: Request):
     cookie = 'krein_' + request.headers.get('X-Krein-Portal', '') + '_session' if request.headers.get('X-Krein-Portal', '') in PORTALS else 'krein_session'
     response.set_cookie(cookie, token, httponly=True, samesite='strict', secure=os.environ.get('KREIN_SECURE_COOKIES') == '1', max_age=86400)
     return response
+
+
+@app.get('/api/session/active')
+def session_active(touch: int = 1, user=Depends(current_user)):
+    """The page (static/idle.js) reports real activity: mouse, keys, touch. ?touch=0 only asks how long the session has left.
+    A GET, so every portal can call it without its CSRF token; at worst another site could keep a session alive."""
+    from .security import idle_left, idle_minutes
+    last = user['last_active']
+    if touch and (not last or idle_left(last) is None or idle_left(last) < idle_minutes() * 60 - 30):
+        last = now()   # written at most every 30 seconds
+        with transaction() as conn:
+            conn.execute('UPDATE sessions SET last_active=? WHERE token_hash=?', (last, user['session_key']))
+    left = idle_left(last)
+    return {'idle_minutes': idle_minutes(), 'seconds_left': None if left is None else max(0, int(left))}
 
 
 @app.post('/api/logout')
