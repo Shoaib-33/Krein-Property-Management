@@ -55,11 +55,13 @@ def info():
     return {'full': full(), 'short': short(), 'tagline': tagline(), 'custom': custom()}
 
 
-_EMAIL = re.compile(r'[\w.+-]+@[\w-]+(?:\.[\w-]+)+')
+# left exactly as written: web addresses (an invitation link holds the server's own address, which may contain "krein")
+# and email addresses
+_KEEP = re.compile(r"""(?:https?://|www\.)[^\s<>"']+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+""")
 
 
 def apply(text):
-    """Text written with the Krein name, in the current name (email addresses are left alone)."""
+    """Text written with the Krein name, in the current name (web and email addresses are left alone)."""
     if not text or not custom() or 'krein' not in str(text).lower():
         return text
     f, s = names()
@@ -71,7 +73,7 @@ def apply(text):
         return re.sub(r'\bkrein\b', s.lower(), part)
     text = str(text)
     out, last = [], 0
-    for m in _EMAIL.finditer(text):
+    for m in _KEEP.finditer(text):
         out += [swap(text[last:m.start()]), m.group(0)]
         last = m.end()
     out.append(swap(text[last:]))

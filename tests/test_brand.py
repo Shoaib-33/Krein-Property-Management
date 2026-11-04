@@ -70,6 +70,30 @@ class BrandTests(unittest.TestCase):
         self.assertEqual(self.rename('', '').json()['custom'], False)
         self.assertEqual(brand.apply('Krein'), 'Krein')
 
+    def test_links_keep_their_exact_address(self):
+        """The server's own address can contain "krein" (krein-tenant-management-....run.app): an invitation link in an
+        email must still work after the software is renamed, also to a name with spaces."""
+        self.assertEqual(self.rename('Pandt property management', 'Pandt property management').status_code, 200)
+        url = 'https://krein-tenant-management-496212430060.europe-west4.run.app/activate/tUNsc7WaUOy7Mi1'
+        text = f'Krein Property Management heeft u uitgenodigd voor Krein. Zo activeert u uw account:\n\n1. Open deze link: {url}\n2. Kies een wachtwoord.'
+        out = brand.apply(text)
+        self.assertIn(f'Open deze link: {url}\n', out)
+        self.assertTrue(out.startswith('Pandt property management heeft u uitgenodigd voor Pandt property management.'))
+        self.assertEqual(brand.apply('Zie www.krein.nl of http://krein.local/x, Krein.'), 'Zie www.krein.nl of http://krein.local/x, Pandt property management.')
+        # the invitation email itself, as the software sends it
+        sent = {}
+        from unittest import mock
+        with mock.patch.dict('os.environ', {'KREIN_SMTP_HOST': 'smtp.example.test', 'KREIN_SMTP_FROM': 'beheer@pandtbeheer.nl',
+                                             'KREIN_PUBLIC_URL': 'https://krein-tenant-management-496212430060.europe-west4.run.app'}), \
+                mock.patch('app.email_delivery.smtplib.SMTP') as smtp:
+            server = smtp.return_value
+            server.__enter__.return_value = server
+            from app.email_delivery import send_plain
+            send_plain('tenant@example.com', 'Uitnodiging voor Krein', f'Open deze link: {url}')
+            sent = server.send_message.call_args.args[0]
+        self.assertIn(url, sent.get_content())
+        self.assertEqual(sent['Subject'], 'Uitnodiging voor Pandt property management')
+
     def test_name_rules(self):
         self.assertEqual(self.rename('Acme Vastgoedbeheer', '').status_code, 422)          # both or neither
         self.assertEqual(self.rename('A', 'A').status_code, 422)                           # too short

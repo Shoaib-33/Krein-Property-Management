@@ -7,7 +7,7 @@ import threading
 import ssl
 from datetime import datetime, timedelta, timezone
 from email.message import EmailMessage
-from email.utils import parseaddr
+from email.utils import formataddr, parseaddr
 
 from . import db
 from .db import audit, now
@@ -53,6 +53,14 @@ def _smtp_settings():
         'starttls': os.environ.get('KREIN_SMTP_STARTTLS', '1').strip().lower() not in ('0', 'false', 'no'),
         'ssl': os.environ.get('KREIN_SMTP_SSL', '0').strip().lower() in ('1', 'true', 'yes'),
     }
+
+
+def sender_header(settings):
+    """The From line with a name people recognise: KREIN_SMTP_FROM_NAME, or else the software's name
+    ("Pandt Property Management" <beheer@pandtbeheer.nl>). A bare address looks less trustworthy to readers and spam filters."""
+    from .brand import full
+    name = ' '.join(os.environ.get('KREIN_SMTP_FROM_NAME', '').split()) or full()
+    return formataddr((name[:80], settings['sender'])) if name else settings['sender']
 
 
 def valid_recipient(recipient):
@@ -169,7 +177,7 @@ def send_plain(recipient, subject, body):
     if not settings or not valid_recipient(recipient):
         raise RuntimeError('Email is not set up or the address is not valid.')
     message = EmailMessage()
-    message['From'] = settings['sender']
+    message['From'] = sender_header(settings)
     message['To'] = recipient
     from .brand import apply
     message['Subject'] = apply(subject)   # written with the Krein name, sent in the software's current name
@@ -224,7 +232,7 @@ def _deliver_one(job, settings):
                  f'\n\nYour part of this rent: EUR {own["share_cents"] / 100:,.2f} (still to pay: EUR {due / 100:,.2f}). You share the rent with {others}; '
                  'each of you pays your own part from your own account. Together you remain liable for the full rent.')
     message = EmailMessage()
-    message['From'] = settings['sender']
+    message['From'] = sender_header(settings)
     message['To'] = row['recipient']
     from .brand import apply
     message['Subject'] = apply(subject)   # written with the Krein name, sent in the software's current name

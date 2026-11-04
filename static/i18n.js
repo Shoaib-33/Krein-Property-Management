@@ -78,7 +78,7 @@
   const BKEY = 'krein.brand', DEFAULT = {full: 'Krein Property Management', short: 'Krein', tagline: 'Property Management', custom: false};
   const B = Object.assign({}, DEFAULT, (() => { try { return JSON.parse(localStorage.getItem(BKEY)) || {}; } catch { return {}; } })());
   window.kreinBrand = B;
-  const EMAIL = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
+  const EMAIL = /(?:https?:\/\/|www\.)[^\s<>"']+|[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;   // web and email addresses keep their exact spelling
   const swapName = p => p.replace(/Krein Property Management/g, B.full).replace(/KREIN PROPERTY MANAGEMENT/g, B.full.toUpperCase())
     .replace(/\bKREIN\b/g, B.short.toUpperCase()).replace(/\bKrein\b/g, B.short).replace(/\bkrein\b/g, B.short.toLowerCase());
   function brandText(text) {

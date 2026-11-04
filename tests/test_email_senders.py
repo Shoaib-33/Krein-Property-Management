@@ -5,6 +5,7 @@ import io
 import os
 import tempfile
 import unittest
+from email.utils import parseaddr
 from pathlib import Path
 from unittest import mock
 
@@ -49,14 +50,17 @@ class EmailSenderTests(unittest.TestCase):
                 server.__enter__.return_value = server
                 result = deliver_pending_emails()   # the demo's invoices wait in the queue
                 self.assertGreater(result['sent'], 0)
-                senders = {call.args[0]['From'] for call in server.send_message.call_args_list}
+                senders = {parseaddr(call.args[0]['From'])[1] for call in server.send_message.call_args_list}
                 self.assertEqual(senders, {'facturen@pandtbeheer.nl'})
                 self.assertEqual({call.args for call in server.login.call_args_list}, {('facturen@pandtbeheer.nl', 'facturen-secret')})
 
                 server.reset_mock()
                 send_plain('tenant@example.com', 'Your invitation', 'Welcome')   # invitations and password resets
-                self.assertEqual(server.send_message.call_args.args[0]['From'], 'beheer@pandtbeheer.nl')
-                server.login.assert_called_once_with('beheer@pandtbeheer.nl', 'beheer-secret')
+                self.assertEqual(server.send_message.call_args.args[0]['From'], 'Krein Property Management <beheer@pandtbeheer.nl>')   # with a name, not a bare address
+                with mock.patch.dict(os.environ, {'KREIN_SMTP_FROM_NAME': 'Pandt Property Management'}):
+                    send_plain('tenant@example.com', 'Your invitation', 'Welcome')
+                self.assertEqual(server.send_message.call_args.args[0]['From'], 'Pandt Property Management <beheer@pandtbeheer.nl>')
+                server.login.assert_called_with('beheer@pandtbeheer.nl', 'beheer-secret')
         finally:
             db.DATA_DIR = original
             temp.cleanup()
