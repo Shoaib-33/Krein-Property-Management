@@ -4,6 +4,7 @@
 substitutions:
   _REGION: europe-west4
   _SERVICE: krein-tenant-management
+  _WEBSITE_SERVICE: pandt-website
   _IMAGE: europe-west4-docker.pkg.dev/${PROJECT_ID}/cloud-run-source-deploy/krein-tenant-management
 
 steps:
@@ -20,6 +21,16 @@ steps:
     name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
     entrypoint: gcloud
     args: ['run', 'deploy', '${_SERVICE}', '--image=${_IMAGE}:${SHORT_SHA}', '--region=${_REGION}', '--max-instances=1', '--quiet']
+
+  # The company website (pandtbeheer.nl) as its own service, from the same image but started as the website only
+  # (scripts/start_website.sh): no database, no software. Its env vars (KREIN_SOFTWARE_URL, KREIN_WEBSITE_RELAY_KEY) are set
+  # once on the service. allowFailure: a problem with the website never marks the software's deploy as failed.
+  - id: deploy-website
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk:slim
+    entrypoint: gcloud
+    args: ['run', 'deploy', '${_WEBSITE_SERVICE}', '--image=${_IMAGE}:${SHORT_SHA}', '--region=${_REGION}', '--command=sh',
+           '--args=scripts/start_website.sh', '--max-instances=2', '--memory=512Mi', '--quiet']
+    allowFailure: true
 
 images: ['${_IMAGE}:${SHORT_SHA}', '${_IMAGE}:latest']
 options:

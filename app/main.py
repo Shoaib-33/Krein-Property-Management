@@ -120,6 +120,9 @@ app.add_middleware(BodyLimit)
 
 @app.middleware('http')
 async def security_headers(request, call_next):
+    from .website import is_website_host, website_allows
+    if is_website_host(request) and not website_allows(request.url.path):   # the company website never leads into the software
+        return JSONResponse({'detail': 'Not found.'}, status_code=404)
     # Same-origin requests only, including public receipt uploads and login.
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         origin = request.headers.get('origin')
@@ -391,7 +394,8 @@ def process_overdue_invoices(company_id=None):
 async def monthly_billing_scheduler():
     while True:
         from .automation import run_all_companies
-        steps = [(end_finished_contracts, ())] + [(run_scheduled_invoices, (p,)) for p in scheduled_invoice_periods()] + [(process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ())]
+        from .website import purge_old_registrations
+        steps = [(end_finished_contracts, ())] + [(run_scheduled_invoices, (p,)) for p in scheduled_invoice_periods()] + [(process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ()), (purge_old_registrations, ())]
         for step, args in steps:
             try:
                 if step is run_scheduled_invoices and not args[0]:
@@ -2110,6 +2114,8 @@ app.include_router(paging_router)
 app.include_router(owner_docs_router)
 app.include_router(automation_router)
 app.include_router(templates_router)
+from .website import router as website_router
+app.include_router(website_router)
 app.include_router(operations_router)
 app.include_router(finance_ops_router)
 
@@ -2147,5 +2153,8 @@ def landing():
 @app.get('/developer')
 @app.get('/landlord')
 @app.get('/contractor')
-def index(token: str = ''):
+def index(request: Request, token: str = ''):
+    from .website import is_website_host, page
+    if request.url.path == '/' and is_website_host(request):   # the company's own domain opens its website
+        return page('')
     return FileResponse(ROOT / 'static' / 'index.html')

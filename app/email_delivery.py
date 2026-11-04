@@ -13,7 +13,24 @@ from . import db
 from .db import audit, now
 
 
-def smtp_settings():
+def smtp_settings(purpose='general'):
+    """The mail server settings. purpose='invoice' (invoices and payment reminders) sends from KREIN_SMTP_INVOICE_FROM,
+    logging in with KREIN_SMTP_INVOICE_USERNAME/PASSWORD, when that is set (for example facturen@pandtbeheer.nl);
+    everything else (invitations, password resets, notices) and invoices without it come from KREIN_SMTP_FROM."""
+    settings = _smtp_settings()
+    invoice_from = os.environ.get('KREIN_SMTP_INVOICE_FROM', '').strip()
+    if purpose != 'invoice' or not settings or not invoice_from:
+        return settings
+    if parseaddr(invoice_from)[1] != invoice_from or '@' not in invoice_from:
+        return None
+    username = os.environ.get('KREIN_SMTP_INVOICE_USERNAME', '').strip()
+    password = os.environ.get('KREIN_SMTP_INVOICE_PASSWORD', '')
+    if username and not password:
+        return None
+    return {**settings, 'sender': invoice_from, 'username': username or settings['username'], 'password': password if username else settings['password']}
+
+
+def _smtp_settings():
     host = os.environ.get('KREIN_SMTP_HOST', '').strip()
     sender = os.environ.get('KREIN_SMTP_FROM', '').strip()
     public_url = os.environ.get('KREIN_PUBLIC_URL', '').strip().rstrip('/')
@@ -68,7 +85,7 @@ def _queue(conn, invoice, kind, recipient):
 
 def queue_reminder(conn, invoice, kind, recipient):
     """Queue once. Reminders are only queued when email is set up: a reminder that arrives weeks later would be wrong."""
-    if not smtp_settings():
+    if not smtp_settings('invoice'):
         return False
     return _queue(conn, invoice, kind, recipient)
 
@@ -235,7 +252,7 @@ _kick_lock = threading.Lock()
 
 def kick():
     """Start sending in the background (used right after a staff action), so the request itself never waits for the mail server."""
-    if not smtp_settings() or not _kick_lock.acquire(blocking=False):
+    if not smtp_settings('invoice') or not _kick_lock.acquire(blocking=False):
         return
     def run():
         try:
@@ -250,12 +267,13 @@ def kick():
 def pending_summary(conn, company_id):
     """For the staff screens: what is waiting, and whether email is set up at all."""
     row = conn.execute("SELECT SUM(CASE WHEN status IN ('queued','sending') THEN 1 ELSE 0 END),SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END) FROM outbound_email_jobs WHERE company_id=?", (company_id,)).fetchone()
-    return {'configured': bool(smtp_settings()), 'waiting': row[0] or 0, 'failed': row[1] or 0}
+    return {'configured': bool(smtp_settings('invoice')), 'waiting': row[0] or 0, 'failed': row[1] or 0}
 
 
 def deliver_pending_emails(limit=200, company_id=None):
-    """Attempt due jobs; retry transient errors (5, 15, 60, 180 minutes) and stop after five attempts."""
-    settings = smtp_settings()
+    """Attempt due jobs; retry transient errors (5, 15, 60, 180 minutes) and stop after five attempts.
+    These are all invoices and payment reminders, so they go out from the invoice address (smtp_settings('invoice'))."""
+    settings = smtp_settings('invoice')
     if not settings:
         return {'sent': 0, 'failed': 0, 'queued': 0}
     stamp = now()

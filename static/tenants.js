@@ -182,7 +182,7 @@
     // bank accounts
     const SRC = {tenant: 'Given by the tenant', staff: 'Added by staff', learned: 'Learned from a bank payment'};
     const banks = panel('Bank accounts', 'The accounts this tenant pays rent from. Payments from them are matched automatically when a bank statement is imported.',
-      table(['IBAN', 'Account holder', 'Source', ''], f.bank_accounts.map(b => [`<strong>${e(iban(b.iban))}</strong>`, e(b.holder || ''), e(SRC[b.source] || b.source),
+      table(['IBAN', 'Account holder', 'Bank', 'Source', ''], f.bank_accounts.map(b => [`<strong>${e(iban(b.iban))}</strong>`, e(b.holder || ''), e(b.bank_name || '—'), e(SRC[b.source] || b.source),
         `<button type="button" class="button small" data-bank="account-remove" data-id="${b.id}">Remove</button>`]), 'No bank account saved yet.')
       + `<div class="panel-body"><button type="button" class="button small primary" data-bank="account-add" data-id="${t.id}">Add IBAN</button></div>`);
     // requests, repairs, documents

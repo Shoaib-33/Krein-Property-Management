@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d352a">
+  <meta name="description" content="Huur je via Pandt Property Management? Geef je gegevens en bankrekening online door.">
+  <title>Gegevens doorgeven · Pandt Property Management</title>
+  <link rel="icon" href="site-assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="site-assets/site.css">
+  <script src="site-assets/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main" data-en="Skip to content">Naar de inhoud</a>
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="./"><span class="mark" aria-hidden="true">P</span><span class="logo-text">Pandt <em>Property Management</em></span></a>
+    <div class="actions">
+      <button class="lang" type="button" data-lang-switch aria-label="Switch to English">EN</button>
+      <a class="btn ghost small" href="./" data-en="Back to home">Terug naar home</a>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <div class="page-head">
+    <div class="wrap">
+      <div class="head-panel">
+        <p class="eyebrow" data-en="For tenants">Voor huurders</p>
+        <h1 data-en="Send your details">Gegevens doorgeven</h1>
+        <p class="lead" data-en="Do you rent a home through Pandt Property Management? Fill in your details and the bank account you pay the rent from. We put everything ready and email you when it is done.">Huur je een woning via Pandt Property Management? Vul je gegevens in en de bankrekening waarvan je de huur betaalt. Wij zetten alles klaar en mailen je zodra het geregeld is.</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap form-wrap" data-register>
+    <div>
+      <form class="register" novalidate>
+        <fieldset>
+          <legend data-en="Your details">Jouw gegevens</legend>
+          <div class="grid">
+            <div class="field wide"><label for="name" data-en="Full name">Volledige naam</label><input id="name" name="name" autocomplete="name" required maxlength="120"></div>
+            <div class="field"><label for="email" data-en="Email address">E-mailadres</label><input id="email" name="email" type="email" autocomplete="email" required maxlength="254"></div>
+            <div class="field"><label for="phone" data-en="Phone number">Telefoonnummer</label><input id="phone" name="phone" type="tel" autocomplete="tel" maxlength="30"></div>
+            <div class="field">
+              <label for="language" data-en="Preferred language">Voorkeurstaal</label>
+              <select id="language" name="language" data-follow-lang>
+                <option value="nl">Nederlands</option>
+                <option value="en">English</option>
+              </select>
+              <span class="hint" data-en="For our emails to you.">Voor onze e-mails aan jou.</span>
+            </div>
+            <div class="field"><label for="home_address" data-en="Address of the home you rent">Adres van de woning die je huurt</label><input id="home_address" name="home_address" autocomplete="street-address" maxlength="200"></div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend data-en="Co-tenant">Medehuurder</legend>
+          <label class="check"><input type="checkbox" data-co-toggle><span data-en="I rent together with a partner or spouse (co-tenant)">Ik huur samen met een partner of echtgeno(o)t(e) (medehuurder)</span></label>
+          <div class="grid co-fields" data-co-fields hidden>
+            <div class="field wide"><label for="co_name" data-en="Co-tenant full name">Volledige naam medehuurder</label><input id="co_name" name="co_name" maxlength="120"></div>
+            <div class="field"><label for="co_email" data-en="Co-tenant email (their own)">E-mailadres medehuurder (eigen adres)</label><input id="co_email" name="co_email" type="email" maxlength="254"></div>
+            <div class="field"><label for="co_phone" data-en="Co-tenant phone">Telefoonnummer medehuurder</label><input id="co_phone" name="co_phone" type="tel" maxlength="30"></div>
+            <div class="field">
+              <label for="co_language" data-en="Co-tenant language">Taal medehuurder</label>
+              <select id="co_language" name="co_language"><option value="nl">Nederlands</option><option value="en">English</option></select>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend data-en="Bank account for the rent">Bankrekening voor de huur</legend>
+          <div class="grid">
+            <div class="field wide">
+              <label for="iban" data-en="IBAN">IBAN</label>
+              <input id="iban" name="iban" required maxlength="42" autocomplete="off" spellcheck="false" placeholder="NL00 BANK 0123 4567 89">
+              <span class="hint" data-en="The account you pay the rent from. We use it to recognise your payments.">De rekening waarvan je de huur betaalt. We gebruiken die om je betalingen te herkennen.</span>
+            </div>
+            <div class="field"><label for="account_holder" data-en="Account holder name (as your bank shows it)">Naam rekeninghouder (zoals je bank die toont)</label><input id="account_holder" name="account_holder" required maxlength="120"></div>
+            <div class="field">
+              <label for="bank_name" data-en="Bank name">Naam van de bank</label>
+              <input id="bank_name" name="bank_name" required maxlength="80" list="banks">
+              <datalist id="banks"><option value="ING"><option value="Rabobank"><option value="ABN AMRO"><option value="ASN Bank"><option value="SNS"><option value="RegioBank"><option value="Triodos Bank"><option value="bunq"><option value="Knab"><option value="Revolut"></datalist>
+            </div>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend data-en="Anything else?">Nog iets?</legend>
+          <div class="field"><label for="message" data-en="A message for us (optional)">Een bericht voor ons (optioneel)</label><textarea id="message" name="message" maxlength="2000"></textarea></div>
+        </fieldset>
+
+        <div class="hp" aria-hidden="true"><label for="website">Website</label><input id="website" name="website" tabindex="-1" autocomplete="off"></div>
+
+        <div class="consent">
+          <label class="check"><input type="checkbox" name="consent" required>
+            <span><span data-en="I agree that Pandt Property Management uses these details for my tenancy and to recognise my rent payments, as described in the">Ik ga ermee akkoord dat Pandt Property Management deze gegevens gebruikt voor mijn huurovereenkomst en om mijn huurbetalingen te herkennen, zoals beschreven in de</span> <a href="privacy" target="_blank" rel="noopener" data-en="privacy statement">privacyverklaring</a>.</span>
+          </label>
+        </div>
+        <p class="form-error" role="alert" aria-live="polite"></p>
+        <button class="btn primary" type="submit" data-en="Send my details">Gegevens versturen</button>
+      </form>
+
+      <div class="done" role="status">
+        <div class="icon" aria-hidden="true"><svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></div>
+        <h2 data-en="Thank you, we received your details">Bedankt, we hebben je gegevens ontvangen</h2>
+        <p class="lead" data-en="We check them and put everything ready. You receive an email from us when it is done.">We controleren ze en zetten alles klaar. Je ontvangt een e-mail van ons zodra het geregeld is.</p>
+        <a class="btn ghost" href="./" data-en="Back to home">Terug naar home</a>
+      </div>
+    </div>
+
+    <aside class="aside">
+      <h3 data-en="Good to know">Goed om te weten</h3>
+      <ul>
+        <li data-en="This form is for tenants whose home Pandt Property Management manages.">Dit formulier is voor huurders van een woning die Pandt Property Management beheert.</li>
+        <li data-en="We use your IBAN only to recognise your rent payments.">Je IBAN gebruiken we alleen om je huurbetalingen te herkennen.</li>
+        <li data-en="We never ask for your PIN, login codes, a copy of your ID or your BSN.">We vragen nooit om je pincode, inlogcodes, een kopie van je ID of je BSN.</li>
+        <li data-en="Questions? Email beheer@pandtbeheer.nl.">Vragen? Mail naar beheer@pandtbeheer.nl.</li>
+      </ul>
+    </aside>
+  </div>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="foot-brand"><span class="mark" aria-hidden="true">P</span>© <span data-year></span> Pandt Property Management</span>
+    <span class="links"><a href="privacy" data-en="Privacy statement">Privacyverklaring</a><a href="mailto:beheer@pandtbeheer.nl">beheer@pandtbeheer.nl</a></span>
+  </div>
+</footer>
+</body>
+</html>

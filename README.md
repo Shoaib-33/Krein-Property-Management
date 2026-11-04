@@ -12,6 +12,7 @@ Web application for managing Dutch residential rentals: homes, tenants and co-te
 - **Repairs and tickets**: tenant reports with photos and video, priorities and deadlines, contractor work orders, completion with photo evidence.
 - **Messages**: inbox for conversations with tenants.
 - **Also**: deposits, service-charge settlements, rent indexation, inspections, owners and owner statements, documents, tasks, automation rules, templates, audit log, CSV exports.
+- **Company website**: a public website ([website/](website/)) with a registration form for home seekers. Registrations appear under *Website registrations*, where staff turn one into a tenant. On the company's own domain only the website answers, never the software.
 - **Platform**: a developer console (`/developer`) to manage administrators and switch features on or off per role. The developer can also delete a tenant or a home added by mistake permanently, with everything that belongs to it (the reason is kept in the audit log); staff can delete a home that never had a tenancy.
 
 ## Portals
@@ -67,7 +68,10 @@ Settings are read from environment variables (or `.env` for local use). See [.en
 | `KREIN_PUBLIC_URL` | The public address, used in emails and links |
 | `KREIN_DATA_DIR` | Where the database and uploaded files are stored (default `data/`) |
 | `DATABASE_URL` | PostgreSQL (Cloud SQL) instead of the SQLite file, for example `postgresql://krein:<password>@/krein?host=/cloudsql/<instance>` |
+| `KREIN_WEBSITE_HOSTS` | The company website's domains, for example `pandtbeheer.nl,www.pandtbeheer.nl`; only the website answers there (preview at `/site/`). Not needed when the website runs as its own service |
+| `KREIN_WEBSITE_RELAY_KEY` | The shared key between the software and the separate website service (`pandt-website`, `scripts/start_website.sh`), at least 32 characters; the website service also needs `KREIN_SOFTWARE_URL` |
 | `KREIN_SMTP_*` | Outgoing email (invoices, reminders, invitations) |
+| `KREIN_SMTP_INVOICE_FROM` (+ `_USERNAME`, `_PASSWORD`) | Optional: invoices and payment reminders from their own address, for example `facturen@`; everything else stays on `KREIN_SMTP_FROM` |
 | `KREIN_TIMEZONE` | For example `Europe/Amsterdam` |
 | `KREIN_SECURE_COOKIES` | `1` when served over HTTPS |
 | `KREIN_PONTO_*` | Optional automatic bank feed |

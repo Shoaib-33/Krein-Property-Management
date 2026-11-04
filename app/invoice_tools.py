@@ -183,7 +183,7 @@ def edit_invoice(invoice_id: int, data: dict, user=Depends(current_user)):
 def email_invoice(invoice_id: int, user=Depends(current_user)):
     """Queue (or queue again) the invoice email to the tenant, then try to send it right away."""
     from .email_delivery import kick, queue_invoice, smtp_settings
-    if not smtp_settings():
+    if not smtp_settings('invoice'):
         raise HTTPException(409, 'Email delivery is not set up on this server. Add the SMTP settings first.')
     with transaction() as conn:
         inv = record(conn, 'invoices', invoice_id, user, FINANCE + ('landlord',))

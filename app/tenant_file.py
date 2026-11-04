@@ -42,7 +42,7 @@ def tenant_file(tenant_id: int, user=Depends(current_user)):
         login = (rows(conn, 'SELECT u.email,a.enabled,a.created_at FROM portal_accounts a JOIN users u ON u.id=a.user_id WHERE a.tenant_id=? AND a.company_id=?', (tenant_id, tenant['company_id'])) or [None])[0]
         out = {
             'tenant': tenant, 'portal': login, 'contracts': contracts,
-            'bank_accounts': rows(conn, 'SELECT id,iban,holder,source,created_at FROM tenant_bank_accounts WHERE tenant_id=? AND company_id=? ORDER BY id', (tenant_id, tenant['company_id'])),
+            'bank_accounts': rows(conn, 'SELECT id,iban,holder,bank_name,source,created_at FROM tenant_bank_accounts WHERE tenant_id=? AND company_id=? ORDER BY id', (tenant_id, tenant['company_id'])),
             'requests': rows(conn, f'SELECT id,contract_id,kind,subject,status,created_at,responded_at FROM requests WHERE contract_id IN ({marks}) ORDER BY id DESC LIMIT 20', ids),
             'repairs': rows(conn, f'SELECT id,contract_id,title,urgency,status,reported_on,completed_at FROM repairs WHERE contract_id IN ({marks}) ORDER BY id DESC LIMIT 20', ids),
             'documents': rows(conn, f'SELECT id,contract_id,name,kind,created_at FROM documents WHERE contract_id IN ({marks}) AND file_key<>"" ' + ('' if money else 'AND kind NOT IN ("payment proof","supplier invoice","deposit evidence") ') + 'ORDER BY id DESC LIMIT 40', ids),

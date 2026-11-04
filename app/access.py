@@ -34,6 +34,7 @@ FEATURES = [
     ('properties', 'Properties', 'Workspace', ALL, ['properties'], [r'/api/records/properties', r'/api/properties']),
     ('tenants', 'Tenants', 'Workspace', ALL, ['tenants'], [r'/api/records/tenants', r'/api/tenants/\d+/(archive|restore|partner|bank-accounts|export)']),
     ('contracts', 'Contracts & signing', 'Workspace', ALL, ['contracts'], [r'/api/records/contracts', r'/api/contracts/', r'/api/lease-offers']),
+    ('registrations', 'Website registrations', 'Workspace', ('admin', 'manager', 'property'), ['registrations'], [r'/api/registrations']),
     ('owners', 'Owners & portfolios', 'Workspace', ('admin', 'manager', 'finance'), ['owners'], [r'/api/owners', r'/api/portfolios']),
     # ---- finance
     ('invoices', 'Invoices', 'Finance', MONEY, ['invoices'], [r'/api/invoices', r'/api/credit-notes']),

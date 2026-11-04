@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY static ./static
+COPY website ./website
 COPY manage.py ./manage.py
 COPY scripts ./scripts
 # the sample data for a public demo (KREIN_SAMPLE_DATA=1); no real personal data
