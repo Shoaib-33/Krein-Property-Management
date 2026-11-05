@@ -5,3 +5,5 @@
 *.ttf binary
 *.db binary
 *.ico binary
+*.webp binary
+*.woff2 binary

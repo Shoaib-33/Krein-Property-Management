@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0d352a">
+  <title>{{title}}</title>
+  <meta name="description" content="{{description}}">
+  <link rel="canonical" href="{{canonical}}">
+  {{alternates}}
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="Pandt Property Management">
+  <meta property="og:locale" content="{{oglocale}}">
+  <meta property="og:title" content="{{title}}">
+  <meta property="og:description" content="{{description}}">
+  <meta property="og:url" content="{{canonical}}">
+  <meta property="og:image" content="https://pandtbeheer.nl/site-assets/og-image.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/site-assets/favicon.svg" type="image/svg+xml">
+  <link rel="preload" href="/site-assets/inter.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/site-assets/site.css">
+  <script src="/site-assets/site.js" defer></script>
+  <script type="application/ld+json">{{structured}}</script>
+</head>
+<body class="{{bodyclass}}">
+<a class="skip" href="#main">Naar de inhoud</a>
+
+<header class="top" data-header>
+  <div class="wrap top-row">
+    <a class="logo" href="/" aria-label="Pandt Property Management, naar de homepage">
+      <span class="mark" aria-hidden="true">P</span>
+      <span class="logo-text">Pandt <em>Property Management</em></span>
+    </a>
+
+    <nav class="main-nav" aria-label="Hoofdmenu" data-drawer>
+      <ul>
+        <li class="has-menu">
+          <button class="nav-link menu-button" type="button" aria-expanded="false" aria-controls="menu-diensten" data-menu-button{{nav_diensten}}>
+            Diensten
+            <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+          <ul class="submenu" id="menu-diensten" data-submenu>
+            <li><a href="/diensten/verhuur-van-woningen"><strong>Verhuur van woningen</strong><span>De juiste huurder voor uw woning</span></a></li>
+            <li><a href="/diensten/vastgoedbeheer"><strong>Vastgoedbeheer</strong><span>Het dagelijkse beheer op orde</span></a></li>
+            <li><a href="/diensten/onderhoud-en-technisch-beheer"><strong>Onderhoud en technisch beheer</strong><span>Reparaties geregeld en opgevolgd</span></a></li>
+            <li><a href="/diensten/huurdersservice"><strong>Huurdersservice</strong><span>Eén aanspreekpunt voor huurders</span></a></li>
+            <li class="submenu-all"><a href="/diensten">Alle diensten →</a></li>
+          </ul>
+        </li>
+        <li><a class="nav-link" href="/voor-verhuurders"{{nav_verhuurders}}>Voor verhuurders</a></li>
+        <li><a class="nav-link" href="/voor-huurders"{{nav_huurders}}>Voor huurders</a></li>
+        <li><a class="nav-link" href="/over-pandt"{{nav_over}}>Over Pandt</a></li>
+        <li><a class="nav-link" href="/contact"{{nav_contact}}>Contact</a></li>
+      </ul>
+      <div class="drawer-actions">
+        <a class="btn primary" href="/kennismaking?from={{from}}">Vastgoedbeheer bespreken</a>
+        <a class="btn secondary" href="/registreren">Gegevens doorgeven</a>
+      </div>
+    </nav>
+
+    <div class="top-actions">
+      {{langswitch}}
+      <a class="tenant-link" href="/registreren">Gegevens doorgeven</a>
+      <a class="btn primary small" href="/kennismaking?from={{from}}">Vastgoedbeheer bespreken</a>
+      <button class="burger" type="button" aria-label="Menu openen" aria-expanded="false" data-burger>
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+{{crumbs}}
+{{body}}
+</main>
+
+<a class="sticky-cta btn primary" href="/kennismaking?from={{from}}">Vastgoedbeheer bespreken</a>
+
+<footer class="site-footer">
+  <div class="wrap foot-grid">
+    <div class="foot-brand">
+      <a class="logo light" href="/"><span class="mark" aria-hidden="true">P</span><span class="logo-text">Pandt <em>Property Management</em></span></a>
+      <p>Verhuur en beheer van woningen in Nederland, met persoonlijke aandacht voor eigenaren en huurders.</p>
+      <p><a href="mailto:beheer@pandtbeheer.nl">beheer@pandtbeheer.nl</a></p>
+    </div>
+    <div>
+      <h2>Diensten</h2>
+      <ul>
+        <li><a href="/diensten/verhuur-van-woningen">Verhuur van woningen</a></li>
+        <li><a href="/diensten/vastgoedbeheer">Vastgoedbeheer</a></li>
+        <li><a href="/diensten/onderhoud-en-technisch-beheer">Onderhoud en technisch beheer</a></li>
+        <li><a href="/diensten/huurdersservice">Huurdersservice</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Voor verhuurders</h2>
+      <ul>
+        <li><a href="/voor-verhuurders">Vastgoedbeheer uitbesteden</a></li>
+        <li><a href="/voor-verhuurders/onze-werkwijze">Onze werkwijze</a></li>
+        <li><a href="/kennismaking?from=footer">Kennismaking aanvragen</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Voor huurders</h2>
+      <ul>
+        <li><a href="/registreren">Gegevens doorgeven</a></li>
+        <li><a href="/veelgestelde-vragen">Veelgestelde vragen</a></li>
+        <li><a href="/contact">Contact</a></li>
+      </ul>
+    </div>
+  </div>
+  <div class="wrap foot-bottom">
+    <span>© <span data-year>2026</span> Pandt Property Management</span>
+    <span class="foot-links"><a href="/privacyverklaring">Privacyverklaring</a><a href="/over-pandt">Over Pandt</a></span>
+  </div>
+</footer>
+</body>
+</html>

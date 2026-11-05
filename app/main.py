@@ -120,9 +120,6 @@ app.add_middleware(BodyLimit)
 
 @app.middleware('http')
 async def security_headers(request, call_next):
-    from .website import is_website_host, website_allows
-    if is_website_host(request) and not website_allows(request.url.path):   # the company website never leads into the software
-        return JSONResponse({'detail': 'Not found.'}, status_code=404)
     # Same-origin requests only, including public receipt uploads and login.
     if request.method not in ('GET', 'HEAD', 'OPTIONS'):
         origin = request.headers.get('origin')
@@ -2154,7 +2151,4 @@ def landing():
 @app.get('/landlord')
 @app.get('/contractor')
 def index(request: Request, token: str = ''):
-    from .website import is_website_host, page
-    if request.url.path == '/' and is_website_host(request):   # the company's own domain opens its website
-        return page('')
     return FileResponse(ROOT / 'static' / 'index.html')

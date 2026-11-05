@@ -1,7 +1,8 @@
 'use strict';
 /* Workspace > Website registrations: tenants whose home the company manages send their details through the company
    website's form (app/website.py). Staff enter one as a tenant (the normal new-tenant record, filled in from it, with the
-   co-tenant and the bank account) or decline it. Plugs into app.js (navigation, page rendering, helpers) without editing it. */
+   co-tenant) or decline it. The website no longer asks for bank details; an older registration that has them still saves
+   its bank account with the tenant. Plugs into app.js (navigation, page rendering, helpers) without editing it. */
 (() => {
   if (typeof navGroups === 'undefined' || typeof renderPage !== 'function') return;
   const tenantsAt = navGroups[0][1].findIndex(n => n[0] === 'tenants');
@@ -49,15 +50,15 @@
       return [
         `<strong>${e(r.name)}</strong><br><small>${e(r.email)}${r.phone ? ' · ' + e(r.phone) : ''}</small>`,
         r.co_name ? `${e(r.co_name)}<br><small>${e(r.co_email)}</small>` : '—',
-        `${e(ibanText(r.iban))}<br><small>${e(r.account_holder)} · ${e(r.bank_name)}</small>`,
+        r.home_address ? e(r.home_address) : '—',
         `${e(dateLabel(r.created_at))}<br>${badge(label, tone)}${r.tenant_name ? `<br><small>${e(r.tenant_name)}</small>` : ''}`,
         btn('Details', 'view', r.id) + (r.status === 'new' ? ' ' + btn('Register as tenant', 'register', r.id, 'small primary') + ' ' + btn('Decline', 'decline', r.id) : ' ' + btn('Reopen', 'reopen', r.id)),
       ];
     });
-    return heading('Website registrations', 'Tenants who sent their details through the company website. Check them and register each one as a tenant; the bank account is saved with the tenant. Handled registrations are deleted after 30 days.', '', 'TENANTS')
+    return heading('Website registrations', 'Tenants who sent their details through the company website. Check them and register each one as a tenant. Handled registrations are deleted after 30 days.', '', 'TENANTS')
       + (ui.error ? notice(ui.error, true) : '')
       + `<div class="tabs">${tabs}</div>`
-      + table(['Tenant', 'Co-tenant', 'Bank account', 'Received', ''], body, ui.filter === 'new' ? 'No new registrations. Details sent through the website form appear here.' : 'Nothing here.');
+      + table(['Tenant', 'Co-tenant', 'Rented home', 'Received', ''], body, ui.filter === 'new' ? 'No new registrations. Details sent through the website form appear here.' : 'Nothing here.');
   }
 
   const find = id => ui.list.find(r => r.id === Number(id));
@@ -67,7 +68,7 @@
       ['Email', r.email], ['Phone', r.phone || 'Not given'], ['Preferred language', LANG[r.language] || r.language],
       ['Address of the rented home', r.home_address || 'Not given'],
       ['Co-tenant', r.co_name ? `${r.co_name} · ${r.co_email}${r.co_phone ? ' · ' + r.co_phone : ''} · ${LANG[r.co_language] || r.co_language}` : 'None'],
-      ['IBAN', ibanText(r.iban)], ['Account holder', r.account_holder], ['Bank', r.bank_name],
+      ...(r.iban ? [['IBAN', ibanText(r.iban)], ['Account holder', r.account_holder], ['Bank', r.bank_name]] : []),
       ['Received on', dateLabel(r.created_at)], ['Message', r.message || '—'],
     ], `<div class="modal-footer">${btn('Delete registration', 'delete', r.id, 'danger')}${r.status === 'new' ? btn('Register as tenant', 'register', r.id, 'primary') : ''}</div>`);
   }
@@ -88,8 +89,10 @@
       const made = await api('/api/records/tenants', {method: 'POST', body: {...data, company_id: state.company}});
       await api(`/api/registrations/${r.id}/status`, {method: 'POST', body: {status: 'registered', tenant_id: made.id}});
       ui.list = null;
-    }, {submit: 'Create tenant', success: 'Tenant created, with the bank account. You can now invite them and make their contract.',
-        intro: e(`Check the details, then create the tenant. The bank account ${ibanText(r.iban)} (${r.bank_name}) is saved with the tenant. Afterwards you invite them to the portal and make their contract under Tenants, as usual.`)});
+    }, r.iban ? {submit: 'Create tenant', success: 'Tenant created, with the bank account. You can now invite them and make their contract.',
+        intro: e(`Check the details, then create the tenant. The bank account ${ibanText(r.iban)} (${r.bank_name}) is saved with the tenant. Afterwards you invite them to the portal and make their contract under Tenants, as usual.`)}
+      : {submit: 'Create tenant', success: 'Tenant created. You can now invite them and make their contract.',
+        intro: e('Check the details, then create the tenant. Afterwards you invite them to the portal and make their contract under Tenants, as usual.')});
   }
 
   document.addEventListener('click', async ev => {

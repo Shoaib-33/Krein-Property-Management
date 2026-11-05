@@ -1,0 +1,97 @@
+<div class="form-shell" data-enquiry>
+  <form class="form-card" novalidate>
+    <div class="error-summary" role="alert" tabindex="-1" hidden>
+      <p><strong>Please check the form:</strong></p>
+      <ul></ul>
+    </div>
+
+    <fieldset>
+      <legend>Your details</legend>
+      <div class="grid-2">
+        <div class="field wide">
+          <label for="o-name">Name</label>
+          <input id="o-name" name="name" autocomplete="name" required minlength="2" maxlength="80" data-msg="Please enter your name.">
+        </div>
+        <div class="field">
+          <label for="o-email">Email address</label>
+          <input id="o-email" name="email" type="email" autocomplete="email" inputmode="email" required maxlength="254" data-msg="Please enter a valid email address.">
+        </div>
+        <div class="field">
+          <label for="o-phone">Phone number</label>
+          <input id="o-phone" name="phone" type="tel" autocomplete="tel" inputmode="tel" required maxlength="30" data-phone data-msg="Please enter a valid phone number.">
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Your property</legend>
+      <div class="grid-2">
+        <div class="field wide">
+          <label for="o-location">Postcode or address of the property</label>
+          <input id="o-location" name="location" autocomplete="street-address" required minlength="3" maxlength="120" data-msg="Please enter the postcode or address of the property.">
+        </div>
+        <div class="field">
+          <label for="o-count">Number of homes</label>
+          <select id="o-count" name="property_count" required data-msg="Please choose the number of homes.">
+            <option value="">Choose…</option>
+            <option value="1">1</option>
+            <option value="2-5">2 to 5</option>
+            <option value="6-20">6 to 20</option>
+            <option value="20+">More than 20</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="o-type">Type of home</label>
+          <select id="o-type" name="property_type" required data-msg="Please choose the type of home.">
+            <option value="">Choose…</option>
+            <option value="apartment">Apartment</option>
+            <option value="house">House</option>
+            <option value="studio">Studio or room</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="field wide">
+          <label for="o-situation">Current situation (optional)</label>
+          <select id="o-situation" name="situation">
+            <option value="">Choose…</option>
+            <option value="vacant">Vacant</option>
+            <option value="let">Currently let</option>
+            <option value="buying">Still to be bought</option>
+          </select>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset class="choices" data-group="services" data-msg="Please choose at least one service.">
+      <legend>What you are looking for <span class="legend-note">Services, choose at least one</span></legend>
+      <div class="choice-grid">
+        <label class="choice"><input type="checkbox" name="services" value="letting"><span>Letting</span></label>
+        <label class="choice"><input type="checkbox" name="services" value="management"><span>Property management</span></label>
+        <label class="choice"><input type="checkbox" name="services" value="maintenance"><span>Maintenance and technical management</span></label>
+        <label class="choice"><input type="checkbox" name="services" value="full"><span>Full management (letting and management)</span></label>
+        <label class="choice"><input type="checkbox" name="services" value="unsure"><span>Not sure yet</span></label>
+      </div>
+      <div class="field wide">
+        <label for="o-message">Your message (optional)</label>
+        <textarea id="o-message" name="message" maxlength="2000"></textarea>
+      </div>
+    </fieldset>
+
+    <div class="hp" aria-hidden="true"><label for="o-website">Website</label><input id="o-website" name="website" tabindex="-1" autocomplete="off"></div>
+
+    <label class="consent check">
+      <input type="checkbox" name="consent" required data-msg="Please agree to the privacy statement to continue.">
+      <span>I agree that Pandt Property Management may use my details to contact me about property management, as described in the <a href="/en/privacy-statement" target="_blank" rel="noopener">privacy statement</a>.</span>
+    </label>
+    <p class="form-error" role="alert" aria-live="polite"></p>
+    <button class="btn primary wide-btn" type="submit">Request an introduction</button>
+    <p class="trust-line">No obligation. We only use your details to get in touch with you.</p>
+  </form>
+
+  <div class="done" role="status">
+    <div class="done-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg></div>
+    <h2 tabindex="-1">Thank you for your enquiry</h2>
+    <p class="lead">We have received your details and will be in touch as soon as possible.</p>
+    <p class="done-links"><a class="more" href="/en/for-landlords/how-we-work">See how we work in the meantime</a> <a class="more" href="/en">Back to home</a></p>
+  </div>
+</div>
