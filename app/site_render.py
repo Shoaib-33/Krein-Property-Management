@@ -17,6 +17,7 @@ In a page, {{include:name}} inserts website/partials/name.html (name.en.html on 
 description of the photo photo-name (website/photos.json).
 
 Standard library only: the website service imports this, and it must never load any of the software's code."""
+import hashlib
 import html
 import json
 import os
@@ -138,7 +139,20 @@ def _render(meta, body, layout, lang):
     out = layout
     for key, value in values.items():
         out = out.replace('{{' + key + '}}', value)
+    # a version number on the stylesheet and script: after every change browsers fetch the new file at once,
+    # instead of using the copy they saved earlier (up to a day)
+    for name in ('site.css', 'site.js'):
+        out = out.replace(f'/site-assets/{name}"', f'/site-assets/{name}?v={_version(name)}"')
     return out
+
+
+def _version(name):
+    if name not in _versions:
+        _versions[name] = hashlib.sha256((SITE / 'site-assets' / name).read_bytes()).hexdigest()[:10]
+    return _versions[name]
+
+
+_versions = {}
 
 
 def _expand(body, lang):
