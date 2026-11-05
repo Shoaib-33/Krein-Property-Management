@@ -1,9 +1,9 @@
 """The company website as its own small service (a second Cloud Run service, separate from the software).
 
 It serves the pages in website/ (built by app/site_render.py, Dutch at /... and English at /en/...) and nothing else: no database, no login, no software code.
-Besides the pages it only passes two forms on to the software, with a shared secret (KREIN_WEBSITE_RELAY_KEY, the same
-value on the software): a tenant's details (/registreren) and a property owner's request for an introduction
-(/kennismaking). The software's address is KREIN_SOFTWARE_URL.
+Besides the pages it only passes one form on to the software, with a shared secret (KREIN_WEBSITE_RELAY_KEY, the same
+value on the software): a tenant's details (/registreren). The software's address is KREIN_SOFTWARE_URL. The site is for
+tenants; the pages for landlords (and their introduction form) were removed, and their old addresses lead on (MOVED).
 
 Start: uvicorn app.website_service:app (scripts/start_website.sh). This module imports only the standard library, FastAPI
 and app/site_render.py on purpose, so the website can never reach the software's data, even if it were broken into."""
@@ -22,9 +22,16 @@ from . import site_render
 SITE = site_render.SITE
 ASSETS = (SITE / 'site-assets').resolve()
 MAX_BODY = 16 * 1024   # a form is a few hundred bytes
-FORMS = {'/api/website/register': '/api/website/relay', '/api/website/enquiry': '/api/website/relay-enquiry'}
+FORMS = {'/api/website/register': '/api/website/relay'}
 # old addresses that keep working
-MOVED = {'/privacy': '/privacyverklaring', '/index.html': '/', '/registreren.html': '/registreren', '/privacy.html': '/privacyverklaring'}
+MOVED = {'/privacy': '/privacyverklaring', '/index.html': '/', '/registreren.html': '/registreren', '/privacy.html': '/privacyverklaring',
+         # the former pages for landlords and the service pages (removed November 2026)
+         '/diensten': '/', '/diensten/verhuur-van-woningen': '/', '/diensten/vastgoedbeheer': '/',
+         '/diensten/onderhoud-en-technisch-beheer': '/voor-huurders', '/diensten/huurdersservice': '/voor-huurders',
+         '/voor-verhuurders': '/', '/voor-verhuurders/onze-werkwijze': '/', '/kennismaking': '/contact',
+         '/en/services': '/en', '/en/services/letting': '/en', '/en/services/property-management': '/en',
+         '/en/services/maintenance': '/en/for-tenants', '/en/services/tenant-services': '/en/for-tenants',
+         '/en/for-landlords': '/en', '/en/for-landlords/how-we-work': '/en', '/en/introduction': '/en/contact'}
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 # pages, stylesheet and script go out compressed (about a quarter of their size); photos and the font already are
@@ -122,7 +129,6 @@ def _relay(target, body, ip):
 
 
 @app.post('/api/website/register')
-@app.post('/api/website/enquiry')
 async def send_form(req: Request):
     if req.headers.get('origin') not in (None, f'{req.url.scheme}://{req.url.netloc}', f'https://{req.url.netloc}'):
         return JSONResponse({'detail': 'Cross-origin writes are not allowed.'}, status_code=403)

@@ -3,15 +3,14 @@
 Dutch pages are website/pages/*.html with website/layout.html; their English twins are website/pages/en/*.html with
 website/layout.en.html, under /en/. Every page file starts with a comment holding its settings, one per line:
 
-    path         the address, for example /diensten/vastgoedbeheer or /en/services/property-management
+    path         the address, for example /voor-huurders or /en/for-tenants
     twin         the same page in the other language (the NL/EN switch and the hreflang links lead there)
     title        the <title> (60 characters at most)
     description  the meta description (155 characters at most)
-    nav          which main menu item is active (diensten, verhuurders, huurders, over, contact)
-    crumbs       the breadcrumb trail above the page, "Diensten=/diensten | Vastgoedbeheer" (empty on the homepage)
+    nav          which main menu item is active (huurders, vragen, over, contact)
+    crumbs       the breadcrumb trail above the page, "Voor huurders=/voor-huurders | Gegevens doorgeven" (empty on the homepage)
     schema       extra structured data: "service" or "faq"
-    owner        "yes" on pages for owners: they get the sticky owner button on phones
-    ctafrom      where the page's owner buttons say the visitor came from (/kennismaking?from=...)
+    preloadhero  "yes" on the homepage: its big photo starts loading at once
 
 In a page, {{include:name}} inserts website/partials/name.html (name.en.html on English pages) and {{alt:name}} the
 description of the photo photo-name (website/photos.json).
@@ -113,7 +112,6 @@ def _render(meta, body, layout, lang):
     target = LANGS[hreflang]['home'] if not twin or meta['path'].endswith('/404') else twin   # from "not found": the other homepage
     switch = (f'<a class="lang" href="{html.escape(target)}" hreflang="{hreflang}" lang="{hreflang}" '
               f'aria-label="{aria}" data-lang-link>{label}</a>')
-    cta_from = meta.get('ctafrom') or (meta['path'].strip('/').replace('/', '-') or 'home')
     nav = meta.get('nav', '')
     values = {
         'title': html.escape(meta['title']),
@@ -124,8 +122,6 @@ def _render(meta, body, layout, lang):
         'structured': _structured(meta, body, trail, lang),
         'crumbs': crumbs,
         'body': body,
-        'from': html.escape(cta_from),
-        'bodyclass': 'owner-page' if meta.get('owner') == 'yes' else '',
         'langswitch': switch,
         # the homepage's big photo starts loading at once, before the stylesheet is read
         'preload': ('<link rel="preload" as="image" fetchpriority="high" href="/site-assets/photo-hero-1200.webp" '
@@ -134,7 +130,7 @@ def _render(meta, body, layout, lang):
                     '<link rel="preload" as="image" fetchpriority="high" href="/site-assets/photo-hero-mobile-900.webp" media="(max-width: 700px)">'
                     if meta.get('preloadhero') == 'yes' else ''),
     }
-    for item in ('diensten', 'verhuurders', 'huurders', 'over', 'contact'):
+    for item in ('huurders', 'vragen', 'over', 'contact'):
         values[f'nav_{item}'] = ' aria-current="page"' if nav == item else ''
     out = layout
     for key, value in values.items():

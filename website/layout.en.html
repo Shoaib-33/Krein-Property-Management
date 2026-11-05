@@ -23,7 +23,7 @@
   <script src="/site-assets/site.js" defer></script>
   <script type="application/ld+json">{{structured}}</script>
 </head>
-<body class="{{bodyclass}}">
+<body>
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="top" data-header>
@@ -35,34 +35,19 @@
 
     <nav class="main-nav" aria-label="Main menu" data-drawer>
       <ul>
-        <li class="has-menu">
-          <button class="nav-link menu-button" type="button" aria-expanded="false" aria-controls="menu-diensten" data-menu-button{{nav_diensten}}>
-            Services
-            <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
-          </button>
-          <ul class="submenu" id="menu-diensten" data-submenu>
-            <li><a href="/en/services/letting"><strong>Letting</strong><span>The right tenant for your home</span></a></li>
-            <li><a href="/en/services/property-management"><strong>Property management</strong><span>Day-to-day management in order</span></a></li>
-            <li><a href="/en/services/maintenance"><strong>Maintenance and technical management</strong><span>Repairs arranged and followed up</span></a></li>
-            <li><a href="/en/services/tenant-services"><strong>Tenant services</strong><span>One point of contact for tenants</span></a></li>
-            <li class="submenu-all"><a href="/en/services">All services →</a></li>
-          </ul>
-        </li>
-        <li><a class="nav-link" href="/en/for-landlords"{{nav_verhuurders}}>For landlords</a></li>
         <li><a class="nav-link" href="/en/for-tenants"{{nav_huurders}}>For tenants</a></li>
+        <li><a class="nav-link" href="/en/faq"{{nav_vragen}}>FAQ</a></li>
         <li><a class="nav-link" href="/en/about"{{nav_over}}>About Pandt</a></li>
         <li><a class="nav-link" href="/en/contact"{{nav_contact}}>Contact</a></li>
       </ul>
       <div class="drawer-actions">
-        <a class="btn primary" href="/en/introduction?from={{from}}">Discuss property management</a>
-        <a class="btn secondary" href="/en/register">Send your details</a>
+        <a class="btn primary" href="/en/register">Send your details</a>
       </div>
     </nav>
 
     <div class="top-actions">
       {{langswitch}}
-      <a class="tenant-link" href="/en/register">Send your details</a>
-      <a class="btn primary small" href="/en/introduction?from={{from}}">Discuss property management</a>
+      <a class="btn primary small" href="/en/register">Send your details</a>
       <button class="burger" type="button" aria-label="Open menu" aria-expanded="false" data-burger>
         <span></span><span></span><span></span>
       </button>
@@ -75,38 +60,26 @@
 {{body}}
 </main>
 
-<a class="sticky-cta btn primary" href="/en/introduction?from={{from}}">Discuss property management</a>
-
 <footer class="site-footer">
   <div class="wrap foot-grid">
     <div class="foot-brand">
       <a class="logo light" href="/en"><span class="mark" aria-hidden="true">P</span><span class="logo-text">Pandt <em>Property Management</em></span></a>
-      <p>Letting and management of residential property in the Netherlands, with personal attention for owners and tenants.</p>
+      <p>Letting and management of residential property in the Netherlands, with personal attention for tenants.</p>
       <p><a href="mailto:beheer@pandtbeheer.nl">beheer@pandtbeheer.nl</a></p>
-    </div>
-    <div>
-      <h2>Services</h2>
-      <ul>
-        <li><a href="/en/services/letting">Letting</a></li>
-        <li><a href="/en/services/property-management">Property management</a></li>
-        <li><a href="/en/services/maintenance">Maintenance</a></li>
-        <li><a href="/en/services/tenant-services">Tenant services</a></li>
-      </ul>
-    </div>
-    <div>
-      <h2>For landlords</h2>
-      <ul>
-        <li><a href="/en/for-landlords">Outsource property management</a></li>
-        <li><a href="/en/for-landlords/how-we-work">How we work</a></li>
-        <li><a href="/en/introduction?from=footer">Request an introduction</a></li>
-      </ul>
     </div>
     <div>
       <h2>For tenants</h2>
       <ul>
         <li><a href="/en/register">Send your details</a></li>
         <li><a href="/en/faq">Frequently asked questions</a></li>
+      </ul>
+    </div>
+    <div>
+      <h2>Pandt</h2>
+      <ul>
+        <li><a href="/en/about">About Pandt</a></li>
         <li><a href="/en/contact">Contact</a></li>
+        <li><a href="/en/privacy-statement">Privacy statement</a></li>
       </ul>
     </div>
   </div>

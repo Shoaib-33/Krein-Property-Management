@@ -1,6 +1,6 @@
 'use strict';
-/* Pandt Property Management website (Dutch at /..., English at /en/...): menu, scroll effects, FAQ tabs, and sending the
-   two forms (tenant details and an owner's request for an introduction) with their checks. */
+/* Pandt Property Management website for tenants (Dutch at /..., English at /en/...): menu, scroll effects, FAQ, and
+   sending the tenant details form with its checks. */
 (() => {
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
@@ -11,29 +11,14 @@
   const lang = document.documentElement.lang === 'en' ? 'en' : 'nl';
   const say = (nl, en) => (lang === 'en' ? en : nl);
 
-  // ---- header: compact after scrolling; the sticky owner button on phones appears after the first screen
+  // ---- header: compact after scrolling
   const header = $('[data-header]');
   const onScroll = () => {
     const y = window.scrollY;
     if (header) header.classList.toggle('scrolled', y > 40);
-    document.body.classList.toggle('show-sticky', y > window.innerHeight * 0.6);
   };
   window.addEventListener('scroll', onScroll, {passive: true});
   onScroll();
-
-  // ---- Diensten dropdown (click, Escape, click outside)
-  $$('[data-menu-button]').forEach(btn => {
-    const item = btn.closest('.has-menu');
-    const close = () => { item.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); };
-    btn.addEventListener('click', e => {
-      e.stopPropagation();
-      const open = !item.classList.contains('open');
-      item.classList.toggle('open', open);
-      btn.setAttribute('aria-expanded', String(open));
-    });
-    document.addEventListener('click', e => { if (!item.contains(e.target)) close(); });
-    item.addEventListener('keydown', e => { if (e.key === 'Escape') { close(); btn.focus(); } });
-  });
 
   // ---- mobile menu (focus stays inside while it is open; Escape closes)
   const burger = $('[data-burger]');
@@ -70,33 +55,12 @@
     reveals.forEach(el => seen.observe(el));
   }
 
-  // ---- FAQ: one answer open at a time; tabs for owners and tenants
+  // ---- FAQ: one answer open at a time
   $$('.faq').forEach(faq => {
     $$('details', faq).forEach(d => d.addEventListener('toggle', () => {
       if (d.open) $$('details', faq).forEach(o => { if (o !== d) o.open = false; });
     }));
   });
-  const tabs = $$('[data-tab]');
-  if (tabs.length) {
-    document.documentElement.classList.add('js');
-    const show = id => tabs.forEach(t => {
-      const on = t.getAttribute('aria-controls') === id;
-      t.setAttribute('aria-selected', String(on));
-      t.tabIndex = on ? 0 : -1;
-      const panel = document.getElementById(t.getAttribute('aria-controls'));
-      if (on) panel.removeAttribute('data-hidden'); else panel.setAttribute('data-hidden', '');
-    });
-    tabs.forEach((t, i) => {
-      t.addEventListener('click', () => show(t.getAttribute('aria-controls')));
-      t.addEventListener('keydown', e => {
-        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return;
-        const next = tabs[(i + (e.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length];
-        next.focus(); show(next.getAttribute('aria-controls'));
-      });
-    });
-    show(location.hash === '#huurders' ? 'huurders' : 'verhuurders');
-  }
-
   // ---- forms
   const phoneOk = v => { const digits = v.replace(/\D/g, ''); return /^[0-9+()\-\s./]{6,30}$/.test(v) && digits.length >= 8 && digits.length <= 15; };
   const message = el => el.dataset.msg || say('Controleer dit veld.', 'Please check this field.');
@@ -227,23 +191,4 @@
       send(form, '/api/website/register', data, $('.form-shell', register));
     });
   }
-
-  // an owner's request for an introduction (/kennismaking and /voor-verhuurders)
-  $$('[data-enquiry]').forEach(box => {
-    const form = $('form', box);
-    watch(form);
-    const from = new URLSearchParams(location.search).get('from') || location.pathname.replace(/^\/|\/$/g, '').replace(/\//g, '-') || 'home';
-    form.addEventListener('submit', ev => {
-      ev.preventDefault();
-      if (!validate(form)) return;
-      const fd = new FormData(form);
-      const data = Object.fromEntries(fd);
-      data.services = fd.getAll('services');
-      data.consent = true;
-      data.language = lang;
-      data.source_page = from.slice(0, 80);
-      data.started_at = startedAt;
-      send(form, '/api/website/enquiry', data, box);
-    });
-  });
 })();

@@ -1,7 +1,8 @@
-"""The company website (website/, served by its own service app/website_service.py) and what it hands to the software
-(app/website.py): every page builds and links correctly, the website holds no software code or data, a tenant's details
-(no bank details any more) and an owner's request for an introduction reach the software only with the shared key, staff
-handle both, Pandt and the sender are emailed, and old submissions are deleted."""
+"""The company website for tenants (website/, served by its own service app/website_service.py) and what it hands to the
+software (app/website.py): every page builds and links correctly, the former landlord pages lead on, the website holds no
+software code or data, a tenant's details (no bank details any more) reach the software only with the shared key, staff
+handle them, Pandt and the sender are emailed, and old submissions are deleted. Owner enquiries sent before the landlord
+pages were removed are still handled by staff in the software."""
 import contextlib
 import io
 import json
@@ -124,11 +125,9 @@ class WebsiteTests(unittest.TestCase):
     def test_every_page_builds_with_its_settings_and_links_resolve(self):
         site = self.client('https://pandtbeheer.nl', website_service.app)
         pages = site_render.pages()
-        for path in ('/en', '/en/services/property-management', '/en/introduction', '/en/register', '/en/privacy-statement',
-                     '/', '/diensten', '/diensten/verhuur-van-woningen', '/diensten/vastgoedbeheer', '/diensten/onderhoud-en-technisch-beheer',
-                     '/diensten/huurdersservice', '/voor-verhuurders', '/voor-verhuurders/onze-werkwijze', '/kennismaking', '/voor-huurders',
-                     '/registreren', '/veelgestelde-vragen', '/over-pandt', '/contact', '/privacyverklaring'):
-            self.assertIn(path, pages)
+        self.assertEqual(set(pages), {'/', '/voor-huurders', '/registreren', '/veelgestelde-vragen', '/over-pandt', '/contact',
+                                      '/privacyverklaring', '/404', '/en', '/en/for-tenants', '/en/register', '/en/faq',
+                                      '/en/about', '/en/contact', '/en/privacy-statement', '/en/404'})
         for path, html in pages.items():
             self.assertNotRegex(html, r'\{\{[^}]*\}\}', path)                       # every placeholder filled in
             title = re.search(r'<title>(.*?)</title>', html).group(1)
@@ -151,11 +150,10 @@ class WebsiteTests(unittest.TestCase):
             self.assertEqual(site.get(path).status_code, 404 if path.endswith('/404') else 200, path)
         for path in ('/veelgestelde-vragen', '/en/faq'):
             faq = json.loads(re.search(r'application/ld\+json">(.*?)</script>', pages[path], re.S).group(1))
-            self.assertEqual(len(next(g for g in faq['@graph'] if g['@type'] == 'FAQPage')['mainEntity']), 12, path)
-        self.assertIn('BreadcrumbList', pages['/diensten/vastgoedbeheer'])
-        self.assertIn('"Service"', pages['/diensten/vastgoedbeheer'])
+            self.assertEqual(len(next(g for g in faq['@graph'] if g['@type'] == 'FAQPage')['mainEntity']), 6, path)
+        self.assertIn('BreadcrumbList', pages['/voor-huurders'])
         # the homepage keeps the old section anchors, so saved links still land
-        for anchor in ('id="over"', 'id="diensten"', 'id="huurders"', 'id="contact"'):
+        for anchor in ('id="over"', 'id="huurders"', 'id="contact"'):
             self.assertIn(anchor, pages['/'])
 
     def test_every_page_has_its_twin_in_the_other_language(self):
@@ -190,7 +188,10 @@ class WebsiteTests(unittest.TestCase):
         for claim in ('volgen wat er met je melding', 'Reparatie gemeld', 'Vakman is ingepland', 'KvK', '24/7', 'binnen enkele werkdagen'):
             self.assertNotIn(claim, everything)
         self.assertIn('Een fijn thuis, goed beheerd.', pages['/'])
-        self.assertIn('Vastgoedbeheer bespreken', pages['/'])
+        # nothing for landlords any more: no landlord pages, introduction form or owner buttons
+        for gone in ('Vastgoedbeheer bespreken', 'Discuss property management', 'kennismaking', '/introduction', 'Voor verhuurders',
+                     'For landlords', 'data-enquiry', 'sticky-cta', '/diensten', '/en/services'):
+            self.assertNotIn(gone, everything)
 
     def test_the_website_service_has_only_the_website(self):
         site = self.client('https://pandtbeheer.nl', website_service.app)
@@ -198,10 +199,17 @@ class WebsiteTests(unittest.TestCase):
         self.assertIn("default-src 'self'", r.headers['content-security-policy'])
         self.assertEqual(site.get('/privacy', follow_redirects=False).headers['location'], '/privacyverklaring')
         self.assertEqual(site.get('/diensten/', follow_redirects=False).headers['location'], '/diensten')
+        # the former landlord and service pages lead on to the nearest page for tenants
+        for old, new in (('/diensten', '/'), ('/voor-verhuurders', '/'), ('/kennismaking', '/contact'), ('/diensten/onderhoud-en-technisch-beheer', '/voor-huurders'),
+                         ('/en/for-landlords', '/en'), ('/en/introduction', '/en/contact'), ('/en/services/maintenance', '/en/for-tenants')):
+            r = site.get(old, follow_redirects=False)
+            self.assertEqual((r.status_code, r.headers['location']), (301, new), old)
+        self.assertIn(site.post('/api/website/enquiry', json={}, headers={'Origin': 'https://pandtbeheer.nl'}).status_code, (404, 405))
         self.assertEqual(site.get('/bestaat-niet').status_code, 404)
         self.assertIn('Deze pagina bestaat niet', site.get('/bestaat-niet').text)
         self.assertIn('Disallow: /api/', site.get('/robots.txt').text)
-        self.assertIn('https://pandtbeheer.nl/diensten/vastgoedbeheer', site.get('/sitemap.xml').text)
+        self.assertIn('https://pandtbeheer.nl/voor-huurders', site.get('/sitemap.xml').text)
+        self.assertNotIn('verhuurders', site.get('/sitemap.xml').text)
         self.assertEqual(site.get('/site-assets/inter.woff2').status_code, 200)
         self.assertEqual(site.get('/site-assets/../app/main.py').status_code, 404)
         for path in ('/api/login', '/api/me', '/static/app.js', '/developer', '/api/registrations', '/api/enquiries', '/docs'):
@@ -274,8 +282,7 @@ class WebsiteTests(unittest.TestCase):
 
     # ---------------------------------------------------------------- owner enquiries
     def test_an_owner_enquiry_reaches_the_staff_and_pandt(self):
-        site = self.site()
-        r = site.post('/api/website/enquiry', json=OWNER, headers={'Origin': 'https://pandtbeheer.nl', 'X-Forwarded-For': '203.0.113.20'})
+        r = self.relay('/api/website/relay-enquiry', OWNER, ip='203.0.113.20')
         self.assertEqual(r.status_code, 200, r.text)
         with db.connect() as conn:
             row = dict(conn.execute('SELECT * FROM owner_enquiries').fetchone())
@@ -322,7 +329,6 @@ class WebsiteTests(unittest.TestCase):
         with mock.patch.dict(os.environ, {'KREIN_SOFTWARE_URL': '', 'KREIN_WEBSITE_RELAY_KEY': ''}):
             site = self.client('https://pandtbeheer.nl', website_service.app)
             self.assertEqual(site.post('/api/website/register', json=TENANT).status_code, 503)
-            self.assertEqual(site.post('/api/website/enquiry', json=OWNER).status_code, 503)
 
     def test_old_registrations_and_enquiries_are_deleted(self):
         for name in ('New', 'Handled long ago', 'Handled today', 'Never handled, old'):
