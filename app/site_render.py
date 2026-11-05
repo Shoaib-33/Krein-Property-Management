@@ -139,16 +139,18 @@ def _render(meta, body, layout, lang):
     out = layout
     for key, value in values.items():
         out = out.replace('{{' + key + '}}', value)
-    # a version number on the stylesheet and script: after every change browsers fetch the new file at once,
-    # instead of using the copy they saved earlier (up to a day)
-    for name in ('site.css', 'site.js'):
-        out = out.replace(f'/site-assets/{name}"', f'/site-assets/{name}?v={_version(name)}"')
-    return out
+    # a version number on every file the page uses (stylesheet, script, photos, icons): after a file changes, browsers
+    # fetch the new one at once instead of using the copy they saved earlier (up to a day)
+    return _ASSET.sub(lambda m: f'{m.group(0)}?v={v}' if (v := _version(m.group(1))) else m.group(0), out)
+
+
+_ASSET = re.compile(r'/site-assets/([A-Za-z0-9._-]+)(?=[\s"\',])')
 
 
 def _version(name):
     if name not in _versions:
-        _versions[name] = hashlib.sha256((SITE / 'site-assets' / name).read_bytes()).hexdigest()[:10]
+        file = SITE / 'site-assets' / name
+        _versions[name] = hashlib.sha256(file.read_bytes()).hexdigest()[:10] if file.is_file() else ''
     return _versions[name]
 
 
