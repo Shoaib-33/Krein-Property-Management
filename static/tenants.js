@@ -135,12 +135,15 @@
       `<button type="button" class="button small" data-tf="edit">Edit details</button>`,
       f.portal ? '' : `<button type="button" class="button small primary" data-action="invite" data-id="${t.id}">Invite to portal</button>`,
       f.portal && f.portal.enabled ? `<button type="button" class="button small" data-reset-link="tenant:${t.id}" title="A one-time link to choose a new password">Password reset link</button>` : '',
+      !t.archived_at && ['admin', 'manager', 'property'].includes(company().role) ? `<button type="button" class="button small" data-lease="send" data-id="${t.id}">Send contract for signature</button>` : '',
+      !t.archived_at && ['admin', 'manager', 'property', 'landlord'].includes(company().role) ? `<button type="button" class="button small" data-action="manual-contract-form" data-id="${t.id}" title="For a contract that was signed on paper">Signed on paper? Record it</button>` : '',
       `<a class="button small" href="/api/tenants/${t.id}/export">Export data</a>`,
       t.archived_at ? `<button type="button" class="button small" data-action="tenant-restore" data-id="${t.id}">Restore</button>` : `<button type="button" class="button small danger" data-action="tenant-archive" data-id="${t.id}">Remove</button>`,
       state.me.developer ? `<button type="button" class="button small danger" data-action="tenant-delete" data-id="${t.id}" title="Developer only: removes the tenant and all their records">Delete permanently</button>` : '',
     ].join('');
-    const head = `<div class="tf-back">${back}</div><div class="page-heading"><div><div class="eyebrow">TENANT</div><h1>${e(t.name)}</h1>
-      <p class="subtitle">${e(t.email)}${t.phone ? ' · ' + e(t.phone) : ''} · ${t.language === 'nl' ? 'Dutch' : 'English'} ${portal}${t.archived_at ? ' ' + badge('Removed', 'gray') : ''}</p></div><div class="actions">${actions}</div></div>`;
+    const head = `<div class="tf-back">${back}</div><div class="page-heading tf-head"><div><div class="eyebrow">TENANT</div><h1>${e(t.name)}</h1>
+      <p class="subtitle">${e(t.email)}${t.phone ? ' · ' + e(t.phone) : ''} · ${t.language === 'nl' ? 'Dutch' : 'English'} ${portal}${t.archived_at ? ' ' + badge('Removed', 'gray') : ''}</p>
+      <p class="subtitle tf-postal">${window.postalLines && postalLines(t).length ? `<span>Address:</span> ${e(postalLines(t).join(', '))}` : '<span>Address:</span> not filled in yet (Edit details)'}</p></div><div class="actions">${actions}</div></div>`;
     // key figures
     const sched = current && current.schedule, due = sched && sched.due, next = sched && sched.next;
     const lastPay = f.money ? (f.payments || []).find(p => p.amount_cents > 0 && p.how !== 'credit note') : null;
@@ -211,6 +214,8 @@
         selectField('co_language', 'Preferred language', [['nl', 'Dutch'], ['en', 'English']])],
       d => api(`/api/tenants/${add.dataset.tfPartner}/partner`, {method: 'POST', body: d}).then(() => { ui.file = null; load(); }),
       {submit: 'Add co-tenant', success: 'Co-tenant added. Invite them to the portal; new contracts for this tenant include them.', intro: 'They get their own tenant record and login. A contract that is already running is changed on the contract itself (Open file > Add co-tenant).'});
+      const form = document.getElementById('record-form');
+      if (form && window.postalSection) { form.querySelector('.form-grid').insertAdjacentHTML('beforeend', postalSection({}, 'co_addr_')); wirePostal(form, 'co_addr_', ui.file.tenant); }
     }
     if (un) {
       ev.preventDefault();
@@ -246,6 +251,8 @@
       formModal('Edit tenant details', [['name', 'Full name', 'text', {value: t.name}], ['email', 'Email address', 'email', {value: t.email}], ['phone', 'Phone number', 'tel', {value: t.phone || '', required: false}],
         selectField('language', 'Preferred language', [['nl', 'Dutch'], ['en', 'English']], {value: t.language})],
         d => api(`/api/tenants/${t.id}`, {method: 'PATCH', body: d}), {submit: 'Save changes', success: 'Tenant details saved.'});
+      const form = document.getElementById('record-form');
+      if (form && window.postalSection) { form.querySelector('.form-grid').insertAdjacentHTML('beforeend', postalSection(t)); wirePostal(form); }
     }
   });
   document.addEventListener('click', ev => { const y = ev.target.closest('[data-tf-year]'); if (y) { state.tfYear = y.dataset.tfYear; render(); } });

@@ -616,6 +616,16 @@ CREATE TABLE owner_enquiries (
 CREATE INDEX owner_enquiries_company ON owner_enquiries(company_id,status,id);
 '''
 
+# V46: a tenant's postal address (Dutch format) when mail should not go to the rented home (app/tenant_address.py)
+V46 = '''
+ALTER TABLE tenants ADD COLUMN addr_street TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_addition TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_postcode TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_city TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_country TEXT NOT NULL DEFAULT 'NL';
+'''
+
 # V43: the developer may delete a tenant permanently (app/developer.py). The financial records still refuse every delete,
 # except inside that one transaction (a row in record_deletion); changing them stays impossible.
 V43 = '''
@@ -747,6 +757,14 @@ CREATE TABLE owner_enquiries (
  consent_at TEXT NOT NULL, created_at TEXT NOT NULL, handled_by BIGINT REFERENCES users(id), handled_at TEXT
 );
 CREATE INDEX owner_enquiries_company ON owner_enquiries(company_id,status,id);
+''',
+    46: '''
+ALTER TABLE tenants ADD COLUMN addr_street TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_addition TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_postcode TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_city TEXT NOT NULL DEFAULT '';
+ALTER TABLE tenants ADD COLUMN addr_country TEXT NOT NULL DEFAULT 'NL';
 ''',
 }
 
@@ -1121,6 +1139,14 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (45, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=46').fetchone():
+            statement = ''
+            for line in V46.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (46, now()))
         conn.commit()
     except Exception:
         conn.rollback()

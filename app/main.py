@@ -225,7 +225,7 @@ def issue_month(conn, company_id, period, user_id, only_contracts=None):
     except (ValueError, TypeError):
         raise HTTPException(422, 'Period must be YYYY-MM.')
     review = bool(conn.execute('SELECT review_invoices FROM companies WHERE id=?', (company_id,)).fetchone()[0])
-    contracts = conn.execute('SELECT c.*,t.name tenant_name,t.email tenant_email,p.address,p.name property_name,co.name company_name,co.address company_address,co.payment_instructions FROM contracts c JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE c.company_id=? AND c.status IN ("active","notice given") AND c.start_date<=? AND (c.end_date IS NULL OR c.end_date>=?)', (company_id, last.isoformat(), first.isoformat())).fetchall()
+    contracts = conn.execute('SELECT c.*,t.name tenant_name,t.email tenant_email,t.addr_street,t.addr_number,t.addr_addition,t.addr_postcode,t.addr_city,t.addr_country,p.address,p.name property_name,co.name company_name,co.address company_address,co.payment_instructions FROM contracts c JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE c.company_id=? AND c.status IN ("active","notice given") AND c.start_date<=? AND (c.end_date IS NULL OR c.end_date>=?)', (company_id, last.isoformat(), first.isoformat())).fetchall()
     count = 0
     for c in contracts:
         if only_contracts is not None and c['id'] not in only_contracts:
@@ -250,6 +250,9 @@ def issue_month(conn, company_id, period, user_id, only_contracts=None):
         b, s = int(basic.quantize(Decimal('1'), rounding=ROUND_HALF_UP)), int(service.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
         number = f'KPM-{company_id}-{period.replace("-", "")}-{c["id"]:04d}'
         snapshot = {k: c[k] for k in ('tenant_name', 'tenant_email', 'address', 'property_name', 'company_name', 'company_address', 'payment_instructions')}
+        from .tenant_address import one_line as postal_line
+        if postal_line(c):   # the tenant gets post elsewhere: the bill goes there, the rented home stays the invoice's subject
+            snapshot.update({'object': ', '.join(x for x in (c['property_name'], c['address']) if x), 'address': postal_line(c), 'postal_address': True})
         snapshot.update({'from': start.isoformat(), 'to': end.isoformat(), 'basic_cents': b, 'service_cents': s})
         invoice_id = insert(conn, 'invoices', {'company_id': company_id, 'contract_id': c['id'], 'number': number, 'period': period, 'due_date': start.isoformat(), 'basic_cents': b, 'service_cents': s, 'total_cents': b+s, 'snapshot': json.dumps(snapshot), 'created_at': now()})
         insert(conn, 'ledger', {'company_id': company_id, 'contract_id': c['id'], 'invoice_id': invoice_id, 'kind': 'invoice', 'amount_cents': b+s, 'created_by': user_id, 'created_at': now(), 'note': number})
@@ -697,6 +700,8 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
                 raise HTTPException(422, 'Enter a valid area and room count.')
         elif kind == 'tenants':
             values.update({'name': text_field(data, 'name', maximum=120), 'email': text_field(data, 'email', maximum=254), 'phone': str(data.get('phone', ''))[:50], 'language': choice(data, 'language', ('nl','en'), 'nl')})
+            from .tenant_address import clean as postal_address
+            values.update(postal_address(data))   # empty: post goes to the rented home
             if '@' not in values['email']:
                 raise HTTPException(422, 'Enter a valid tenant email.')
             if scope is not None:   # a tenant a landlord adds is his own until a contract links the tenant to a property
@@ -821,7 +826,7 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
         return {'id': record_id}
 
 
-PORTFOLIO_IMPORT_COLUMNS = ('property_name','address','city','postcode','kind','area','rooms','energy_label','bag_id','tenant_name','tenant_email','tenant_phone','tenant_language','signed_on','start_date','end_date','basic_rent','service_charge','deposit')
+PORTFOLIO_IMPORT_COLUMNS = ('property_name','address','city','postcode','kind','area','rooms','energy_label','bag_id','tenant_name','tenant_email','tenant_phone','tenant_language','postal_street','postal_number','postal_addition','postal_postcode','postal_city','postal_country','signed_on','start_date','end_date','basic_rent','service_charge','deposit')
 
 
 async def _read_portfolio_import(file: UploadFile):
@@ -903,7 +908,12 @@ def _apply_portfolio_import(conn, company_id, rows, user):
                     tenant=dict(existing)
                 else:
                     language=choice({'tenant_language':row.get('tenant_language') or 'nl'},'tenant_language',('nl','en'))
-                    tid=insert(conn,'tenants',{'company_id':company_id,'name':tenant_name,'email':email,'phone':str(row.get('tenant_phone',''))[:50],'language':language,'created_at':now()})
+                    from .tenant_address import clean as postal_address
+                    try:
+                        postal=postal_address(row,'postal_')
+                    except HTTPException as err:
+                        raise HTTPException(422,f'Postal address of {email}: {err.detail}')
+                    tid=insert(conn,'tenants',{'company_id':company_id,'name':tenant_name,'email':email,'phone':str(row.get('tenant_phone',''))[:50],'language':language,'created_at':now(),**postal})
                     tenant=dict(conn.execute('SELECT * FROM tenants WHERE id=?',(tid,)).fetchone())
                     counts['tenants_created']+=1
                 tenants[email]=tenant
@@ -2087,6 +2097,8 @@ from .banking import router as banking_router
 app.include_router(banking_router)
 from .tenant_file import router as tenant_file_router
 app.include_router(tenant_file_router)
+from .tenant_address import router as tenant_address_router
+app.include_router(tenant_address_router)
 from .password_reset import router as password_reset_router
 app.include_router(password_reset_router)
 from .contractor_agreements import router as contractor_agreements_router

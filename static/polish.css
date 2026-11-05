@@ -325,6 +325,18 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .co-sum span{white-space:nowrap}
 .co-fields{grid-column:1/-1;border:1px solid var(--line);border-radius:10px;padding:10px 14px}
 .co-fields .lf-h{margin-top:0}
+/* the tenant's postal address (static/tenant_address.js), styled like the co-tenant block */
+.pa-fields{grid-column:1/-1;border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin-bottom:16px}
+.pa-fields .lf-h{margin:0}
+.pa-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:4px}
+.pa-intro{margin:0 0 12px}
+.pa-note{grid-column:1/-1;margin:-6px 0 8px}
+.pa-note:empty{display:none}
+.tf-postal{margin-top:4px}
+/* tenant file: the many buttons go under the name when they do not fit beside it */
+.tf-head{flex-wrap:wrap;align-items:flex-start}
+.tf-head>div:first-child{flex:1 1 360px;min-width:0}
+.tf-head .actions{flex:0 1 auto}
 .lf-warn{display:flex;gap:10px;align-items:flex-start;background:#fdf1ef;border:1px solid #f0c5bd;color:#8a2f22;border-radius:10px;padding:10px 12px;font-size:13px;line-height:1.45;margin-top:-6px}
 .lf-warn[hidden],.field.lf-warn[hidden]{display:none!important}
 .lf-warn .icon{flex:none;width:18px;height:18px;margin-top:1px}

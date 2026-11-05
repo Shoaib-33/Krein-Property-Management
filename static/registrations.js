@@ -93,6 +93,12 @@
         intro: e(`Check the details, then create the tenant. The bank account ${ibanText(r.iban)} (${r.bank_name}) is saved with the tenant. Afterwards you invite them to the portal and make their contract under Tenants, as usual.`)}
       : {submit: 'Create tenant', success: 'Tenant created. You can now invite them and make their contract.',
         intro: e('Check the details, then create the tenant. Afterwards you invite them to the portal and make their contract under Tenants, as usual.')});
+    const form = document.getElementById('record-form');   // the tenant's own address (static/tenant_address.js)
+    if (form && window.postalSection) {
+      form.querySelector('.form-grid').insertAdjacentHTML('beforeend', postalSection());
+      wirePostal(form);
+      if (r.co_name) { form.querySelector('.form-grid').insertAdjacentHTML('beforeend', postalSection({}, 'co_addr_')); wirePostal(form, 'co_addr_'); }
+    }
   }
 
   document.addEventListener('click', async ev => {

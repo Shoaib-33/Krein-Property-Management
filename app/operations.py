@@ -114,7 +114,9 @@ def edit_tenant(tenant_id:int,data:dict,user=Depends(current_user)):
         if '@' not in email:
             raise HTTPException(422,'Enter a valid email address.')
         values={'name':text_field(data,'name',maximum=120),'email':email,'phone':str(data.get('phone',''))[:50],'language':choice(data,'language',('nl','en'))}
-        conn.execute('UPDATE tenants SET name=?,email=?,phone=?,language=? WHERE id=?',(*values.values(),tenant_id))
+        from .tenant_address import clean as postal_address
+        values.update(postal_address(data))   # empty: post goes to the rented home
+        conn.execute(f'UPDATE tenants SET {",".join(k+"=?" for k in values)} WHERE id=?',(*values.values(),tenant_id))
         audit(conn,user['id'],t['company_id'],'contact_updated','tenant',tenant_id,{'old':{k:t[k] for k in values},'new':values})
     return {'ok':True,'note':'Portal login email remains unchanged.'}
 

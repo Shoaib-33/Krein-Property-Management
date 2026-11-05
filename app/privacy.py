@@ -125,10 +125,12 @@ def erase_tenant(conn, tenant_id):
     label = f'Former tenant #{tenant_id}'
     conn.execute('INSERT INTO privacy_erasure VALUES(1)')
     try:
-        conn.execute('UPDATE tenants SET name=?,email=?,phone="",erased_at=? WHERE id=?', (label, f'erased-{tenant_id}@removed.invalid', now(), tenant_id))
+        conn.execute('UPDATE tenants SET name=?,email=?,phone="",addr_street="",addr_number="",addr_addition="",addr_postcode="",addr_city="",addr_country="NL",erased_at=? WHERE id=?', (label, f'erased-{tenant_id}@removed.invalid', now(), tenant_id))
         for inv in conn.execute(f'SELECT id,snapshot FROM invoices WHERE contract_id IN ({marks})', contracts).fetchall():
             snap = json.loads(inv['snapshot'])
             snap.update({'tenant_name': label, 'tenant_email': ''})
+            if snap.get('postal_address'):   # the bill went to the tenant's own postal address: that goes too
+                snap['address'] = ''
             conn.execute('UPDATE invoices SET snapshot=? WHERE id=?', (json.dumps(snap), inv['id']))
         conn.execute(f'UPDATE portal_messages SET subject=?,body=? WHERE contract_id IN ({marks})', (REMOVED, REMOVED, *contracts))
         conn.execute(f'UPDATE requests SET subject=?,body=?,response=CASE WHEN response IS NULL THEN NULL ELSE ? END WHERE contract_id IN ({marks})', (REMOVED, REMOVED, REMOVED, *contracts))

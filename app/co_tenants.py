@@ -231,6 +231,10 @@ def create_partner(conn, company_id, main_id, data, main_values):
               'language': data.get('co_language') if data.get('co_language') in ('nl', 'en') else main_values.get('language', 'nl'), 'created_at': now(), 'co_of': main_id}
     if main_values.get('scope_owner_id'):
         values['scope_owner_id'] = main_values['scope_owner_id']
+    # postal address: their own when one is filled in, otherwise the same as the main tenant's (empty = the rented home)
+    from .tenant_address import COLUMNS, clean
+    own = clean(data, 'co_addr_')
+    values.update(own if own['addr_street'] else {c: main_values.get(c) or ('NL' if c == 'addr_country' else '') for c in COLUMNS})
     return insert(conn, 'tenants', values)
 
 

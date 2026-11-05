@@ -364,7 +364,7 @@ function showContract(id){
  const agreement=rows('documents').find(d=>d.kind.toLowerCase()==='contract'&&(d.contract_id===c.id||String(d.shared_contracts||'').split(',').includes(String(c.id))));
  detail(tenantFor(id).name,[['Property',propertyFor(id).name],['Signed on',dateLabel(c.signed_on)],['Start date',dateLabel(c.start_date)],['End date',dateLabel(c.end_date)],['Basic monthly rent',money(r.basic_cents)],['Service advance',money(r.service_cents)],['Due payment',(()=>{const d=scheduleFor(id).due;return d?`${money(d.amount_cents)} by ${dateLabel(d.date)} (${dueWhen(d.days)})`:'Nothing due';})()],['Next scheduled payment',(()=>{const n=scheduleFor(id).next;return n?`${money(n.amount_cents)} on ${dateLabel(n.date)} (${dueWhen(n.days)})`:'None scheduled';})()]] ,`<h3>Signed agreement</h3>${agreement?`<p><a href="/api/documents/${agreement.id}/file" data-pv-title="Signed rental agreement">View signed rental agreement ${icon('file')}</a></p>`:'<p class="modal-note">No agreement PDF is linked to this tenancy yet.</p>'}<h3>Rent history</h3>${table(['Effective from','Basic rent','Advance'],history.map(v=>[dateLabel(v.effective_from),money(v.basic_cents),money(v.service_cents)]))}<div class="modal-footer">${['admin','manager','property'].includes(company().role)?`${['admin','manager'].includes(company().role)?`<a class="button" href="/api/contracts/${c.id}/bundle">${icon('down')}Export summary</a>`:''}`:''}${actionBtn('Record termination','contract-end',c.id)}${button('Log contact','form','data-kind="communications"','primary')}</div>`);
 }
-function manualContractForm(){
+function manualContractForm(forTenant=null){   // forTenant: opened from a tenant's file, that tenant is chosen
  const contractDocs=rows('documents').filter(d=>d.mime==='application/pdf'&&d.kind.toLowerCase()==='contract');
  if(!rows('properties').length||!rows('tenants').length){toast('Add the property and tenant first.');return;}
  const propertyChoices=rows('properties').map(p=>[p.id,p.name]);
@@ -389,6 +389,12 @@ function manualContractForm(){
  const updateTenantOptions=()=>{const options=tenantsForProperty(propertySelect.value,startSelect.value);resetSelect(tenantSelect,options.map(t=>[t.id,`${t.name} · ${t.email}`]),'No available tenants for this apartment and date');updateDocumentOptions();updateMode();};
  const updateDocumentOptions=()=>resetSelect(documentSelect,docsForTenant(tenantSelect.value),'No signed PDFs available for this tenant');
  propertySelect.addEventListener('change',updateTenantOptions);startSelect.addEventListener('change',updateTenantOptions);tenantSelect.addEventListener('change',()=>{updateDocumentOptions();updateMode();});updateMode();
+ if(forTenant){   // the tenant's own home (current or last tenancy) first, else the first property they can rent
+  const own=rows('contracts').filter(c=>c.tenant_id===forTenant).sort((a,b)=>b.start_date.localeCompare(a.start_date))[0];
+  const fits=p=>tenantsForProperty(p,startSelect.value).some(t=>t.id===forTenant);
+  const prop=own&&fits(own.property_id)?own.property_id:(propertyChoices.find(([p])=>fits(p))||[])[0];
+  if(prop){propertySelect.value=String(prop);updateTenantOptions();tenantSelect.value=String(forTenant);updateDocumentOptions();updateMode();}
+ }
 }
 function showInvoice(id){const i=byId('invoices',id);detail(i.number,[['Tenant',tenantFor(i.contract_id).name],['Property',propertyFor(i.contract_id).name],['Billed amount',money(i.total_cents)],['Outstanding',money(balance(i))],['Due date',dateLabel(i.due_date)],['Status',invStatus(i)]],`<p class="modal-note">Secure tenant receipt links expire after 30 days. Invoice adjustments require independent manager review.</p><div class="modal-footer">${actionBtn('Revoke link','revoke-link',i.id)}${actionBtn('Record receipt','staff-proof',i.id)}${actionBtn('Propose credit','credit-form',i.id)}${actionBtn('Create tenant link','create-link',i.id,'primary')}</div>`);}
 function showProof(id){
@@ -479,7 +485,7 @@ async function handleAction(el){
  else if(action==='portfolio-import')portfolioImportForm();
  else if(action==='portfolio-import-confirm')await commitPortfolioImport();
  else if(action==='rent-indexation')rentIndexationForm();
- else if(action==='manual-contract-form')manualContractForm();
+ else if(action==='manual-contract-form')manualContractForm(id||null);
  else if(action==='filter'){state.filter=el.dataset.filter;render();}
  else if(action==='menu'){$('.sidebar')?.classList.toggle('open');$('.mobile-backdrop')?.classList.toggle('visible');}
  else if(action==='logout'){await api('/api/logout',{method:'POST'});state.me=null;renderLogin();}

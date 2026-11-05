@@ -92,13 +92,15 @@
     grid.insertAdjacentHTML('beforeend', `<div class="field checkbox wide co-toggle"><input type="checkbox" id="f-has_co"><label for="f-has_co">Rents together with a partner or spouse (co-tenant). Both get their own login and see the same home.</label></div>
       <div class="co-fields wide" hidden><h3 class="lf-h">Co-tenant</h3><div class="form-grid">${field(['co_name', 'Co-tenant full name', 'text', {required: false}])}${field(['co_email', 'Co-tenant email (their own)', 'email', {required: false}])}${field(['co_phone', 'Co-tenant phone', 'tel', {required: false}])}${field(selectField('co_language', 'Co-tenant language', [['nl', 'Dutch'], ['en', 'English']], {required: false}))}</div></div>`);
     const box = document.getElementById('f-has_co'), wrap = grid.querySelector('.co-fields');
-    const sync = () => { wrap.hidden = !box.checked; wrap.querySelectorAll('input,select').forEach(x => { x.disabled = !box.checked; x.required = box.checked && ['co_name', 'co_email'].includes(x.name); }); };
+    let postal = null;   // the co-tenant's own postal address (static/tenant_address.js), "same as the main tenant" by default
+    if (window.postalSection) { wrap.querySelector('.form-grid').insertAdjacentHTML('beforeend', postalSection({}, 'co_addr_')); postal = wirePostal(grid.closest('form'), 'co_addr_'); }
+    const sync = () => { wrap.hidden = !box.checked; wrap.querySelectorAll('input,select').forEach(x => { x.disabled = !box.checked; x.required = box.checked && ['co_name', 'co_email'].includes(x.name); }); if (postal) postal(); };
     box.addEventListener('change', sync); sync();
   };
   // Record a signed contract: the same picker under the rent fields
   const baseManual = manualContractForm;
-  manualContractForm = () => {
-    baseManual();
+  manualContractForm = (...args) => {
+    baseManual(...args);
     const form = document.getElementById('record-form'), grid = form && form.querySelector('.form-grid');
     if (!grid || !form.elements.tenant_id) return;
     const main = Number(form.elements.tenant_id.value);

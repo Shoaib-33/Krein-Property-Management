@@ -186,12 +186,13 @@
   });
 
   const actions = {
-    send() {
+    send(tenantId) {
       const templates = rows('doc_templates').filter(t => t.kind === 'Lease' && !t.archived);
       if (!templates.length) { toast('Add a Lease template first (Templates & fields).'); state.page = 'templates'; render(); return; }
       if (!rows('tenants').filter(t => !t.archived_at).length) { toast('Add the tenant first.'); return; }
       if (!rows('properties').length) { toast('Add a property first.'); return; }
-      sendDraft = sendDraft || {};
+      if (Number(tenantId)) sendDraft = sendDraft && Number(sendDraft.tenant_id) === Number(tenantId) ? sendDraft : {tenant_id: Number(tenantId)};   // from a tenant's file
+      else sendDraft = sendDraft || {};
       api(`/api/companies/${state.company}/signature`).then(r => { hasSig = !!r.set; sigInfo = r; }).catch(() => { hasSig = null; sigInfo = null; }).then(showSendForm);
     },
     async approve(id) {
