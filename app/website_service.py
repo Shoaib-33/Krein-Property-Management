@@ -14,6 +14,7 @@ from urllib import error, request as http
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse, Response
 
 from . import site_render
@@ -26,6 +27,8 @@ FORMS = {'/api/website/register': '/api/website/relay', '/api/website/enquiry': 
 MOVED = {'/privacy': '/privacyverklaring', '/index.html': '/', '/registreren.html': '/registreren', '/privacy.html': '/privacyverklaring'}
 
 app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+# pages, stylesheet and script go out compressed (about a quarter of their size); photos and the font already are
+app.add_middleware(GZipMiddleware, minimum_size=800, compresslevel=6)
 
 
 def visitor_ip(req: Request):

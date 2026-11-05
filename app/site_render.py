@@ -126,6 +126,12 @@ def _render(meta, body, layout, lang):
         'from': html.escape(cta_from),
         'bodyclass': 'owner-page' if meta.get('owner') == 'yes' else '',
         'langswitch': switch,
+        # the homepage's big photo starts loading at once, before the stylesheet is read
+        'preload': ('<link rel="preload" as="image" fetchpriority="high" href="/site-assets/photo-hero-1200.webp" '
+                    'imagesrcset="/site-assets/photo-hero-800.webp 800w, /site-assets/photo-hero-1200.webp 1200w, '
+                    '/site-assets/photo-hero-1600.webp 1600w, /site-assets/photo-hero-2000.webp 2000w" imagesizes="100vw" media="(min-width: 701px)">\n  '
+                    '<link rel="preload" as="image" fetchpriority="high" href="/site-assets/photo-hero-mobile-900.webp" media="(max-width: 700px)">'
+                    if meta.get('preloadhero') == 'yes' else ''),
     }
     for item in ('diensten', 'verhuurders', 'huurders', 'over', 'contact'):
         values[f'nav_{item}'] = ' aria-current="page"' if nav == item else ''
