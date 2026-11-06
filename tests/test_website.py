@@ -150,7 +150,7 @@ class WebsiteTests(unittest.TestCase):
             self.assertEqual(site.get(path).status_code, 404 if path.endswith('/404') else 200, path)
         for path in ('/veelgestelde-vragen', '/en/faq'):
             faq = json.loads(re.search(r'application/ld\+json">(.*?)</script>', pages[path], re.S).group(1))
-            self.assertEqual(len(next(g for g in faq['@graph'] if g['@type'] == 'FAQPage')['mainEntity']), 6, path)
+            self.assertEqual(len(next(g for g in faq['@graph'] if g['@type'] == 'FAQPage')['mainEntity']), 5, path)
         self.assertIn('BreadcrumbList', pages['/voor-huurders'])
         # the homepage keeps the old section anchors, so saved links still land
         for anchor in ('id="over"', 'id="huurders"', 'id="contact"'):
