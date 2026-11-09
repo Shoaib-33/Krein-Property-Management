@@ -143,8 +143,11 @@ def _render(meta, body, layout, lang):
 
 def _portal_button(lang, size):
     """"Log in" for tenants: the tenant portal of the software (KREIN_SOFTWARE_URL/tenant). Only tenants can sign in there;
-    staff sign in elsewhere, and that address is not on the website. Without the setting there is no button."""
+    staff sign in elsewhere, and that address is not on the website. Shown only with KREIN_SHOW_TENANT_LOGIN=1 on the
+    website service (hidden until the software has its own address, such as mijn.pandtbeheer.nl)."""
     software = os.environ.get('KREIN_SOFTWARE_URL', '').strip().rstrip('/')
+    if os.environ.get('KREIN_SHOW_TENANT_LOGIN', '').strip() != '1':   # hidden for now: shown again with KREIN_SHOW_TENANT_LOGIN=1
+        return ''
     if not software.startswith(('https://', 'http://127.0.0.1')):
         return ''
     label = 'Inloggen huurders' if lang == 'nl' else 'Tenant login'

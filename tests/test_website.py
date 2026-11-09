@@ -222,15 +222,17 @@ class WebsiteTests(unittest.TestCase):
             self.assertNotIn('import db', source)
 
     def test_tenant_login_button_opens_the_tenant_portal_only(self):
-        site = self.client('https://pandtbeheer.nl', website_service.app)
-        nl, en = site.get('/').text, site.get('/en').text
+        from app.site_render import _portal_button
+        self.assertEqual(_portal_button('nl', 'small'), '')   # hidden unless switched on
+        with mock.patch.dict(os.environ, {'KREIN_SHOW_TENANT_LOGIN': '1'}):
+            site_render.pages.cache_clear() if hasattr(site_render.pages, 'cache_clear') else None
+            nl, en = _portal_button('nl', 'small'), _portal_button('en', '')
         self.assertIn('href="https://software.example/tenant"', nl)
         self.assertIn('Inloggen huurders', nl)
         self.assertIn('Tenant login', en)
-        # the website never links to the staff sign-in
-        for page in (nl, en):
-            self.assertNotIn('href="https://software.example"', page)
-            self.assertNotIn('https://software.example/developer', page)
+        site = self.client('https://pandtbeheer.nl', website_service.app)
+        for page in (site.get('/').text, site.get('/en').text):   # not on the website for now, and never the staff sign-in
+            self.assertNotIn('software.example', page)
         # the tenant portal signs in tenants only: a staff account gets the same answer as a wrong password
         soft = self.client()
         portal = {'X-Krein-Portal': 'tenant'}
