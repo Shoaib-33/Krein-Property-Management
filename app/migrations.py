@@ -645,6 +645,16 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V51: payment history from before Krein (app/payment_history.py): months paid before the software was used, no invoice
+V51 = '''
+CREATE TABLE payment_history (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), tenant_id INTEGER NOT NULL REFERENCES tenants(id),
+ period TEXT NOT NULL, due_cents INTEGER, paid_cents INTEGER NOT NULL DEFAULT 0, paid_on TEXT, method TEXT NOT NULL DEFAULT 'Bank transfer',
+ note TEXT NOT NULL DEFAULT '', bank_line_id INTEGER UNIQUE REFERENCES bank_lines(id), created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE INDEX payment_history_tenant ON payment_history(tenant_id, period);
+'''
+
 # V50: the address of a tenant is the home they rent: tenants.home_property_id links it to Properties. The tenants added
 # before are linked once (app/tenant_address.py link_all_homes), adding the homes that are not in Properties yet.
 
@@ -802,6 +812,14 @@ ALTER TABLE companies ADD COLUMN bill_day BIGINT;
 ''',
     50: '''
 ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id);
+''',
+    51: '''
+CREATE TABLE payment_history (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), tenant_id BIGINT NOT NULL REFERENCES tenants(id),
+ period TEXT NOT NULL, due_cents BIGINT, paid_cents BIGINT NOT NULL DEFAULT 0, paid_on TEXT, method TEXT NOT NULL DEFAULT 'Bank transfer',
+ note TEXT NOT NULL DEFAULT '', bank_line_id BIGINT UNIQUE REFERENCES bank_lines(id), created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE INDEX payment_history_tenant ON payment_history(tenant_id, period);
 ''',
 }
 
@@ -1206,6 +1224,14 @@ def migrate(conn):
             from .tenant_address import link_all_homes
             link_all_homes(conn)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (50, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=51').fetchone():
+            statement = ''
+            for line in V51.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (51, now()))
         conn.commit()
     except Exception:
         conn.rollback()

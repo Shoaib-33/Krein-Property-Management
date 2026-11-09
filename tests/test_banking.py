@@ -110,7 +110,7 @@ class BankingTests(unittest.TestCase):
         again = self.upload(raw).json()
         self.assertEqual((again['duplicates'], again['booked'], again['new']), (3, 0, 0))
         booked = self.finance.get('/api/bank/lines?company_id=1&status=booked').json()
-        self.assertEqual(booked['counts'], {'check': 1, 'booked': 2, 'ignored': 0})
+        self.assertEqual(booked['counts'], {'check': 1, 'booked': 2, 'ignored': 0, 'history': 0})
         # the tenant was told, and the ledger shows ordinary payments
         data = self.manager.get('/api/data?company_id=1').json()
         self.assertTrue(any(l['invoice_id'] == first['id'] and l['kind'] == 'payment' for l in data['ledger']))
@@ -230,7 +230,7 @@ class BankingTests(unittest.TestCase):
         self.assertNotIn(other['id'], [o['id'] for o in rob.get('/api/bank/open-invoices?company_id=1').json()])
         # the company does not see his bank lines and no longer books his tenants
         company = self.finance.get('/api/bank/lines?company_id=1&status=check').json()
-        self.assertEqual(company['counts'], {'check': 0, 'booked': 0, 'ignored': 0})
+        self.assertEqual(company['counts'], {'check': 0, 'booked': 0, 'ignored': 0, 'history': 0})
         self.assertNotIn(tc['id'], [o['contract_id'] for o in self.finance.get('/api/bank/open-invoices?company_id=1').json()])
         self.assertEqual(self.finance.post(f"/api/bank/lines/{theirs['id']}/ignore", json={}).status_code, 404)
         booked = rob.get('/api/bank/lines?company_id=1&status=booked').json()['items'][0]

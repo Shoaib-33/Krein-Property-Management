@@ -107,6 +107,7 @@
     ev.target.closest('.bank-modes').querySelectorAll('.bank-mode').forEach(x => x.classList.toggle('on', x.contains(ev.target)));
   });
   const STATUS = {booked: ['Booked', 'green'], suggested: ['Please check', 'amber'], unmatched: ['Not recognised', 'gray'], ignored: ['Ignored', 'gray']};
+  const monthName = p => { const [y, m] = String(p || '').split('-'); return y && m ? new Intl.DateTimeFormat('en-GB', {month: 'long', year: 'numeric'}).format(new Date(Number(y), Number(m) - 1, 1)) : ''; };
 
   // what the tenant did for the invoice(s) of a bank payment: said "I have paid", uploaded a receipt, and the bank's own confirmation
   function proofTrail(l) {
@@ -141,7 +142,7 @@
         <div class="bank-upload"><input type="file" name="file" accept=".xml,.sta,.940,.txt,.mt940,.swi" required aria-label="Statement file"><button type="submit" class="button primary">Import</button></div>
         <p class="form-error" role="alert"></p></form>
         <div class="panel-body"><p class="subtitle">A payment is <strong>certain</strong> when it carries the invoice number with the right amount, or comes from the tenant's known bank account with the amount of an open invoice. Everything else waits for you below.</p></div>`);
-    const tabs = `<div class="tabs bank-tabs" role="tablist">${[['check', `To check (${c.check || 0})`], ['booked', `Booked (${c.booked || 0})`], ['ignored', `Ignored (${c.ignored || 0})`]]
+    const tabs = `<div class="tabs bank-tabs" role="tablist">${[['check', `To check (${c.check || 0})`], ['booked', `Booked (${c.booked || 0})`], ['history', `Manual payments (${c.history || 0})`], ['ignored', `Ignored (${c.ignored || 0})`]]
       .map(([k, l]) => `<button type="button" role="tab" class="tab ${ui.tab === k ? 'active' : ''}" aria-selected="${ui.tab === k}" data-bank="tab" data-id="${k}">${e(l)}</button>`).join('')}</div>`;
     const rowsHtml = (ui.data.items || []).map(l => {
       const [label, tone] = l.status === 'suggested' && l.certain ? ['Match found: approve', 'green'] : STATUS[l.status] || [l.status, 'gray'];
@@ -151,13 +152,15 @@
         : (l.tenant_name || l.invoice_number ? `${e(l.tenant_name || '')}${l.invoice_number ? ' · ' + e(l.invoice_number) : ''}` : '—') + `<small>${e(l.reason || '')}</small>`;
       const show = `<a class="button small" href="/api/bank/lines/${l.id}/statement.pdf" data-pv-title="Bank statement: payment marked">Show in statement</a>`;
       const acts = show + (l.status === 'booked' ? (company().landlord || company().role === 'manager' || company().role === 'admin' ? btn('Undo', 'undo', l.id) : '')
-        : l.status === 'ignored' ? btn('Put back', 'reopen', l.id)
+        : l.status === 'ignored' ? (ui.tab === 'history' ? '' : btn('Put back', 'reopen', l.id))
         : l.certain ? btn('Approve', 'approve', l.id, 'small primary') + btn('Other invoice', 'confirm', l.id) + btn('Ignore', 'ignore', l.id)
-        : btn('Confirm', 'confirm', l.id, 'small primary') + btn('Ignore', 'ignore', l.id));
+        : btn('Confirm', 'confirm', l.id, 'small primary') + btn('Ignore', 'ignore', l.id))
+        + (l.history_hint ? btn(l.history_hint.tenant_id ? `Manual payment: ${monthName(l.history_hint.period)}` : 'Save as manual payment', 'history', l.id, l.history_hint.tenant_id && !l.certain ? 'small primary' : 'small') : '');
       return [e(dateLabel(l.booked_on)), who, `<strong>${eur(l.amount_cents)}</strong>`, `<span class="bank-desc">${e(l.description || '')}</span>`, badge(label, tone) + `<div class="bank-what">${what}</div>` + proofTrail(l), `<div class="actions">${acts}</div>`];
     });
     const approveAll = ui.tab === 'check' && ui.data.to_approve ? `<div class="notice bank-approve-all"><span><strong>${ui.data.to_approve} match${ui.data.to_approve === 1 ? '' : 'es'} found, waiting for your approval.</strong> Check them with Show in statement, then approve one by one or all at once. The tenant is told only after approval.</span>${btn(`Approve all ${ui.data.to_approve}`, 'approve-all', '', 'small primary')}</div>` : '';
-    const list = approveAll + panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : 'Ignored payments',
+    const pastAll = ui.tab === 'check' && ui.data.history_ready ? `<div class="notice bank-approve-all"><span><strong>${ui.data.history_ready} payment${ui.data.history_ready === 1 ? '' : 's'} from a known tenant with no invoice to book on.</strong> For months before Krein: save them as manual payments on each tenant’s page. Nothing is sent to the tenant.</span>${btn(`Save all ${ui.data.history_ready} as manual payments`, 'history-all', '', 'small primary')}</div>` : '';
+    const list = approveAll + pastAll + panel(ui.tab === 'check' ? 'Payments to check' : ui.tab === 'booked' ? 'Booked payments' : ui.tab === 'history' ? 'Saved as manual payments' : 'Ignored payments',
       ui.tab === 'check' ? 'Confirm books the payment on the invoice you choose. Ignore is for money that is not rent.' : '',
       table(['Date', 'Payer', 'Amount', 'Description', 'Krein\'s match', ''], rowsHtml, ui.tab === 'check' ? 'Nothing to check. Every imported payment is booked or ignored.' : 'Nothing here yet.'));
     const imports = (ui.data.imports || []).length ? panel('Imported files', '', table(['File', 'Format', 'Payments', 'Booked automatically', 'By', 'When'],
@@ -176,19 +179,35 @@
     const reasons = [
       drafts.length ? item(`${drafts.length} ${drafts.length === 1 ? 'invoice is' : 'invoices are'} still a draft`, 'A draft is not sent yet, so a payment cannot be booked on it. Check the drafts in Invoices and send them, then click Confirm again.', months.map(m => e(dateLabel(m + '-01')).replace(/^1 /, '')).join(', ')) : '',
       noContract ? item(`${noContract} ${noContract === 1 ? 'tenant has' : 'tenants have'} no contract`, 'A tenant only gets invoices once a contract is recorded. Open the tenant and use “Signed on paper? Record it”, then make their invoice.') : '',
+      item('It is for a month before Krein', 'Save it as a manual payment: it goes on the tenant’s page, without an invoice.'),
       item('Every sent invoice is already paid', 'If this money is not rent, or was paid twice, use Ignore, or keep it here until the invoice is made.'),
     ].join('');
     modal('This payment cannot be booked yet', `<div class="modal-note"><strong>${eur(line.amount_cents)}</strong> · ${e(line.name || '')} · ${e(dateLabel(line.booked_on))}${line.description ? ` · ${e(line.description)}` : ''}</div>
       <p class="nb-lead">A payment is booked on an invoice that has been <strong>sent</strong> and is <strong>not paid yet</strong>. There is no such invoice right now. Why:</p>
       <ul class="nb-why">${reasons}</ul>
-      <div class="modal-footer"><button type="button" class="button" data-nb="close">Close</button>${drafts.length ? '<button type="button" class="button primary" data-nb="drafts">Go to the drafts</button>' : ''}</div>`);
+      <div class="modal-footer"><button type="button" class="button" data-nb="close">Close</button><button type="button" class="button" data-nb="past" data-id="${line.id}">Save as manual payment</button>${drafts.length ? '<button type="button" class="button primary" data-nb="drafts">Go to the drafts</button>' : ''}</div>`);
   }
   document.addEventListener('click', ev => {
     const b = ev.target.closest('[data-nb]');
     if (!b) return;
     closeModal();
     if (b.dataset.nb === 'drafts') { state.page = 'invoices'; render(); }
+    if (b.dataset.nb === 'past') setTimeout(() => pastPaymentForm(b.dataset.id), 0);
   });
+
+  // a bank payment for a month before Krein: saved in the tenant's payment history (no invoice); the IBAN is remembered
+  function pastPaymentForm(id) {
+    const line = (ui.data.items || []).find(l => l.id === Number(id));
+    if (!line) return;
+    const hint = line.history_hint || {}, ym = hint.period || String(line.booked_on).slice(0, 7);
+    const tenants = rows('tenants').filter(t => !t.archived_at).sort((a, b) => a.name.localeCompare(b.name)).map(t => [t.id, `${t.name} · ${t.email}`]);
+    if (!tenants.length) { toast('Add the tenant first.'); return; }
+    formModal('Save as manual payment', [selectField('tenant_id', 'Tenant who paid', tenants, {value: hint.tenant_id || '', wide: true}), ['period', 'Month it is for', 'month', {value: ym}],
+      ['due', 'Rent due for that month (€, optional)', 'number', {value: '', required: false, step: '0.01'}]],
+      d => api(`/api/bank/lines/${id}/history`, {method: 'POST', body: d}).then(() => { ui.data = null; return load(); }),
+      {intro: `<strong>${eur(line.amount_cents)}</strong> · ${e(line.name || '')} · ${e(dateLabel(line.booked_on))}${line.description ? ` · ${e(line.description)}` : ''}<br><br>For a month before Krein was used: the payment goes on the tenant’s page under Manual payment. No invoice is made and nothing is sent to the tenant. ${line.iban ? 'This IBAN is remembered for the tenant.' : ''}`,
+        submit: 'Save as manual payment', success: 'Saved as manual payment.'});
+  }
 
   async function confirmLine(id) {
     const line = (ui.data.items || []).find(l => l.id === Number(id));
@@ -231,6 +250,12 @@
     try {
       if (act === 'tab') { ui.tab = id; ui.data = null; render(); return; }
       if (act === 'confirm') { await confirmLine(id); return; }
+      if (act === 'history') { pastPaymentForm(id); return; }
+      if (act === 'history-all') {
+        if (!confirm(`Save all ${ui.data.history_ready} as manual payments? Each goes on that tenant’s page under Manual payment. Nothing is sent to the tenant.`)) return;
+        el.disabled = true; const r = await api('/api/bank/history-all', {method: 'POST', body: {company_id: state.company}});
+        toast(`${r.saved} payment(s) saved as manual payments.`); ui.data = null; await refresh(); await load(); return;
+      }
       if (act === 'approve') { el.disabled = true; await api(`/api/bank/lines/${id}/approve`, {method: 'POST', body: {}}); toast('Payment approved and booked. The tenant has been told.'); await refresh(); await load(); return; }
       if (act === 'approve-all') {
         if (!confirm(`Approve all ${ui.data.to_approve} matches? Each is booked and its tenant gets "Payment received".`)) return;

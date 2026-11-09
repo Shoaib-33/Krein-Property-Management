@@ -53,6 +53,8 @@ def tenant_file(tenant_id: int, user=Depends(current_user)):
         }
         if not money:
             return out
+        from .payment_history import rows_for
+        out['history'] = rows_for(conn, tenant_id)   # payments from before Krein
         invoices = rows(conn, f'SELECT id,contract_id,number,period,due_date,total_cents,released_at,created_at FROM invoices WHERE contract_id IN ({marks}) ORDER BY due_date DESC,id DESC', ids)
         inv_ids = [i['id'] for i in invoices] or [0]
         imarks = ','.join('?' for _ in inv_ids)

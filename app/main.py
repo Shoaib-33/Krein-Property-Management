@@ -2191,6 +2191,8 @@ from .website import router as website_router
 app.include_router(website_router)
 app.include_router(operations_router)
 app.include_router(finance_ops_router)
+from .payment_history import router as payment_history_router
+app.include_router(payment_history_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')

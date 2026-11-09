@@ -468,7 +468,10 @@ async def import_statement(company_id: int = Form(...), mode: str = Form(''), au
 
 @router.get('/api/bank/lines')
 def bank_lines(company_id: int, status: str = 'check', page: int = 1, period: str = '', user=Depends(current_user)):
-    groups = {'check': ('suggested', 'unmatched'), 'booked': ('booked',), 'ignored': ('ignored',)}
+    groups = {'check': ('suggested', 'unmatched'), 'booked': ('booked',), 'ignored': ('ignored',), 'history': ('ignored',)}
+    # a payment saved as past payment (app/payment_history.py) is listed under its own tab, not under Ignored
+    saved_past = 'l.id IN (SELECT bank_line_id FROM payment_history WHERE bank_line_id IS NOT NULL)'
+    extra = {'history': ' AND ' + saved_past, 'ignored': ' AND NOT ' + saved_past}
     if status not in groups:
         raise HTTPException(422, 'Unknown list.')
     page = max(1, page)
@@ -481,17 +484,21 @@ def bank_lines(company_id: int, status: str = 'check', page: int = 1, period: st
         if _re.fullmatch(r'\d{4}(-\d{2})?', period or ''):   # a year (2026) or a month (2026-10): payments booked by the bank in that period
             whose += f" AND l.booked_on LIKE '{period}%'"
         marks = ','.join('?' for _ in groups[status])
-        total = conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({marks})', (company_id, *groups[status])).fetchone()[0]
+        total = conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({marks}){extra.get(status, "")}', (company_id, *groups[status])).fetchone()[0]
         rows = [dict(r) for r in conn.execute(f'''SELECT l.*,t.name tenant_name,i.number invoice_number FROM bank_lines l LEFT JOIN tenants t ON t.id=l.tenant_id LEFT JOIN invoices i ON i.id=l.invoice_id
-            WHERE l.company_id=? AND {whose} AND l.status IN ({marks}) ORDER BY l.booked_on DESC,l.id DESC LIMIT 100 OFFSET ?''', (company_id, *groups[status], (page - 1) * 100))]
+            WHERE l.company_id=? AND {whose} AND l.status IN ({marks}){extra.get(status, "")} ORDER BY l.booked_on DESC,l.id DESC LIMIT 100 OFFSET ?''', (company_id, *groups[status], (page - 1) * 100))]
         for r in rows:
             r['bookings'] = [dict(b) for b in conn.execute('SELECT g.ledger_id,l.amount_cents,l.invoice_id,i.number FROM bank_bookings g JOIN ledger l ON l.id=g.ledger_id LEFT JOIN invoices i ON i.id=l.invoice_id WHERE g.line_id=?', (r['id'],))]
             r['evidence'] = evidence(conn, [b['invoice_id'] for b in r['bookings']] or [r['invoice_id']])
-        counts = {k: conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({",".join("?" for _ in v)})', (company_id, *v)).fetchone()[0] for k, v in groups.items()}
+        counts = {k: conn.execute(f'SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status IN ({",".join("?" for _ in v)}){extra.get(k, "")}', (company_id, *v)).fetchone()[0] for k, v in groups.items()}
+        if reach.owner_id is None:   # company staff: a payment that fits no invoice can be saved as past payment of the tenant
+            from .payment_history import history_hints
+            history_hints(conn, company_id, rows)
         imports = [dict(r) for r in conn.execute(f'SELECT b.id,b.filename,b.format,b.lines,b.booked,b.created_at,u.name user_name FROM bank_imports b LEFT JOIN users u ON u.id=b.created_by WHERE b.company_id=? AND {imports_whose} ORDER BY b.id DESC LIMIT 20', (company_id,))]
         mode = saved_mode(conn, company_id, reach)
         to_approve = conn.execute(f"SELECT COUNT(*) FROM bank_lines l WHERE l.company_id=? AND {whose} AND l.status='suggested' AND l.certain=1", (company_id,)).fetchone()[0]
-    return {'items': rows, 'total': total, 'counts': counts, 'imports': imports, 'own_account': reach.owner_id is not None, 'mode': mode, 'to_approve': to_approve}
+    history_ready = sum(1 for r in rows if (r.get('history_hint') or {}).get('tenant_id')) if status == 'check' else 0
+    return {'items': rows, 'total': total, 'counts': counts, 'imports': imports, 'own_account': reach.owner_id is not None, 'mode': mode, 'to_approve': to_approve, 'history_ready': history_ready}
 
 
 @router.get('/api/bank/open-invoices')

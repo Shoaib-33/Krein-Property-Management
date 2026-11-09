@@ -202,7 +202,19 @@
         + (f.payments.length ? more(B.pay) : ''));
       const deposit = f.deposit.length ? panel('Deposit', '', table(['Date', 'What', 'Amount', 'Status', 'Reason'], f.deposit.map(d => [e(dateLabel(d.created_at.slice(0, 10))), e(d.kind), eur(d.amount_cents), badge(d.status), e(d.reason || '')]))) : '';
       const arrears = f.arrears.length ? `<div class="notice warning">${icon('clock')}<span><strong>Arrears follow-up is open</strong> for ${f.arrears.map(a => e(a.number)).join(', ')}. See Finance > Arrears.</span></div>` : '';
-      money_ = money_ + arrears + invoices + history + deposit;
+      // payments from before Krein: a record only (no invoice, no reminder), filled in by hand or from a bank statement
+      const past = ui.file.history || [];
+      const monthName = p => { const [y, m] = p.split('-'); return new Intl.DateTimeFormat('en-GB', {month: 'long', year: 'numeric'}).format(new Date(Number(y), Number(m) - 1, 1)); };
+      const pastPanel = panel('Manual payment', 'What the tenant paid in the months before the software was used. A record only: no invoice, reminder or arrears.',
+        table(['Month', 'Rent due', 'Paid', 'Date paid', 'How', 'Note', ''], past.map(h => {
+          const short = h.due_cents != null && h.paid_cents < h.due_cents;
+          return [`<strong>${e(monthName(h.period))}</strong>`, h.due_cents != null ? eur(h.due_cents) : '—',
+            `<strong class="${short ? 'late-text' : ''}">${eur(h.paid_cents)}</strong>${short ? `<small class="late-text">${eur(h.due_cents - h.paid_cents)} short</small>` : ''}`,
+            h.paid_on ? e(dateLabel(h.paid_on)) : '—', h.bank_line_id ? badge('Bank statement', 'green') : badge(h.method, 'gray'), e(h.note || ''),
+            canBill ? `<button type="button" class="button small" data-tf-past-remove="${h.id}">Remove</button>` : ''];
+        }), 'No payment history yet.').replace(/<div class="empty">[\s\S]*$/, () => empty('No payment history yet', 'Add the months before Krein by hand, or upload the bank statement of those months: payments from this tenant’s IBAN are recognised.', acts(canBill ? mb('Add month', 'data-tf-past-add', true) : '')))
+        + (past.length && canBill ? more(mb('Add month', 'data-tf-past-add')) : ''));
+      money_ = money_ + arrears + invoices + history + pastPanel + deposit;
     }
     // bank accounts
     const SRC = {tenant: 'Given by the tenant', staff: 'Added by staff', learned: 'Learned from a bank payment'};
@@ -319,6 +331,25 @@
       const form = document.getElementById('record-form');
       if (form && window.postalSection) { form.querySelector('.form-grid').insertAdjacentHTML('beforeend', postalSection(t)); wirePostal(form); }
     }
+  });
+  // payment history before Krein: add a month by hand, or remove one entered by mistake
+  document.addEventListener('click', async ev => {
+    const add = ev.target.closest('[data-tf-past-add]'), rm = ev.target.closest('[data-tf-past-remove]');
+    if (!add && !rm) return;
+    const f = ui.file, t = f && f.tenant;
+    if (!t) return;
+    if (rm) {
+      if (!confirm('Remove this month from the payment history? A payment from a bank statement goes back to the list to check.')) return;
+      try { await api(`/api/payment-history/${rm.dataset.tfPastRemove}`, {method: 'DELETE'}); toast('Removed.'); ui.file = null; load(); } catch (err) { toast(err.message); }
+      return;
+    }
+    const cur = f.contracts.find(c => ['active', 'notice given'].includes(c.status));
+    const rent = cur ? ((cur.rent.basic_cents || 0) + (cur.rent.service_cents || 0)) / 100 : '';
+    const d = new Date(), last = new Date(d.getFullYear(), d.getMonth() - 1, 1), ym = `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}`;
+    formModal('Add a month of payment history', [['period', 'Month', 'month', {value: ym}], ['due', 'Rent due for that month (€)', 'number', {value: rent, required: false, step: '0.01'}], amountField('paid', 'Amount paid (€)', rent),
+      ['paid_on', 'Date paid', 'date', {required: false}], selectField('method', 'How', ['Bank transfer', 'Cash', 'Other']), ['note', 'Note (optional)', 'text', {required: false, wide: true}]],
+      async data => { await api(`/api/tenants/${t.id}/payment-history`, {method: 'POST', body: data}); ui.file = null; load(); },
+      {intro: 'For the months before Krein was used. This is a record only: no invoice is made and nothing is sent to the tenant.', submit: 'Save month', success: 'Month saved.'});
   });
   document.addEventListener('click', ev => {
     const el = ev.target.closest('[data-preset-contract]');
