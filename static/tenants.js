@@ -137,6 +137,7 @@
       f.portal && f.portal.enabled ? `<button type="button" class="button small" data-reset-link="tenant:${t.id}" title="A one-time link to choose a new password">Password reset link</button>` : '',
       !t.archived_at && ['admin', 'manager', 'property'].includes(company().role) ? `<button type="button" class="button small" data-lease="send" data-id="${t.id}">Send contract for signature</button>` : '',
       !t.archived_at && ['admin', 'manager', 'property', 'landlord'].includes(company().role) ? `<button type="button" class="button small" data-action="manual-contract-form" data-id="${t.id}" title="For a contract that was signed on paper">Signed on paper? Record it</button>` : '',
+      !t.archived_at && ['admin', 'manager', 'finance'].includes(company().role) ? `<button type="button" class="button small" data-tf="invoice">Send invoice</button>` : '',
       `<a class="button small" href="/api/tenants/${t.id}/export">Export data</a>`,
       t.archived_at ? `<button type="button" class="button small" data-action="tenant-restore" data-id="${t.id}">Restore</button>` : `<button type="button" class="button small danger" data-action="tenant-archive" data-id="${t.id}">Remove</button>`,
       state.me.developer ? `<button type="button" class="button small danger" data-action="tenant-delete" data-id="${t.id}" title="Developer only: removes the tenant and all their records">Delete permanently</button>` : '',
@@ -206,6 +207,44 @@
     return panel('Rents together with', 'A partner or spouse who rents the home with this tenant. Contracts for this tenant include them as co-tenant; both have their own login.',
       (list.length ? table(['Name', 'Role', ''], body) : '') + (t.co_of ? '' : `<div class="panel-body"><button type="button" class="button small primary" data-tf-partner="${t.id}">Add partner / co-tenant</button></div>`));
   }
+
+  // Send invoice (from the tenant's file): their drafts to check and send, an invoice for this month made only for them,
+  // and invoices already sent to send again
+  function sendInvoiceFor(f) {
+    const t = f.tenant, month = (state.data.today || today()).slice(0, 7);
+    const live = f.contracts.filter(c => ['active', 'notice given'].includes(c.status));
+    const drafts = f.invoices.filter(i => !i.released_at);
+    const sent = f.invoices.filter(i => i.released_at).slice(0, 3);
+    const row = (i, label, action) => `<div class="si-row"><div><strong>${e(i.number)}</strong><small>${e(i.period)} · ${eur(i.total_cents)} · due ${e(dateLabel(i.due_date))}</small></div><div class="actions"><a class="button small" href="/api/invoices/${i.id}/pdf" target="_blank" rel="noopener">View PDF</a>${action === 'review' ? `<button type="button" class="button small primary" data-si-open="${i.id}">${e(label)}</button>` : `<button type="button" class="button small" data-si-again="${i.id}">${e(label)}</button>`}</div></div>`;
+    const missing = live.filter(c => !f.invoices.some(i => i.contract_id === c.id && i.period === month));
+    modal(`Send invoice · ${t.name}`, `
+      ${drafts.length ? `<h3 class="si-h">Not sent yet</h3><p class="modal-note">Check the PDF, change numbers or text with Review & edit, then send it from there.</p>${drafts.map(i => row(i, 'Review & edit', 'review')).join('')}` : ''}
+      ${missing.length ? `<h3 class="si-h">No invoice for ${e(month)} yet</h3>${missing.map(c => `<div class="si-row"><div><strong>${e(c.property_name)}</strong><small>${e(c.address || '')}</small></div><button type="button" class="button small primary" data-si-make="${c.id}">Create invoice for ${e(month)}</button></div>`).join('')}<p class="modal-note">It is made as a draft only for this tenant: you check it before it is sent.</p>` : ''}
+      ${sent.length ? `<h3 class="si-h">Already sent</h3>${sent.map(i => row(i, 'Send email again', 'again')).join('')}` : ''}
+      ${!drafts.length && !missing.length && !sent.length ? '<p class="modal-note">This tenant has no tenancy to invoice.</p>' : ''}
+      <div class="modal-footer"><button type="button" class="button" data-action="close-modal">Close</button></div>`);
+  }
+  document.addEventListener('click', async ev => {
+    const open = ev.target.closest('[data-si-open]'), make = ev.target.closest('[data-si-make]'), again = ev.target.closest('[data-si-again]');
+    if (!open && !make && !again) return;
+    ev.preventDefault();
+    try {
+      if (open) { closeModal(); showInvoice(Number(open.dataset.siOpen)); return; }
+      if (make) {
+        make.disabled = true;
+        const month = (state.data.today || today()).slice(0, 7), cid = Number(make.dataset.siMake);
+        const r = await api('/api/invoices/run', {method: 'POST', body: {company_id: state.company, period: month, contract_id: cid}});
+        if (!r.created) { toast(`No invoice made. ${r.why || ''}`); make.disabled = false; return; }
+        await refresh();
+        const inv = rows('invoices').filter(i => i.contract_id === cid && i.period === month).sort((a, b) => b.id - a.id)[0];
+        closeModal(); ui.file = null; load();
+        if (inv) showInvoice(inv.id);
+        toast('Draft invoice made. Check it, edit if needed, then send it to the tenant.');
+        return;
+      }
+      if (again) { again.disabled = true; await api(`/api/invoices/${again.dataset.siAgain}/email`, {method: 'POST', body: {}}); toast('The invoice email is being sent again.'); }
+    } catch (err) { toast(err.message); if (make) make.disabled = false; if (again) again.disabled = false; }
+  });
   document.addEventListener('click', async ev => {
     const add = ev.target.closest('[data-tf-partner]'), un = ev.target.closest('[data-tf-unlink]');
     if (add) {
@@ -246,6 +285,7 @@
     if (open) { ev.preventDefault(); go(open.dataset.tenant); return; }
     if (ev.target.closest('[data-tenant-back]')) { ev.preventDefault(); state.tenantView = null; ui.id = null; render(); return; }
     const act = ev.target.closest('[data-tf]');
+    if (act && act.dataset.tf === 'invoice' && ui.file && ui.file.tenant) { sendInvoiceFor(ui.file); return; }
     if (act && act.dataset.tf === 'edit' && ui.file && ui.file.tenant) {
       const t = ui.file.tenant;
       formModal('Edit tenant details', [['name', 'Full name', 'text', {value: t.name}], ['email', 'Email address', 'email', {value: t.email}], ['phone', 'Phone number', 'tel', {value: t.phone || '', required: false}],

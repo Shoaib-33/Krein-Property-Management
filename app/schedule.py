@@ -34,6 +34,21 @@ def period_amount(conn, contract, first, last):
     return int(round(total))
 
 
+def default_bill_day():
+    try:
+        return max(1, min(28, int(os.environ.get('KREIN_RENT_BILL_DAY', '15'))))
+    except ValueError:
+        return 15
+
+
+def bill_day(conn, company_id):
+    """The day of the month the next month's invoices are made: the company's own choice (Invoices page), else the
+    server setting, else the 15th. Always 1-28, so it exists in every month."""
+    row = conn.execute('SELECT bill_day FROM companies WHERE id=?', (company_id,)).fetchone()
+    day = row[0] if row else None
+    return max(1, min(28, int(day))) if day else default_bill_day()
+
+
 def payment_schedule(conn, contract, today=None):
     today = today or local_today()
     out = {'contract_id': contract['id'], 'due': None, 'next': None}
@@ -66,10 +81,7 @@ def payment_schedule(conn, contract, today=None):
                 continue
             amount = period_amount(conn, contract, first, last)
             if amount:
-                try:
-                    run_day = max(1, min(28, int(os.environ.get('KREIN_RENT_BILL_DAY', '15'))))
-                except ValueError:
-                    run_day = 15
+                run_day = bill_day(conn, contract['company_id'])
                 before = month_start(first, -1)
                 issue_on = date(before.year, before.month, run_day)   # the automatic invoice run for this month
                 out['next'] = {'period': period, 'date': pay_on.isoformat(), 'amount_cents': amount, 'days': (pay_on - today).days,

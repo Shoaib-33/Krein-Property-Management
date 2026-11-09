@@ -39,7 +39,7 @@
     if (signedOffers.length) out.push({tone: 'amber', weight: 96, icon: 'file', page: 'contracts',
       title: `${signedOffers.length} signed contract${signedOffers.length > 1 ? 's' : ''} waiting for approval`,
       copy: `${signedOffers[0].tenant_name} signed. Approve it so the tenancy can start.`, cta: 'Review contracts'});
-    const lateRepairs = rows('repairs').filter(r => !['done', 'closed'].includes(r.status) && r.due_date < t);
+    const lateRepairs = rows('repairs').filter(r => !['done', 'closed', 'requested'].includes(r.status) && r.due_date < t);
     if (lateRepairs.length) out.push({tone: 'red', weight: 85, icon: 'wrench', page: 'repairs',
       title: `${lateRepairs.length} repair${lateRepairs.length > 1 ? 's are' : ' is'} past the response deadline`,
       copy: 'Dutch tenancy rules expect timely handling of reported defects.', cta: 'Open maintenance'});

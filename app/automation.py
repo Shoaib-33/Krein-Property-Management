@@ -47,7 +47,7 @@ def candidates(conn, rule, today):
         for r in conn.execute("SELECT c.id,c.end_date,t.name tenant,p.name property FROM contracts c JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id WHERE c.company_id=? AND c.status IN ('active','notice given') AND c.end_date IS NOT NULL AND c.end_date>=? AND c.end_date<=?", (cid, today, horizon)):
             found.append({'entity': 'contract', 'id': r['id'], 'contract_id': r['id'], 'vars': {'tenant': r['tenant'], 'property': r['property'], 'invoice': '', 'amount': '', 'days': _days(r['end_date'], today), 'date': r['end_date']}})
     elif rule['trigger'] == 'repair_open':
-        for r in conn.execute("SELECT r.id,r.title,r.reported_on,r.contract_id,t.name tenant,p.name property FROM repairs r JOIN contracts c ON c.id=r.contract_id JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id WHERE r.company_id=? AND r.status NOT IN ('done','closed')", (cid,)):
+        for r in conn.execute("SELECT r.id,r.title,r.reported_on,r.contract_id,t.name tenant,p.name property FROM repairs r JOIN contracts c ON c.id=r.contract_id JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id WHERE r.company_id=? AND r.status NOT IN ('done','closed','requested')", (cid,)):
             age = _days(today, r['reported_on'])
             if age >= n:
                 found.append({'entity': 'repair', 'id': r['id'], 'contract_id': r['contract_id'], 'vars': {'tenant': r['tenant'], 'property': r['property'], 'invoice': r['title'], 'amount': '', 'days': age, 'date': r['reported_on']}})

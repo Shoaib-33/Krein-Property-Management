@@ -349,7 +349,10 @@ class WorkflowTests(unittest.TestCase):
                 response=self.post('/api/invoices/run',{'company_id':1,'period':AHEAD})
             self.assertEqual(response.status_code,200,response.text)
             self.assertEqual(response.json()['created'],5)
-            self.assertEqual(response.json()['email_delivery']['waiting'],5)
+            self.assertEqual(deliver_pending_emails()['sent'],0)   # Run monthly invoices makes drafts: nothing goes out yet
+            with patch('app.email_delivery.kick',lambda:None):
+                sent=self.post('/api/invoices/release',{'company_id':1,'period':AHEAD})   # Send all
+            self.assertEqual(sent.json()['released'],5)
             self.assertEqual(deliver_pending_emails()['sent'],5)
             self.assertEqual(server.send_message.call_count,5)
             for call in server.send_message.call_args_list:

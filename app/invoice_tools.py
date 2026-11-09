@@ -116,7 +116,7 @@ def signed_euros(value, label):
 
 @router.post('/api/invoices/{invoice_id}/edit')
 def edit_invoice(invoice_id: int, data: dict, user=Depends(current_user)):
-    reason = text_field(data, 'reason', maximum=300)
+    reason = str(data.get('reason') or '').strip()[:300]
     note = str(data.get('note') or '').strip()[:500]
     basic = signed_euros(data.get('basic_rent', ''), 'Basic rent')
     service = signed_euros(data.get('service_charge', 0), 'Service charge advance')
@@ -154,6 +154,9 @@ def edit_invoice(invoice_id: int, data: dict, user=Depends(current_user)):
         block = edit_block(conn, invoice_id)
         if block:
             raise HTTPException(409, block)
+        if inv['released_at'] and not reason:
+            raise HTTPException(422, 'Add a short reason: the tenant already has this invoice.')
+        reason = reason or 'Draft checked before sending'
         snap = json.loads(inv['snapshot'])
         due = date_field(data, 'due_date', inv['due_date'])
         before = lines_of(inv, snap)
@@ -243,6 +246,22 @@ def release_many(data: dict, user=Depends(current_user)):
     from .email_delivery import kick
     kick()
     return {'released': len([d for d in drafts if scope is None or d['contract_id'] in scope.contracts]), 'email': {'queued': True}}
+
+
+@router.post('/api/companies/{company_id}/bill-day')
+def set_bill_day(company_id: int, data: dict, user=Depends(current_user)):
+    try:
+        day = int(data.get('day'))
+    except (TypeError, ValueError):
+        day = 0
+    if not 1 <= day <= 28:
+        raise HTTPException(422, 'Choose a day from 1 to 28: those days exist in every month.')
+    with transaction() as conn:
+        authorize(conn, user, company_id, ('manager',))
+        old = conn.execute('SELECT bill_day FROM companies WHERE id=?', (company_id,)).fetchone()[0]
+        conn.execute('UPDATE companies SET bill_day=? WHERE id=?', (day, company_id))
+        audit(conn, user['id'], company_id, 'bill_day_changed', 'company', company_id, {'from': old, 'to': day})
+    return {'ok': True, 'day': day}
 
 
 @router.post('/api/companies/{company_id}/invoice-review')

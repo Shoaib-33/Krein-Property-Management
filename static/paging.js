@@ -53,6 +53,8 @@
   };
   const PAGER = {};
   const st = id => PAGER[id] ||= {page: 1, size: 50, q: '', f: {}, seq: 0, html: '', foot: '', kinds: []};
+  // read the list's filters, or set some (and start at page 1): pagerFilter('invoices', {email: 'Drafts', period: '2026-11'})
+  window.pagerFilter = (id, f) => { const s = st(id); if (f) { Object.assign(s.f, f); s.page = 1; } return s.f; };
 
   const panelStart = title => `<section class="panel"><div class="panel-header"><div><h2>${title}</h2>`;
   function swapPanel(html, id) {

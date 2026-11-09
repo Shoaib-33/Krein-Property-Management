@@ -626,6 +626,25 @@ ALTER TABLE tenants ADD COLUMN addr_city TEXT NOT NULL DEFAULT '';
 ALTER TABLE tenants ADD COLUMN addr_country TEXT NOT NULL DEFAULT 'NL';
 '''
 
+# V47: a tenant's repair report is a request until staff approve or decline it (review: '' = made by staff, 'pending',
+# 'approved', 'declined'); a declined request is closed with the reason in review_note
+V47 = '''
+ALTER TABLE repairs ADD COLUMN review TEXT NOT NULL DEFAULT '';
+ALTER TABLE repairs ADD COLUMN review_note TEXT NOT NULL DEFAULT '';
+ALTER TABLE repairs ADD COLUMN reviewed_by INTEGER REFERENCES users(id);
+ALTER TABLE repairs ADD COLUMN reviewed_at TEXT;
+'''
+
+# V48: automatic sending of the monthly invoices is switched off: the scheduler makes drafts that staff send
+V48 = '''
+UPDATE companies SET review_invoices=1;
+'''
+
+# V49: the day of the month the next month's invoices are made, per company (empty: KREIN_RENT_BILL_DAY, else the 15th)
+V49 = '''
+ALTER TABLE companies ADD COLUMN bill_day INTEGER;
+'''
+
 # V43: the developer may delete a tenant permanently (app/developer.py). The financial records still refuse every delete,
 # except inside that one transaction (a row in record_deletion); changing them stays impossible.
 V43 = '''
@@ -765,6 +784,18 @@ ALTER TABLE tenants ADD COLUMN addr_addition TEXT NOT NULL DEFAULT '';
 ALTER TABLE tenants ADD COLUMN addr_postcode TEXT NOT NULL DEFAULT '';
 ALTER TABLE tenants ADD COLUMN addr_city TEXT NOT NULL DEFAULT '';
 ALTER TABLE tenants ADD COLUMN addr_country TEXT NOT NULL DEFAULT 'NL';
+''',
+    47: '''
+ALTER TABLE repairs ADD COLUMN review TEXT NOT NULL DEFAULT '';
+ALTER TABLE repairs ADD COLUMN review_note TEXT NOT NULL DEFAULT '';
+ALTER TABLE repairs ADD COLUMN reviewed_by BIGINT REFERENCES users(id);
+ALTER TABLE repairs ADD COLUMN reviewed_at TEXT;
+''',
+    48: '''
+UPDATE companies SET review_invoices=1;
+''',
+    49: '''
+ALTER TABLE companies ADD COLUMN bill_day BIGINT;
 ''',
 }
 
@@ -1147,6 +1178,20 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (46, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=47').fetchone():
+            statement = ''
+            for line in V47.splitlines():
+                statement += line + chr(10)
+                if sqlite3.complete_statement(statement):
+                    conn.execute(statement)
+                    statement = ''
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (47, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=48').fetchone():
+            conn.execute('UPDATE companies SET review_invoices=1')
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (48, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=49').fetchone():
+            conn.execute('ALTER TABLE companies ADD COLUMN bill_day INTEGER')
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (49, now()))
         conn.commit()
     except Exception:
         conn.rollback()

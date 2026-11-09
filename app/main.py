@@ -218,13 +218,15 @@ def rent_at(conn, contract_id, when):
     return conn.execute('SELECT * FROM rent_versions WHERE contract_id=? AND effective_from<=? ORDER BY effective_from DESC LIMIT 1', (contract_id, when)).fetchone()
 
 
-def issue_month(conn, company_id, period, user_id, only_contracts=None):
+def issue_month(conn, company_id, period, user_id, only_contracts=None, draft=False):
+    """One invoice per tenancy for the month. draft=True (or the company's automatic sending switched off): drafts that
+    staff check, edit and send; otherwise sent to the tenants at once."""
     try:
         first = date.fromisoformat(period + '-01')
         last = date(first.year, first.month, calendar.monthrange(first.year, first.month)[1])
     except (ValueError, TypeError):
         raise HTTPException(422, 'Period must be YYYY-MM.')
-    review = bool(conn.execute('SELECT review_invoices FROM companies WHERE id=?', (company_id,)).fetchone()[0])
+    review = draft or bool(conn.execute('SELECT review_invoices FROM companies WHERE id=?', (company_id,)).fetchone()[0])
     contracts = conn.execute('SELECT c.*,t.name tenant_name,t.email tenant_email,t.addr_street,t.addr_number,t.addr_addition,t.addr_postcode,t.addr_city,t.addr_country,p.address,p.name property_name,co.name company_name,co.address company_address,co.payment_instructions FROM contracts c JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE c.company_id=? AND c.status IN ("active","notice given") AND c.start_date<=? AND (c.end_date IS NULL OR c.end_date>=?)', (company_id, last.isoformat(), first.isoformat())).fetchall()
     count = 0
     for c in contracts:
@@ -293,24 +295,21 @@ def end_finished_contracts(today=None):
     return len(rows)
 
 
-def scheduled_invoice_periods(today=None):
+def scheduled_invoice_periods(today=None, run_day=None):
     """The months the scheduler bills now. The current month is always included: a tenancy that starts after the bill day,
     or a month missed while the server was down, is invoiced at the next run (issue_month never makes a second invoice)."""
     today = today or local_today()
     periods = [today.strftime('%Y-%m')]
-    upcoming = scheduled_invoice_period(today)
+    upcoming = scheduled_invoice_period(today, run_day)
     if upcoming and upcoming not in periods:
         periods.append(upcoming)
     return periods
 
 
-def scheduled_invoice_period(today=None):
+def scheduled_invoice_period(today=None, run_day=None):
     today = today or local_today()
-    try:
-        run_day = int(os.environ.get('KREIN_RENT_BILL_DAY', '15'))
-    except ValueError:
-        run_day = 15
-    run_day = max(1, min(28, run_day))
+    from .schedule import default_bill_day
+    run_day = max(1, min(28, int(run_day))) if run_day else default_bill_day()
     if today.day >= run_day:
         year, month = today.year, today.month + 1
         if month == 13:
@@ -321,17 +320,28 @@ def scheduled_invoice_period(today=None):
     return None
 
 
-def run_scheduled_invoices(period):
+def run_scheduled_invoices(period, only_companies=None):
     first = date.fromisoformat(period + '-01')
     last = date(first.year, first.month, calendar.monthrange(first.year, first.month)[1])
     with connect() as conn:
         companies = [r['company_id'] for r in conn.execute('SELECT DISTINCT company_id FROM contracts WHERE start_date<=? AND (end_date IS NULL OR end_date>=?)', (last.isoformat(), first.isoformat()))]
     for company_id in companies:
+        if only_companies is not None and company_id not in only_companies:
+            continue
         try:
             with transaction() as conn:
                 issue_month(conn, company_id, period, None)
         except Exception:
             logging.exception('Scheduled billing failed for company %s; other companies continue.', company_id)
+
+
+def run_all_scheduled_invoices(today=None):
+    """The scheduler's invoice step: every company on its own bill day (Invoices page > Automatic sending)."""
+    from .schedule import bill_day
+    with connect() as conn:
+        days = {r[0]: bill_day(conn, r[0]) for r in conn.execute('SELECT id FROM companies')}
+    for period in sorted({p for d in set(days.values()) for p in scheduled_invoice_periods(today, d)}):
+        run_scheduled_invoices(period, {c for c, d in days.items() if period in scheduled_invoice_periods(today, d)})
 
 
 def process_overdue_invoices(company_id=None):
@@ -395,11 +405,9 @@ async def monthly_billing_scheduler():
     while True:
         from .automation import run_all_companies
         from .website import purge_old_registrations
-        steps = [(end_finished_contracts, ())] + [(run_scheduled_invoices, (p,)) for p in scheduled_invoice_periods()] + [(process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ()), (purge_old_registrations, ())]
+        steps = [(end_finished_contracts, ()), (run_all_scheduled_invoices, ())] + [(process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ()), (purge_old_registrations, ())]
         for step, args in steps:
             try:
-                if step is run_scheduled_invoices and not args[0]:
-                    continue
                 await asyncio.to_thread(step, *args)
             except asyncio.CancelledError:
                 raise
@@ -586,6 +594,8 @@ def all_data(company_id: int, user=Depends(current_user)):
         result.update(staff_extras(conn, user, company_id, role))
         if role != 'inspector':
             from .schedule import payment_schedule
+            from .schedule import default_bill_day
+            result['bill_day_default'] = default_bill_day()
             result['payment_schedules'] = [payment_schedule(conn, c) for c in result.get('contracts', []) if c['status'] in ('active', 'notice given')]
         if role in ('admin', 'manager', 'finance'):
             from .paging import apply_window
@@ -1044,7 +1054,14 @@ def invoice_run(data: dict, user=Depends(current_user)):
             latest = (latest + timedelta(days=32)).replace(day=1)
         if period > latest.strftime('%Y-%m'):   # a typo such as 2036 would create invoices that can never be removed
             raise HTTPException(422, f'Invoices can be made up to {latest.strftime("%Y-%m")} (two months ahead). Check the month.')
-        count = issue_month(conn, company, period, user['id'], scope.contracts if scope is not None else None)
+        # pressed by hand: always drafts, to check and send (one tenancy when started from a tenant's file)
+        only = scope.contracts if scope is not None else None
+        if data.get('contract_id'):
+            one = linked(conn, 'contracts', integer(data, 'contract_id'), company)['id']
+            if only is not None and one not in only:
+                raise HTTPException(404, 'Contract not found.')
+            only = [one]
+        count = issue_month(conn, company, period, user['id'], only, draft=True)
         why = None
         if not count:
             # say why nothing was created, so an empty run is not a mystery
@@ -1412,11 +1429,48 @@ def task_status(task_id: int, data: dict, user=Depends(current_user)):
     return {'ok': True}
 
 
+@app.post('/api/repairs/{repair_id}/review')
+def review_repair(repair_id: int, data: dict, user=Depends(current_user)):
+    """A tenant's repair request: approve it (it becomes a repair, the deadlines start today) or decline it with a reason
+    (the tenant sees the reason; the request is closed)."""
+    decision = choice(data, 'decision', ('approve', 'decline'))
+    note = str(data.get('note') or '').strip()[:2000]
+    if decision == 'decline' and len(note) < 3:
+        raise HTTPException(422, 'Tell the tenant why the request is declined.')
+    with transaction() as conn:
+        row = record(conn, 'repairs', repair_id, user, OPERATIONS + ('landlord',))
+        if row['review'] != 'pending':
+            raise HTTPException(409, 'This repair request has already been reviewed.')
+        today = local_today().isoformat()
+        from .portal_access import notify_tenant
+        if decision == 'approve':
+            urgency = choice(data, 'urgency', sla.PRIORITIES, row['urgency']) if data.get('urgency') else row['urgency']
+            stamped = sla.stamp(conn, row['company_id'], urgency, today)
+            conn.execute("UPDATE repairs SET status='received',review='approved',review_note=?,reviewed_by=?,reviewed_at=?,urgency=?,due_date=?,response_due_at=? WHERE id=?",
+                         (note, user['id'], now(), urgency, stamped['due_date'], stamped['response_due_at'], repair_id))
+            sla.mark_responded(conn, repair_id)
+            task(conn, row['company_id'], row['contract_id'], f'Arrange approved repair #{repair_id}: {row["title"]}', today, 'Emergency' if urgency == 'Emergency' else 'Repair')
+            task(conn, row['company_id'], row['contract_id'], f'Review day-35 repair #{repair_id}', (date.fromisoformat(row['reported_on']) + timedelta(days=35)).isoformat(), 'Repair')
+            message = 'Repair request approved. We will arrange the repair.' + (' ' + note if note else '')
+        else:
+            conn.execute("UPDATE repairs SET status='closed',review='declined',review_note=?,reviewed_by=?,reviewed_at=?,completed_at=? WHERE id=?",
+                         (note, user['id'], now(), now(), repair_id))
+            sla.mark_responded(conn, repair_id)
+            message = 'Repair request declined: ' + note
+        conn.execute("UPDATE tasks SET status='done' WHERE contract_id=? AND status='open' AND title LIKE ?", (row['contract_id'], f'Approve or decline repair request #{repair_id}%'))
+        insert(conn, 'repair_updates', {'company_id': row['company_id'], 'repair_id': repair_id, 'user_id': user['id'], 'message': message, 'tenant_visible': 1, 'created_at': now()})
+        notify_tenant(conn, row['contract_id'], 'Repair request approved' if decision == 'approve' else 'Repair request declined', row['title'], 'repairs')
+        audit(conn, user['id'], row['company_id'], 'approved' if decision == 'approve' else 'declined', 'repair', repair_id, {'note': note})
+    return {'ok': True}
+
+
 @app.post('/api/repairs/{repair_id}/status')
 def repair_status(repair_id: int, data: dict, user=Depends(current_user)):
     status = choice(data, 'status', ('received','triaged','planned','in progress','waiting','done','closed','reopened'))
     with transaction() as conn:
         row = record(conn, 'repairs', repair_id, user, OPERATIONS + ('landlord',))
+        if row['review'] == 'pending':
+            raise HTTPException(409, 'Approve or decline this repair request first.')
         doc_id, note = None, None
         if status in ('done', 'closed'):
             doc_id = integer(data, 'document_id')

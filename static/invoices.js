@@ -65,7 +65,7 @@
     ].join('');
     const edits = dirtyList();
     const bar = editable() && edits.length ? `<div class="inv-savebar" role="region" aria-label="Save changes"><div class="inv-savebar-info"><strong>${edits.length} change${edits.length === 1 ? '' : 's'}</strong><span>New total ${eur(total)}${total !== d.current.total_cents ? ` (${total > d.current.total_cents ? '+' : '−'} ${eur(Math.abs(total - d.current.total_cents))})` : ''}</span></div>
-      <input id="inv-reason" type="text" maxlength="300" placeholder="Reason for this change (required, kept in the history)" value="${e(doc.reason || '')}" aria-label="Reason for this change">
+      <input id="inv-reason" type="text" maxlength="300" placeholder="${doc.d.released ? 'Reason for this change (required, kept in the history)' : 'Note for the history (optional for a draft)'}" value="${e(doc.reason || '')}" aria-label="Reason for this change">
       <button type="button" class="button" data-inv="discard">Discard</button><button type="button" class="button primary" data-inv="save">Save changes</button></div>` : '';
     const rev = d.revisions.length ? `<details class="inv-history"><summary>Revision history <span>${d.revisions.length}</span></summary><ul>${d.revisions.map(r =>
       `<li><strong>Revision ${r.revision}</strong> · ${e(dateLabel(r.created_at))} · ${e(r.editor)}<br><span>${e(r.reason)}</span><br><small>${eur(r.before.total_cents)} → ${eur(r.after.total_cents)}</small></li>`).join('')}</ul></details>` : '';
@@ -130,13 +130,19 @@
   // ---------- company logo in Settings and on the invoices page
 
   function reviewPanel() {
-    const c = company(), on = !!c.review_invoices;
-    return panel('Review invoices before sending', 'When on, "Run monthly invoices" creates drafts. Nothing reaches the tenant (portal, alert or email) until you open the invoice, check or edit it and press Send to tenant.',
-      `<div class="panel-body"><label class="rv-switch"><input type="checkbox" ${on ? 'checked' : ''} ${canBrand() ? '' : 'disabled'} data-inv-change="review-toggle"> <span>${on ? 'On: new invoices wait for your review' : 'Off: new invoices are sent to tenants automatically'}</span></label></div>`);
+    const c = company(), auto = !c.review_invoices, day = Number(c.bill_day) || Number(state.data.bill_day_default) || 15;
+    // the next automatic run: this month's day if it is still ahead, else next month's; it makes the next month's invoices
+    const now = new Date((state.data.today || today()) + 'T12:00:00'), run = new Date(now.getFullYear(), now.getMonth() + (now.getDate() > day ? 1 : 0), day, 12);
+    const due = new Date(run.getFullYear(), run.getMonth() + 1, 1, 12), iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const monthName = d => d.toLocaleDateString(window.kreinLang === 'nl' ? 'nl-NL' : 'en-GB', {month: 'long', year: 'numeric'});
+    return panel('Automatic sending', 'Every month the software makes the rent invoices by itself. On: it also sends them to the tenants (portal and email). Off: they wait as drafts here until you check, edit and send them. "Run monthly invoices" always makes drafts.',
+      `<div class="panel-body"><label class="rv-switch"><input type="checkbox" ${auto ? 'checked' : ''} ${canBrand() ? '' : 'disabled'} data-inv-change="review-toggle"> <span>${auto ? 'On: monthly invoices are sent to tenants automatically' : 'Off: monthly invoices wait as drafts until you send them'}</span></label>
+       <div class="bd-row"><label for="bill-day">Make the invoices for the next month on day</label><select id="bill-day" ${canBrand() ? '' : 'disabled'} data-inv-change="bill-day">${Array.from({length: 28}, (_, k) => `<option value="${k + 1}" ${k + 1 === day ? 'selected' : ''}>${k + 1}</option>`).join('')}</select><span>of each month</span></div>
+       <p class="bd-next">Next run: <strong>${e(dateLabel(iso(run)))}</strong>: the invoices for ${e(monthName(due))}, due ${e(dateLabel(iso(due)))}, ${auto ? 'sent to the tenants' : 'made as drafts for you to check and send'}. The due date stays the 1st; about two weeks before it (day 10 to 20) gives tenants time to pay.</p></div>`);
   }
   const baseRender = renderPage;
   renderPage = () => {
-    const html = baseRender();
+    let html = baseRender();
     if (!state.company || !state.me) return html;
     if (state.page === 'settings') return html.replace('<div class="section-stack">', () => '<div class="section-stack">' + reviewPanel());
     if (state.page === 'invoices') {
@@ -146,6 +152,9 @@
       const mail = state.data.email_status;
       const mailBanner = mail && !mail.configured ? `<div class="notice inv-drafts"><span>${icon('clock')} <strong>Invoice emails are not switched on yet.</strong> Tenants still see their invoices in the portal. ${mail.waiting ? `${mail.waiting} email${mail.waiting === 1 ? ' is' : 's are'} waiting and will be sent as soon as email is switched on.` : ''}</span></div>`
         : mail && mail.failed ? `<div class="notice inv-drafts"><span>${icon('clock')} <strong>${mail.failed} email${mail.failed === 1 ? '' : 's'} could not be delivered.</strong> See Arrears &gt; Invoice email delivery to retry.</span></div>` : '';
+      // the switch right above the list of invoices
+      const list = html.indexOf('Rental invoices</h2>'), at = list < 0 ? -1 : html.lastIndexOf('<section', list);
+      if (at >= 0) html = html.slice(0, at) + reviewPanel() + html.slice(at);
       return html.replace(/(<div class="page-heading">)/, m => mailBanner + draftBanner + `<div class="inv-strip">${brandMark(c)}<div><strong>${e(c.name)}</strong><small>${e(c.address || '')}</small></div></div>` + m);
     }
     return html;
@@ -163,22 +172,28 @@
       await refresh(); toast('Invoice sent to the tenant.'); await openInvoice(id);
     },
     'send-all': async () => {
-      const n = rows('invoices').filter(i => !i.released_at).length;
-      if (!confirm(`Send all ${n} draft invoice${n === 1 ? '' : 's'} to the tenants now?`)) return;
-      const r = await api('/api/invoices/release', {method: 'POST', body: {company_id: state.company}});
+      const month = window.pagerFilter ? window.pagerFilter('invoices').period || '' : '';
+      const n = rows('invoices').filter(i => !i.released_at && (!month || i.period === month)).length;
+      if (!confirm(`Send all ${n} draft invoice${n === 1 ? '' : 's'}${month ? ' for ' + month : ''} to the tenants now?`)) return;
+      const r = await api('/api/invoices/release', {method: 'POST', body: {company_id: state.company, period: month}});
       await refresh(); toast(`${r.released} invoice${r.released === 1 ? '' : 's'} sent to the tenants.`);
     },
-    'review-toggle': async el => {
-      await api(`/api/companies/${company().id}/invoice-review`, {method: 'POST', body: {enabled: el.checked}});
+    'bill-day': async el => {
+      await api(`/api/companies/${company().id}/bill-day`, {method: 'POST', body: {day: Number(el.value)}});
       state.me = await api('/api/me'); render();
-      toast(el.checked ? 'New invoices will wait as drafts until you send them.' : 'New invoices will be sent to tenants automatically.');
+      toast(`From now on the invoices for the next month are made on day ${el.value} of each month.`);
+    },
+    'review-toggle': async el => {
+      await api(`/api/companies/${company().id}/invoice-review`, {method: 'POST', body: {enabled: !el.checked}});   // the switch shows automatic sending
+      state.me = await api('/api/me'); render();
+      toast(el.checked ? 'Monthly invoices will be sent to tenants automatically.' : 'Monthly invoices will wait as drafts until you send them.');
     },
     discard: () => { doc.draft = fresh(doc.d); doc.editing = null; doc.reason = ''; redrawDoc(); },
     save: async () => {
       if (doc.editing) commit(document.querySelector('[data-ef-input]'));
       const reason = (document.getElementById('inv-reason') || {}).value || doc.reason || '';
       doc.reason = reason;
-      if (!reason.trim()) { redrawDoc(); document.getElementById('inv-reason')?.focus(); toast('Add a short reason for the change first.'); return; }
+      if (!reason.trim() && doc.d.released) { redrawDoc(); document.getElementById('inv-reason')?.focus(); toast('Add a short reason for the change first.'); return; }
       const x = doc.draft, changed = {};
       for (const k of Object.keys(x.fields)) if (x.fields[k] !== doc.d.fields[k]) changed[k] = x.fields[k];
       const items = x.items.filter(i => i.description.trim() || i.amount !== '');

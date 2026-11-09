@@ -110,7 +110,7 @@ class HardeningTests(unittest.TestCase):
         r = tenant.post('/api/tenant/repairs', data={'contract_id': c['id'], 'title': 'Broken window', 'description': 'Glass cracked'})
         self.assertEqual(r.status_code, 200, r.text)
         notes = landlord.get('/api/data?company_id=1').json()['notifications']
-        self.assertIn('New tenant repair', [n['title'] for n in notes])
+        self.assertIn('Repair request to review', [n['title'] for n in notes])
         export = landlord.get(f"/api/tenants/{c['tenant_id']}/export")
         self.assertEqual(export.status_code, 200, export.text)
         data = json.loads(zipfile.ZipFile(io.BytesIO(export.content)).read('data.json'))

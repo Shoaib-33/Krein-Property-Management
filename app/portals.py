@@ -230,7 +230,7 @@ def tenant_data(user=Depends(current_user)):
             ('invoices','invoices','*'),('rent_versions','rent_versions','id,contract_id,effective_from,basic_cents,service_cents'),
             ('ledger','ledger','id,contract_id,invoice_id,kind,amount_cents,created_at'),
             ('deposit_events','deposits','id,contract_id,kind,amount_cents,status,reason,created_at'),
-            ('repairs','repairs','id,contract_id,title,category,urgency,description,status,reported_on,due_date,written,completed_at,completion_note,completion_document_id'),
+            ('repairs','repairs','id,contract_id,title,category,urgency,description,status,reported_on,due_date,written,completed_at,completion_note,completion_document_id,review,review_note'),
             ('requests','requests','id,contract_id,kind,subject,body,requested_date,status,response,created_at,responded_at,priority,video_document_id'),
             ('inspections','inspections','id,contract_id,kind,inspected_on,findings,status,document_id'),
             ('payment_plans','payment_plans','id,contract_id,title,total_cents,instalment_cents,first_due,interval_days,status')]:
@@ -319,8 +319,10 @@ async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),descriptio
     clip=await read_video(video) if video and video.filename else None
     with transaction() as conn:
         c=tenant_contract(conn,user,contract_id)
+        # a request: staff approve or decline it first (POST /api/repairs/{id}/review); the deadlines start at approval,
+        # only the first answer is due within the response time
         stamped=sla.stamp(conn,c['company_id'],urgency,local_today().isoformat())
-        rid=insert(conn,'repairs',{'company_id':c['company_id'],'contract_id':contract_id,'title':title,'description':description,'category':category,'urgency':urgency,'reported_on':local_today().isoformat(),'written':1,'due_date':stamped['due_date'],'response_due_at':stamped['response_due_at'],'created_at':now()})
+        rid=insert(conn,'repairs',{'company_id':c['company_id'],'contract_id':contract_id,'title':title,'description':description,'category':category,'urgency':urgency,'reported_on':local_today().isoformat(),'written':1,'due_date':local_today().isoformat(),'response_due_at':stamped['response_due_at'],'status':'requested','review':'pending','created_at':now()})
         doc_id=save_document(conn,c['company_id'],contract_id,user['id'],'Repair evidence',upload) if upload else None
         if doc_id:
             share_document(conn,c['company_id'],contract_id,doc_id,user['id'])
@@ -333,11 +335,10 @@ async def tenant_repair(contract_id:int=Form(...),title:str=Form(...),descriptio
             vid=save_document(conn,c['company_id'],contract_id,user['id'],'Repair video',clip)
             share_document(conn,c['company_id'],contract_id,vid,user['id'])
             insert(conn,'repair_updates',{'company_id':c['company_id'],'repair_id':rid,'user_id':user['id'],'message':'Video from the tenant','document_id':vid,'tenant_visible':1,'created_at':now()})
-        task(conn,c['company_id'],contract_id,f'Triage tenant repair #{rid}: {title}',local_today().isoformat(),'Emergency' if urgency=='Emergency' else 'Repair')
-        task(conn,c['company_id'],contract_id,f'Review day-35 repair #{rid}',(local_today()+timedelta(days=35)).isoformat(),'Repair')
-        notify_staff(conn,c['company_id'],'New tenant repair',title,'repairs',contract_id=c['id'])
+        task(conn,c['company_id'],contract_id,f'Approve or decline repair request #{rid}: {title}',local_today().isoformat(),'Emergency' if urgency=='Emergency' else 'Repair')
+        notify_staff(conn,c['company_id'],'Repair request to review' if urgency!='Emergency' else 'URGENT repair request to review',title,'repairs',contract_id=c['id'])
         audit(conn,user['id'],c['company_id'],'reported','repair',rid,{'title':title,'urgency':urgency})
-    return {'id':rid}
+    return {'id':rid,'status':'requested'}
 
 
 @router.post('/api/tenant/repairs/{repair_id}/follow-up')
@@ -346,7 +347,10 @@ def tenant_repair_followup(repair_id:int,data:dict,user=Depends(current_user)):
     with transaction() as conn:
         r=tenant_record(conn,user,'repairs',repair_id)
         insert(conn,'repair_updates',{'company_id':r['company_id'],'repair_id':repair_id,'user_id':user['id'],'message':message,'tenant_visible':1,'created_at':now()})
-        if data.get('reopen') is True and r['status'] in ('done','closed'):
+        if data.get('reopen') is True and r['review']=='declined':   # a declined request: back to staff for review
+            conn.execute("UPDATE repairs SET status='requested',review='pending',completed_at=NULL WHERE id=?",(repair_id,))
+            task(conn,r['company_id'],r['contract_id'],f'Approve or decline repair request #{repair_id} again: {r["title"]}',local_today().isoformat(),'Repair')
+        elif data.get('reopen') is True and r['status'] in ('done','closed'):
             conn.execute('UPDATE repairs SET status="reopened",completed_at=NULL WHERE id=?',(repair_id,))
             task(conn,r['company_id'],r['contract_id'],f'Tenant reopened repair #{repair_id}',local_today().isoformat(),'Repair')
         notify_staff(conn,r['company_id'],'Repair follow-up',message[:150],'repairs',contract_id=r['contract_id'])

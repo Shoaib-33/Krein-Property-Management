@@ -323,6 +323,8 @@ def appointment(data):
 def create_work_order(data:dict,user=Depends(current_user)):
     with transaction() as conn:
         r=record(conn,'repairs',integer(data,'repair_id'),user,OPS)
+        if r['review']=='pending':
+            raise HTTPException(409,'Approve or decline this repair request first.')
         c=linked(conn,'contractors',integer(data,'contractor_id'),r['company_id'])
         if not c['active'] or not c['agreement_document_id']:
             raise HTTPException(422,'Attach the contractor agreement before assigning tenant work.')

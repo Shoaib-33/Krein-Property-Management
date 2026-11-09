@@ -58,7 +58,7 @@
   function repairSla(r) {
     const dueAt = Date.parse(r.response_due_at || '') || (Date.parse(r.created_at) + slaHours(r.urgency) * 36e5);
     const late = !r.responded_at && Date.now() > dueAt;
-    const overdue = !['done', 'closed'].includes(r.status) && Date.parse(r.due_date + 'T23:59:59') < Date.now();
+    const overdue = !['done', 'closed', 'requested'].includes(r.status) && Date.parse(r.due_date + 'T23:59:59') < Date.now();   // a request has no resolve-by date yet
     return {late, overdue};
   }
   const draftKey = k => `krein_draft_${state.company}_${k}`;
@@ -185,6 +185,8 @@
     }
     if (it.type === 'repair') {
       const r = it.repair, closed = it.resolved;
+      if (r.status === 'requested') return `${it.sla.late ? '<span class="ib-tag bad">First response late</span>' : ''}<span class="ib-tag">Repair request: waiting for your review</span>${button('Decline', 'noop', 'data-in="repair-decline"', '')}${button('Approve', 'noop', 'data-in="repair-approve"', 'primary')}`;
+      if (r.review === 'declined') return `${badge('Declined', 'gray')}<span class="ib-tag">${e(r.review_note || '')}</span>`;
       const sel = closed ? '' : `<select data-in-repair-status aria-label="Repair status">${REPAIR_STATUS.map(v => `<option ${v === r.status ? 'selected' : ''}>${v}</option>`).join('')}</select>`;
       return `${it.sla.late ? '<span class="ib-tag bad">First response late</span>' : ''}${it.sla.overdue ? '<span class="ib-tag bad">Resolve-by passed</span>' : ''}${sel}${closed ? badge(r.status) + button('Reopen', 'noop', 'data-in="repair-reopen"', '') : (rows('work_orders').some(w => w.repair_id === r.id && !['completed', 'closed', 'cancelled'].includes(w.status)) ? `<span class="ib-tag ok">${e((byId('contractors', (rows('work_orders').find(w => w.repair_id === r.id && !['completed', 'closed', 'cancelled'].includes(w.status)) || {}).contractor_id) || {}).name || 'Contractor')} assigned</span>` : button('Assign contractor', 'noop', 'data-in="repair-assign"', '')) + button('Mark resolved…', 'noop', 'data-in="repair-complete"', 'primary')}`;
     }
@@ -294,6 +296,8 @@
     filter: el => { ui.filter = el.dataset.key; ui.limit = 40; render(); },
     type: el => { ui.type = el.dataset.key; ui.limit = 40; render(); },
     'repair-assign': () => assignWork(current().id),
+    'repair-approve': () => showRepairReview(current().id, 'approve'),
+    'repair-decline': () => showRepairReview(current().id, 'decline'),
     'repair-complete': () => showRepairStatus(current().id, 'done'),
     'repair-reopen': () => api(`/api/repairs/${current().id}/status`, {method: 'POST', body: {status: 'reopened'}}).then(() => api(`/api/data?company_id=${state.company}`)).then(d => { state.data = d; redraw(); toast('Ticket reopened.'); }),
     'toggle-resolved': () => { const it = current(); return setState(it, {status: it.resolved ? 'open' : 'resolved'}).then(() => toast(it.resolved ? 'Conversation reopened.' : 'Marked resolved. The tenant was notified.')); },
