@@ -1,6 +1,5 @@
-"""A tenant's postal address in the Dutch format, for when mail should not go to the rented home: before the move-in (the
-first invoice and the deposit request), after the move-out (final settlement, deposit return, a 14-day letter) or when the
-tenant wants post sent elsewhere. Empty means "same as the rented home".
+"""A tenant's address in the Dutch format: the home the tenant rents. Saving it links the tenant to that property and adds
+the property to Properties when it is not there yet (link_home below). Invoices and letters are addressed to it.
 
 Street and city can be filled in from postcode + house number with the government's free address register (PDOK
 Locatieserver, BAG data): /api/address-lookup."""
@@ -91,3 +90,71 @@ def address_lookup(postcode: str = '', number: str = '', user=Depends(current_us
     if not docs:
         return {'found': False, 'postcode': code}
     return {'found': True, 'postcode': code, 'street': docs[0].get('straatnaam', ''), 'city': docs[0].get('woonplaatsnaam', '')}
+
+
+# ---------------------------------------------------------------- the rented home
+# The address staff fill in for a tenant is the home the tenant rents. Saving it links the tenant to that property
+# (tenants.home_property_id), and adds the property when it is not in Properties yet. A home is the same home when the
+# street + number + addition match (spaces, dashes and case do not matter) and the postcode matches, or the city when a
+# property has no postcode.
+
+def _norm(value):
+    """'Thijssestraat 189-2C' and 'thijssestraat 189 2c' -> 'thijssestraat|189|2|c'; 'Thijssestraat 18-92C' stays different."""
+    return '|'.join(re.findall(r'[a-z]+|[0-9]+', str(value or '').split(',')[0].lower()))
+
+
+def find_home(conn, company_id, t):
+    """The id of the property at the tenant's address, or None."""
+    t = dict(t)
+    first = lines(t)[:1]
+    if not first:
+        return None
+    key, code, city = _norm(first[0]), _norm(t.get('addr_postcode')), _norm(t.get('addr_city'))
+    for p in conn.execute('SELECT id,address,postcode,city FROM properties WHERE company_id=? ORDER BY id', (company_id,)).fetchall():
+        if _norm(p['address']) != key:
+            continue
+        if (code and _norm(p['postcode']) == code) or (not _norm(p['postcode']) and _norm(p['city']) == city):
+            return p['id']
+    return None
+
+
+def link_home(conn, company_id, tenant_id, t, create=True, allowed=None):
+    """Link the tenant to the property at their address, adding the property when needed (create=False: only link to an
+    existing one; allowed: the property ids that may be linked, for a landlord). Returns (property_id, created)."""
+    t = dict(t)
+    first = lines(t)[:1]
+    if not first:
+        return None, False
+    pid = find_home(conn, company_id, t)
+    if pid and allowed is not None and pid not in allowed:
+        pid = None
+    created = False
+    if not pid and create:
+        old = t.get('home_property_id')
+        # a typo fixed in the address: the home added for this tenant alone (no tenancy, offer or other tenant) follows the
+        # new address instead of leaving a second, wrong home behind
+        if old and not conn.execute('SELECT 1 FROM contracts WHERE property_id=? UNION ALL SELECT 1 FROM lease_offers WHERE property_id=? UNION ALL SELECT 1 FROM tenants WHERE home_property_id=? AND id<>?', (old, old, old, tenant_id)).fetchone():
+            conn.execute('UPDATE properties SET name=?,address=?,postcode=?,city=? WHERE id=? AND company_id=?',
+                         (f'{first[0]}, {t["addr_city"]}', first[0], t.get('addr_postcode') or '', t['addr_city'], old, company_id))
+            pid = old
+        else:
+            from .db import now
+            cur = conn.execute("INSERT INTO properties(company_id,name,address,city,postcode,kind,rooms,area,energy_label,bag_id,created_at) VALUES(?,?,?,?,?,'Apartment',1,0,'Unknown','',?)",
+                               (company_id, f'{first[0]}, {t["addr_city"]}', first[0], t['addr_city'], t.get('addr_postcode') or '', now()))
+            pid, created = cur.lastrowid, True
+    if pid:
+        conn.execute('UPDATE tenants SET home_property_id=? WHERE id=?', (pid, tenant_id))
+    return pid, created
+
+
+def link_all_homes(conn):
+    """Once, for the tenants added before this existed: each tenant gets the apartment at their address, as when a tenant is
+    added now (added to Properties when it is not there). A tenant without an address is linked to the home of their tenancy
+    or contract offer, if any. Removed tenants are left alone."""
+    for t in conn.execute('SELECT * FROM tenants WHERE archived_at IS NULL AND home_property_id IS NULL ORDER BY id').fetchall():
+        if lines(t):
+            link_home(conn, t['company_id'], t['id'], t)
+            continue
+        c = conn.execute("SELECT c.property_id FROM contract_people cp JOIN contracts c ON c.id=cp.contract_id WHERE cp.tenant_id=? ORDER BY CASE WHEN c.status IN ('active','notice given','pending signature') THEN 0 ELSE 1 END, c.start_date DESC LIMIT 1", (t['id'],)).fetchone()             or conn.execute("SELECT property_id FROM lease_offers WHERE tenant_id=? ORDER BY id DESC LIMIT 1", (t['id'],)).fetchone()
+        if c:
+            conn.execute('UPDATE tenants SET home_property_id=? WHERE id=?', (c['property_id'], t['id']))

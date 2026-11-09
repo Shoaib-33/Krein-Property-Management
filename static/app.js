@@ -401,7 +401,8 @@ function manualContractForm(forTenant=null){   // forTenant: opened from a tenan
  if(forTenant){   // the tenant's own home (current or last tenancy) first, else the first property they can rent
   const own=rows('contracts').filter(c=>c.tenant_id===forTenant).sort((a,b)=>b.start_date.localeCompare(a.start_date))[0];
   const fits=p=>tenantsForProperty(p,startSelect.value).some(t=>t.id===forTenant);
-  const prop=own&&fits(own.property_id)?own.property_id:(propertyChoices.find(([p])=>fits(p))||[])[0];
+  const home=byId('tenants',forTenant)?.home_property_id;   // the home at the tenant's address
+  const prop=own&&fits(own.property_id)?own.property_id:home&&fits(home)?home:(propertyChoices.find(([p])=>fits(p))||[])[0];
   if(prop){propertySelect.value=String(prop);updateTenantOptions();tenantSelect.value=String(forTenant);updateDocumentOptions();updateMode();}
  }
 }

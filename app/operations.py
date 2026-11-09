@@ -118,6 +118,11 @@ def edit_tenant(tenant_id:int,data:dict,user=Depends(current_user)):
         values.update(postal_address(data))   # empty: post goes to the rented home
         conn.execute(f'UPDATE tenants SET {",".join(k+"=?" for k in values)} WHERE id=?',(*values.values(),tenant_id))
         audit(conn,user['id'],t['company_id'],'contact_updated','tenant',tenant_id,{'old':{k:t[k] for k in values},'new':values})
+        from .tenant_address import link_home
+        scope=getattr(conn,'scope',None)   # a landlord links to his own homes only, and adds none
+        home,made=link_home(conn,t['company_id'],tenant_id,{**dict(t),**values},create=scope is None,allowed=None if scope is None else set(scope.properties))
+        if made:
+            audit(conn,user['id'],t['company_id'],'created','properties',home,{'from_tenant':tenant_id})
     return {'ok':True,'note':'Portal login email remains unchanged.'}
 
 

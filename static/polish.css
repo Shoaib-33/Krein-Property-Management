@@ -462,3 +462,7 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
   .portal-shell .table-wrap td[data-label=""]::before{display:none}
   .portal-shell .table-wrap td[data-label=""]{justify-content:flex-end}
 }
+
+/* tenant file: the rented home opens the property */
+.tf-home{background:none;border:0;padding:0;font:inherit;color:var(--brand,#1f6b4f);text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+.tf-home:hover{color:var(--ink,#10281f)}

@@ -191,7 +191,7 @@
       if (!templates.length) { toast('Add a Lease template first (Templates & fields).'); state.page = 'templates'; render(); return; }
       if (!rows('tenants').filter(t => !t.archived_at).length) { toast('Add the tenant first.'); return; }
       if (!rows('properties').length) { toast('Add a property first.'); return; }
-      if (Number(tenantId)) sendDraft = sendDraft && Number(sendDraft.tenant_id) === Number(tenantId) ? sendDraft : {tenant_id: Number(tenantId)};   // from a tenant's file
+      if (Number(tenantId)) sendDraft = sendDraft && Number(sendDraft.tenant_id) === Number(tenantId) ? sendDraft : {tenant_id: Number(tenantId), ...(byId('tenants', Number(tenantId))?.home_property_id ? {property_id: byId('tenants', Number(tenantId)).home_property_id} : {})};   // from a tenant's file: their home chosen
       else sendDraft = sendDraft || {};
       api(`/api/companies/${state.company}/signature`).then(r => { hasSig = !!r.set; sigInfo = r; }).catch(() => { hasSig = null; sigInfo = null; }).then(showSendForm);
     },

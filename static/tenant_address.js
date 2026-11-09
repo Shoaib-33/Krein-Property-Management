@@ -21,8 +21,8 @@
   // prefix 'addr_' for the tenant, 'co_addr_' for the partner added with them (who gets a "same as the main tenant" button)
   window.postalSection = (t = {}, prefix = 'addr_') => {
     const f = n => prefix + n, v = n => t['addr_' + n] || '', co = prefix !== 'addr_';
-    return `<div class="pa-fields wide" data-pa="${prefix}"><div class="pa-head"><h3 class="lf-h">${co ? 'Co-tenant address' : 'Address'}</h3>${co ? '<button type="button" class="button small" data-pa-copy>Same as the main tenant</button>' : ''}</div>
-      <p class="modal-note pa-intro">${co ? 'Where post for the co-tenant goes.' : 'Where post for the tenant goes: their current address, or the rented home once they live there.'}</p><div class="form-grid">
+    return `<div class="pa-fields wide" data-pa="${prefix}"><div class="pa-head"><h3 class="lf-h">${co ? 'Co-tenant address' : 'Address of the rented home'}</h3>${co ? '<button type="button" class="button small" data-pa-copy>Same as the main tenant</button>' : ''}</div>
+      <p class="modal-note pa-intro">${co ? 'Where post for the co-tenant goes.' : 'The home this tenant rents. When you save, it is added to Properties if it is not there yet.'}</p><div class="form-grid">
         ${field([f('postcode'), 'Postcode', 'text', {value: v('postcode'), placeholder: '1015 CJ'}])}
         ${field([f('number'), 'House number', 'text', {value: v('number'), placeholder: '123'}])}
         ${field([f('addition'), 'Addition (optional)', 'text', {value: v('addition'), required: false, placeholder: 'A, 2, hoog'}])}

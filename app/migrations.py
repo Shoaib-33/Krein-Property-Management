@@ -645,6 +645,9 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V50: the address of a tenant is the home they rent: tenants.home_property_id links it to Properties. The tenants added
+# before are linked once (app/tenant_address.py link_all_homes), adding the homes that are not in Properties yet.
+
 # V43: the developer may delete a tenant permanently (app/developer.py). The financial records still refuse every delete,
 # except inside that one transaction (a row in record_deletion); changing them stays impossible.
 V43 = '''
@@ -797,6 +800,9 @@ UPDATE companies SET review_invoices=1;
     49: '''
 ALTER TABLE companies ADD COLUMN bill_day BIGINT;
 ''',
+    50: '''
+ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id);
+''',
 }
 
 
@@ -807,6 +813,9 @@ def migrate_postgres(conn):
     for version in sorted(POSTGRES):
         if version not in done:
             conn.executescript(POSTGRES[version])
+            if version == 50:
+                from .tenant_address import link_all_homes
+                link_all_homes(conn)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (version, now()))
     conn.commit()
 
@@ -1192,6 +1201,11 @@ def migrate(conn):
         if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=49').fetchone():
             conn.execute('ALTER TABLE companies ADD COLUMN bill_day INTEGER')
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (49, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=50').fetchone():
+            conn.execute('ALTER TABLE tenants ADD COLUMN home_property_id INTEGER REFERENCES properties(id)')
+            from .tenant_address import link_all_homes
+            link_all_homes(conn)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (50, now()))
         conn.commit()
     except Exception:
         conn.rollback()

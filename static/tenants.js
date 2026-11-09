@@ -144,7 +144,7 @@
     ].join('');
     const head = `<div class="tf-back">${back}</div><div class="page-heading tf-head"><div><div class="eyebrow">TENANT</div><h1>${e(t.name)}</h1>
       <p class="subtitle">${e(t.email)}${t.phone ? ' · ' + e(t.phone) : ''} · ${t.language === 'nl' ? 'Dutch' : 'English'} ${portal}${t.archived_at ? ' ' + badge('Removed', 'gray') : ''}</p>
-      <p class="subtitle tf-postal">${window.postalLines && postalLines(t).length ? `<span>Address:</span> ${e(postalLines(t).join(', '))}` : '<span>Address:</span> not filled in yet (Edit details)'}</p></div><div class="actions">${actions}</div></div>`;
+      <p class="subtitle tf-postal">${window.postalLines && postalLines(t).length ? `<span>Rented home:</span> ${byId('properties', t.home_property_id).id ? `<button type="button" class="tf-home" data-action="property-detail" data-id="${t.home_property_id}" title="Open the property">${e(postalLines(t).join(', '))}</button>` : e(postalLines(t).join(', '))}` : '<span>Rented home:</span> not filled in yet (Edit details)'}</p></div><div class="actions">${actions}</div></div>`;
     // key figures
     const sched = current && current.schedule, due = sched && sched.due, next = sched && sched.next;
     const lastPay = f.money ? (f.payments || []).find(p => p.amount_cents > 0 && p.how !== 'credit note') : null;

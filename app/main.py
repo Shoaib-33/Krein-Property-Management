@@ -824,16 +824,24 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
         else:
             raise HTTPException(404, 'Unknown record type.')
         record_id = insert(conn, kind, values)
+        home = None
+        if kind == 'tenants':   # the address is the rented home: link it, and add it to Properties when it is not there
+            from .tenant_address import link_home
+            home, made = link_home(conn, company_id, record_id, values, create=scope is None, allowed=None if scope is None else set(scope.properties))
+            if made:
+                audit(conn, user['id'], company_id, 'created', 'properties', home, {'from_tenant': record_id})
         if kind == 'tenants' and str(data.get('co_name') or '').strip():   # a partner / spouse who rents together with this tenant
             from .co_tenants import create_partner
             co_id = create_partner(conn, company_id, record_id, data, values)
+            if home:
+                conn.execute('UPDATE tenants SET home_property_id=? WHERE id=?', (home, co_id))
             audit(conn, user['id'], company_id, 'created', kind, co_id, {'co_of': record_id})
         if kind == 'repairs':
             task(conn, company_id, values['contract_id'], f'Review repair #{record_id}: {values["title"]}', (date.fromisoformat(reported)+timedelta(days=35)).isoformat() if values['written'] else reported, 'Repair', values['assigned_to'] or 'Property team')
             if values['urgency'] == 'Emergency':
                 task(conn, company_id, values['contract_id'], f'Immediate response: repair #{record_id}', reported, 'Emergency', 'Property team')
         audit(conn, user['id'], company_id, 'created', kind, record_id, values)
-        return {'id': record_id}
+        return {'id': record_id, **({'home_property_id': home} if kind == 'tenants' else {})}
 
 
 PORTFOLIO_IMPORT_COLUMNS = ('property_name','address','city','postcode','kind','area','rooms','energy_label','bag_id','tenant_name','tenant_email','tenant_phone','tenant_language','postal_street','postal_number','postal_addition','postal_postcode','postal_city','postal_country','signed_on','start_date','end_date','basic_rent','service_charge','deposit')
