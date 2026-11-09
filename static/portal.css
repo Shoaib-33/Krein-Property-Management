@@ -24,5 +24,16 @@
 
 /* repair requests: the emergency note in the form, and a request that was not approved */
 .rp-emergency{background:#fff4ef;border:1px solid #f1d2c4;color:#7a3a22;border-radius:8px;padding:10px 12px;margin:-8px 0 16px;font-size:12px;line-height:1.6}
-.rp-declined{background:#f6f6f4;border:1px solid var(--line,#e3e8e4);border-radius:8px;padding:10px 12px;margin:10px 0;font-size:12px}
-.rp-declined p{margin:4px 0 0;white-space:pre-wrap}
+
+/* a repair request that was not approved */
+.rp-card.is-declined{border-left:4px solid #c2412d}
+.rp-decision{display:flex;gap:14px;align-items:flex-start;background:#fdf3f0;border:1px solid #f3d6cd;border-radius:10px;padding:14px 16px;margin:14px 0}
+.rp-decision-icon{width:34px;height:34px;border-radius:50%;background:#fff;display:grid;place-items:center;color:#c2412d;flex-shrink:0}
+.rp-decision-icon .icon{width:17px;height:17px}
+.rp-decision strong{font-size:14px;color:#6e2a1c;display:block}
+.rp-reason{margin-top:10px;background:#fff;border-radius:8px;padding:10px 12px;border:1px solid #f3d6cd}
+.rp-reason small,.rp-own small{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:3px}
+.rp-reason p{margin:0;font-size:14px;color:var(--ink);white-space:pre-wrap}
+.rp-own{margin:0 0 12px}.rp-own p{margin:0;font-size:13px;color:var(--ink-2,#2c453a)}
+.rp-appeal{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.rp-appeal>span{font-size:13px;color:var(--muted)}
