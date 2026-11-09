@@ -347,7 +347,8 @@
     const rent = cur ? ((cur.rent.basic_cents || 0) + (cur.rent.service_cents || 0)) / 100 : '';
     const d = new Date(), last = new Date(d.getFullYear(), d.getMonth() - 1, 1), ym = `${last.getFullYear()}-${String(last.getMonth() + 1).padStart(2, '0')}`;
     formModal('Add a month of payment history', [['period', 'Month', 'month', {value: ym}], ['due', 'Rent due for that month (€)', 'number', {value: rent, required: false, step: '0.01'}], amountField('paid', 'Amount paid (€)', rent),
-      ['paid_on', 'Date paid', 'date', {required: false}], selectField('method', 'How', ['Bank transfer', 'Cash', 'Other']), ['note', 'Note (optional)', 'text', {required: false, wide: true}]],
+      ['paid_on', 'Date paid', 'date', {required: false}], selectField('method', 'How', ['Bank transfer', 'Cash', 'Other']), ['note', 'Note (optional)', 'text', {required: false, wide: true}],
+      ...((f.history || []).length ? [['extra', 'This is a second payment for this month (for example paid in parts)', 'checkbox', {required: false}]] : [])],
       async data => { await api(`/api/tenants/${t.id}/payment-history`, {method: 'POST', body: data}); ui.file = null; load(); },
       {intro: 'For the months before Krein was used. This is a record only: no invoice is made and nothing is sent to the tenant.', submit: 'Save month', success: 'Month saved.'});
   });

@@ -256,7 +256,7 @@
       if (act === 'history-all') {
         if (!confirm(`Save all ${ui.data.history_ready} as manual payments? Each goes on that tenant’s page under Manual payment. Nothing is sent to the tenant.`)) return;
         el.disabled = true; const r = await api('/api/bank/history-all', {method: 'POST', body: {company_id: state.company}});
-        toast(`${r.saved} payment(s) saved as manual payments.`); ui.data = null; await refresh(); await load(); return;
+        toast(`${r.saved} payment(s) saved as manual payments.` + (r.skipped ? ` ${r.skipped} not saved: that month already has the same amount entered by hand. They stay on the list.` : '')); ui.data = null; await refresh(); await load(); return;
       }
       if (act === 'approve') { el.disabled = true; await api(`/api/bank/lines/${id}/approve`, {method: 'POST', body: {}}); toast('Payment approved and booked. The tenant has been told.'); await refresh(); await load(); return; }
       if (act === 'approve-all') {

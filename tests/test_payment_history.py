@@ -112,6 +112,25 @@ class PaymentHistoryTests(unittest.TestCase):
         self.assertIn(STRANGER, [a['iban'] for a in accounts])
         self.assertEqual(self.finance.post(f"/api/bank/lines/{line['id']}/history", json={'tenant_id': self.tid}).status_code, 409)
 
+    def test_no_double_saving(self):
+        add = lambda **x: self.finance.post(f'/api/tenants/{self.tid}/payment-history', json={'period': '2026-10', 'paid': '989.00', **x})
+        self.assertEqual(add().status_code, 200)
+        r = add()
+        self.assertEqual(r.status_code, 409)
+        self.assertIn('October 2026 already has a manual payment', r.json()['detail'])
+        self.assertEqual(add(extra=True).status_code, 200)   # paid in parts: allowed when staff say so
+        self.assertEqual(len(self.history()), 2)
+        # the same amount from the bank statement for that month is not saved again, not one by one and not with Save all
+        self.assertEqual(self.finance.post(f'/api/tenants/{self.tid}/bank-accounts', json={'iban': NEW_IBAN}).status_code, 200)
+        self.upload([('989.00', 'CRDT', 'Bollen', NEW_IBAN, 'huur 10/2026', 'D1')], '2026-10-01')
+        line = next(l for l in self.check_lines()['items'] if l['iban'] == NEW_IBAN)
+        self.assertEqual(self.finance.post(f"/api/bank/lines/{line['id']}/history", json={'tenant_id': self.tid}).status_code, 409)
+        self.assertEqual(self.finance.post('/api/bank/history-all', json={'company_id': 1}).json(), {'saved': 0, 'skipped': 1})
+        self.assertEqual(len(self.history()), 2)
+        # the same statement uploaded again adds nothing
+        self.upload([('989.00', 'CRDT', 'Bollen', NEW_IBAN, 'huur 10/2026', 'D1')], '2026-10-01')
+        self.assertEqual(len([l for l in self.check_lines()['items'] if l['iban'] == NEW_IBAN]), 1)
+
     def test_property_role_cannot_add(self):
         prop = self.login('manager@krein.local')
         self.assertEqual(prop.post(f'/api/tenants/{self.tid}/payment-history', json={'period': '2026-10', 'paid': '1'}).status_code, 200)

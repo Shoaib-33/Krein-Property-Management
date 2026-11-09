@@ -99,6 +99,15 @@ def rows_for(conn, tenant_id):
     return [dict(r) for r in conn.execute('SELECT h.*,u.name entered_by FROM payment_history h LEFT JOIN users u ON u.id=h.created_by WHERE h.tenant_id=? ORDER BY h.period DESC,h.id DESC', (tenant_id,))]
 
 
+def _euro(c):
+    return f'€{c / 100:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+def _month(period):
+    y, m = period.split('-')
+    return f"{['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][int(m) - 1]} {y}"
+
+
 def _save(conn, user, tenant, period, paid, due, paid_on, method, note, line_id=None):
     hid = conn.execute('INSERT INTO payment_history(company_id,tenant_id,period,due_cents,paid_cents,paid_on,method,note,bank_line_id,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
                        (tenant['company_id'], tenant['id'], period, due, paid, paid_on, method, note, line_id, user['id'], now())).lastrowid
@@ -115,6 +124,12 @@ def add_history(tenant_id: int, data: dict, user=Depends(current_user)):
         paid, due = _cents(data.get('paid'), 'amount paid'), _cents(data.get('due'), 'rent due', required=False)
         method = data.get('method') if data.get('method') in METHODS else 'Bank transfer'
         note = str(data.get('note') or '').strip()[:300]
+        # no double entry: a month that already has a payment is only saved again when staff say it is a second, separate payment
+        have = conn.execute('SELECT paid_cents,bank_line_id FROM payment_history WHERE tenant_id=? AND period=?', (tenant_id, period)).fetchall()
+        if have and str(data.get('extra') or '').lower() not in ('1', 'true', 'on', 'yes'):
+            how = 'from the bank statement' if any(h['bank_line_id'] for h in have) else 'entered by hand'
+            raise HTTPException(409, f"{_month(period)} already has a manual payment of {_euro(sum(h['paid_cents'] for h in have))} for this tenant ({how}). "
+                                     'Only if this is a second, separate payment (for example paid in parts), tick "This is a second payment for this month".')
         hid = _save(conn, user, tenant, period, paid, due, _day(data.get('paid_on'), period), method, note)
     return {'id': hid}
 
@@ -141,6 +156,10 @@ def _line_to_history(conn, user, line, tenant_id, period, due=None):
         raise HTTPException(422, 'Choose the tenant who paid.')
     tenant = dict(tenant)
     period = _period(period or period_of(line['description'], line['booked_on']))
+    # the same payment already typed in by hand for this month: not saved a second time
+    if conn.execute('SELECT 1 FROM payment_history WHERE tenant_id=? AND period=? AND paid_cents=? AND bank_line_id IS NULL', (tenant['id'], period, line['amount_cents'])).fetchone():
+        raise HTTPException(409, f"{_month(period)} already has a payment of {_euro(line['amount_cents'])} entered by hand for {tenant['name']}. "
+                                 "Remove that one on the tenant's page first if this bank payment should replace it, or use Ignore.")
     hid = _save(conn, user, tenant, period, line['amount_cents'], _cents(due, 'rent due', required=False), line['booked_on'], 'Bank transfer',
                 (line['description'] or '')[:300], line['id'])
     if line['iban']:
@@ -154,7 +173,7 @@ def _line_to_history(conn, user, line, tenant_id, period, due=None):
 def all_to_history(data: dict, user=Depends(current_user)):
     """Save every payment to check that comes from a tenant's known IBAN and fits no invoice as past payment."""
     company_id = int(data.get('company_id') or 0)
-    saved = 0
+    saved, skipped = 0, 0
     with transaction() as conn:
         authorize(conn, user, company_id, ROLES)
         conn.scope = None
@@ -162,9 +181,14 @@ def all_to_history(data: dict, user=Depends(current_user)):
         for line in history_hints(conn, company_id, lines):
             hint = line['history_hint']
             if hint and hint['tenant_id']:
-                _line_to_history(conn, user, line, hint['tenant_id'], hint['period'])
-                saved += 1
-    return {'saved': saved}
+                try:
+                    _line_to_history(conn, user, line, hint['tenant_id'], hint['period'])
+                    saved += 1
+                except HTTPException as err:   # already entered by hand: stays on the list for a person to decide
+                    if err.status_code != 409:
+                        raise
+                    skipped += 1
+    return {'saved': saved, 'skipped': skipped}
 
 
 @router.delete('/api/payment-history/{history_id}')
