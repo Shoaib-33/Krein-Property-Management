@@ -645,6 +645,14 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V52: the property page (app/property_file.py): an internal note per home, and documents filed on the home itself
+V52 = '''
+ALTER TABLE properties ADD COLUMN note TEXT NOT NULL DEFAULT '';
+ALTER TABLE properties ADD COLUMN note_updated_at TEXT;
+ALTER TABLE properties ADD COLUMN note_updated_by INTEGER REFERENCES users(id);
+ALTER TABLE documents ADD COLUMN property_id INTEGER REFERENCES properties(id);
+'''
+
 # V51: payment history from before Krein (app/payment_history.py): months paid before the software was used, no invoice
 V51 = '''
 CREATE TABLE payment_history (
@@ -812,6 +820,12 @@ ALTER TABLE companies ADD COLUMN bill_day BIGINT;
 ''',
     50: '''
 ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id);
+''',
+    52: '''
+ALTER TABLE properties ADD COLUMN note TEXT NOT NULL DEFAULT '';
+ALTER TABLE properties ADD COLUMN note_updated_at TEXT;
+ALTER TABLE properties ADD COLUMN note_updated_by BIGINT REFERENCES users(id);
+ALTER TABLE documents ADD COLUMN property_id BIGINT REFERENCES properties(id);
 ''',
     51: '''
 CREATE TABLE payment_history (
@@ -1232,6 +1246,11 @@ def migrate(conn):
                     conn.execute(statement)
                     statement = ''
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (51, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=52').fetchone():
+            for statement in V52.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (52, now()))
         conn.commit()
     except Exception:
         conn.rollback()

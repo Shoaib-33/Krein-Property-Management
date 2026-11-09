@@ -491,3 +491,16 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .tf-stats .stat-act{margin-top:auto;padding-top:12px}
 .tf-empty-acts{justify-content:center;margin-top:4px}
 .tf-more{display:flex;gap:9px;flex-wrap:wrap;padding-top:14px}
+
+/* property page: specs under the address, and the internal note at the top */
+.pf-specs{display:flex;gap:16px;flex-wrap:wrap;margin-top:10px;font-size:13px;color:var(--muted)}
+.pf-specs span{display:inline-flex;align-items:center;gap:5px}.pf-specs .icon{width:15px;height:15px}
+.tf-head h1 .badge{vertical-align:middle;margin-left:8px;font-size:12px}
+.pf-note{background:#fff8e6;border:1px solid #f0dca8;border-left:5px solid #d9a521;border-radius:12px;padding:16px 20px;margin:0 0 22px}
+.pf-note.is-empty{background:#fffdf6;border-left-color:#e8cf8a}
+.pf-note-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.pf-note-head h2{display:flex;align-items:center;gap:8px;font-size:16px;margin:0;color:#6b4e0e}.pf-note-head h2 .icon{width:17px;height:17px}
+.pf-note-tag{font-size:11px;font-weight:600;color:#8a6a1f;background:#f8eccd;border-radius:10px;padding:2px 9px}
+.pf-note-head .button{margin-left:auto}
+.pf-note-text{margin:10px 0 4px;font-size:14px;line-height:1.6;color:var(--ink);white-space:pre-wrap}
+.pf-note-meta{font-size:11px;color:#8a7a55}

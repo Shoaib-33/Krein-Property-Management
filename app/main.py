@@ -604,6 +604,10 @@ def all_data(company_id: int, user=Depends(current_user)):
             from .scope import filter_payload
             result = filter_payload(conn, result, scope)
             result['role'] = 'landlord'
+        if landlord or role == 'inspector':   # the internal note of a property is for the management team only
+            for p in result.get('properties', []):
+                for k in ('note', 'note_updated_at', 'note_updated_by'):
+                    p.pop(k, None)
     db.audit_view(user['id'], company_id, 'workspace', company_id, {'role': 'landlord' if landlord else role})
     return result
 
@@ -2193,6 +2197,8 @@ app.include_router(operations_router)
 app.include_router(finance_ops_router)
 from .payment_history import router as payment_history_router
 app.include_router(payment_history_router)
+from .property_file import router as property_file_router
+app.include_router(property_file_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')
