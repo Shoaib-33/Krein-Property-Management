@@ -43,10 +43,17 @@ const paths = {
 const icon = name => `<svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="${paths[name] || paths.file}"/></svg>`;
 const button = (label, action, extra='', cls='') => `<button type="button" class="button ${cls}" data-action="${e(action)}" ${extra}>${e(label)}</button>`;
 const actionBtn = (label, action, id, cls='small') => button(label,action,`data-id="${id}"`,cls);
+// status values as stored -> what people read (the Dutch layer translates these); anything else gets a capital first letter
+const STATUS_LABEL = {requested:'To review',received:'Received',triaged:'Reviewed',planned:'Scheduled','in progress':'In progress',waiting:'Waiting',done:'Done',closed:'Closed',reopened:'Reopened',
+ pending:'Pending',approved:'Approved',rejected:'Rejected',assigned:'Assigned',accepted:'Accepted',scheduled:'Scheduled',completed:'Completed',cancelled:'Cancelled',declined:'Declined',resolved:'Resolved',
+ open:'To do',queued:'Queued',sending:'Sending',sent:'Sent',failed:'Failed',active:'Active',ended:'Ended','notice given':'Notice given','pending signature':'Awaiting signature',draft:'Draft',paid:'Paid',
+ unpaid:'Unpaid',overdue:'Overdue','partially paid':'Partly paid',new:'New',contacted:'Contacted',registered:'Registered',signed:'Signed',returned:'Returned',withdrawn:'Withdrawn',sent_to_tenant:'Sent',
+ not_submitted:'Not submitted',submitted:'Submitted',final:'Final',reversed:'Reversed',occupied:'Occupied',vacant:'Available',admin:'Administrator',manager:'Manager',finance:'Finance',property:'Property manager',inspector:'Inspector',landlord:'Landlord'};
+const statusLabel = v => { const s = String(v ?? ''), k = s.toLowerCase(); return STATUS_LABEL[k] || (s && s === k ? (s.charAt(0).toUpperCase() + s.slice(1)).replaceAll('_', ' ') : s); };
 const badge = (label, tone) => {
   const lower = String(label).toLowerCase();
   tone ||= ['approved','paid','active','done','final','received','occupied'].includes(lower) ? 'green' : ['pending','partially paid','urgent','draft','notice given','waiting'].includes(lower) ? 'amber' : ['rejected','overdue','emergency','reversed'].includes(lower) ? 'red' : ['planned','in progress','open','reopened'].includes(lower) ? 'blue' : 'gray';
-  return `<span class="badge ${tone}">${e(label)}</span>`;
+  return `<span class="badge ${tone}">${e(statusLabel(label))}</span>`;
 };
 const rows = table => state.data[table] || [];
 const byId = (table,id) => rows(table).find(r=>r.id===Number(id)) || {};

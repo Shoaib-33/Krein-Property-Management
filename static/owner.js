@@ -41,7 +41,7 @@
   }
 
   const stat = (label, value, foot) => `<div class="stat"><div class="stat-top"><span>${esc(label)}</span></div><div class="stat-value">${value}</div><div class="stat-foot">${esc(foot || '')}</div></div>`;
-  const table = (heads, body, none) => body.length ? `<div class="table-wrap"><table><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${body.map(r => `<tr>${r.map(c => `<td>${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : `<div class="empty"><h3>${esc(none)}</h3></div>`;
+  const table = (heads, body, none) => body.length ? `<div class="table-wrap"><table><thead><tr>${heads.map(h => `<th>${esc(h)}</th>`).join('')}</tr></thead><tbody>${body.map(r => `<tr>${r.map((c, k) => `<td data-label="${esc(heads[k] || '')}">${c}</td>`).join('')}</tr>`).join('')}</tbody></table></div>` : `<div class="empty"><h3>${esc(none)}</h3></div>`;
   const panel = (t, s, b) => `<section class="panel"><div class="panel-header"><div><h2>${esc(t)}</h2>${s ? `<p>${esc(s)}</p>` : ''}</div></div>${b}</section>`;
   const pdfLink = id => `<a class="button small" href="/api/owner/statements/${id}/pdf" target="_blank" rel="noopener">${ic('down')} PDF</a>`;
 
@@ -54,7 +54,7 @@
     const full = (S.me.companies || []).length ? `<div class="notice"><span><strong>You can manage your own units.</strong> Run ${(S.me.companies || []).map(c => esc(c.name)).join(', ')} (your properties, tenants, contracts and invoices) in the management app.</span><a class="button primary small" href="/landlord">Open the management app</a></div>` : '';
     return full + `<div class="page-heading"><div><div class="eyebrow">PORTFOLIO</div><h1>Welcome, ${esc(d.accounts[0]?.name || S.me.name)}</h1><p class="subtitle">${d.portfolios.map(p => esc(p.name)).join(' · ') || 'No portfolio linked yet.'}</p></div></div>
       <div class="summary-grid">${stat('Units', d.units.length, occupied + ' occupied')}${stat('Occupancy', pct + '%', d.units.length - occupied + ' vacant')}${stat('Monthly rent roll', cash(roll), 'Rent + service advance')}${stat('Collected this month', cash(d.month_collected_cents), 'Verified payments')}</div>
-      <div class="summary-grid">${stat('Paid out this year', cash(d.paid_ytd_cents), 'Net of fee and expenses')}${stat('Open rent', cash(open), d.arrears.length + ' overdue invoice' + (d.arrears.length === 1 ? '' : 's'))}${latest ? stat('Latest statement', cash(latest.net_cents), month(latest.period) + ' · ' + latest.status) : stat('Latest statement', '—', 'None published yet')}</div>`
+      <div class="summary-grid">${stat('Paid out this year', cash(d.paid_ytd_cents), 'Net of fee and expenses')}${stat('Open rent', cash(open), d.arrears.length + ' overdue invoice' + (d.arrears.length === 1 ? '' : 's'))}${latest ? stat('Latest statement', cash(latest.net_cents), month(latest.period) + ' · ' + ({final: 'Final', draft: 'Draft', published: 'Published', sent: 'Sent'}[String(latest.status).toLowerCase()] || String(latest.status).charAt(0).toUpperCase() + String(latest.status).slice(1))) : stat('Latest statement', '—', 'None published yet')}</div>`
       + (d.arrears.length ? panel('Open rent', 'Overdue invoices your manager is following up', table(['Unit', 'Invoice', 'Due', 'Open'], d.arrears.map(a => [esc(a.property), esc(a.number), day(a.due_date), cash(a.open_cents)]), '')) : `<div class="notice">${ic('check')}<span>All rent due so far has been paid. Nice and quiet.</span></div>`)
       + panel('Recent statements', '', table(['Month', 'Net', 'Status', ''], d.statements.slice(0, 3).map(s => [esc(month(s.period)), `<strong>${cash(s.net_cents)}</strong>`, badge(s.status), pdfLink(s.id)]), 'No statements yet'));
   }
@@ -98,7 +98,7 @@
       <div class="portal-identity"><span class="avatar">${esc((S.me.name || '?').split(' ').map(x => x[0]).slice(0, 2).join('').toUpperCase())}</span><strong>${esc(S.me.name)}</strong><small>${esc(d.accounts[0]?.company_name || '')}</small></div>
       <nav>${nav.map(([id, label, i]) => { const n = navUnread(id); return `<a href="#${id}" class="nav-item ${S.page === id ? 'active' : ''}" data-nav="${id}">${ic(i)}<span>${label}</span>${n ? `<span class="count">${n}</span>` : ''}</a>`; }).join('')}</nav>
       <div class="sidebar-footer"><button class="button" data-do="logout">${ic('logout')} Sign out</button></div></aside>
-      <div class="workspace"><header class="topbar"><div class="breadcrumb">Owner portal / <span>${esc(nav.find(n => n[0] === S.page)[1])}</span></div><div class="topbar-separator"></div><span class="date-pill">${esc(day(d.today))}</span></header>
+      <div class="workspace"><header class="topbar"><button class="icon-button mobile-menu" aria-label="Menu" data-do="menu"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h18 M3 12h18 M3 18h18"/></svg></button><div class="breadcrumb">Owner portal / <span>${esc(nav.find(n => n[0] === S.page)[1])}</span></div><div class="topbar-separator"></div><span class="date-pill">${esc(day(d.today))}</span></header>
       <main id="portal-main">${unread && S.page === 'overview' ? d.notifications.filter(n => !n.is_read).slice(0, 2).map(n => `<div class="notice"><span><strong>${esc(n.title)}</strong><br>${esc(n.body)}</span><button class="button small" data-do="read" data-id="${n.id}">Dismiss</button></div>`).join('') : ''}${page}</main></div></div>`;
     document.querySelectorAll('[data-width]').forEach(el => { el.style.width = el.dataset.width + '%'; });
     const up = document.getElementById('owner-upload');
@@ -112,6 +112,7 @@
     const nv = ev.target.closest('[data-nav]');
     if (nv && S.data) { ev.preventDefault(); S.page = nv.dataset.nav; history.replaceState(null, '', '#' + S.page); shell(); window.scrollTo(0, 0); markSeen(S.page); return; }
     const b = ev.target.closest('[data-do]'); if (!b) return;
+    if (b.dataset.do === 'menu') { document.querySelector('.sidebar')?.classList.toggle('open'); return; }
     try {
       if (b.dataset.do === 'logout') { await call('/api/logout', {method: 'POST', body: {}}); S.me = null; S.csrf = ''; login('You are signed out.'); }
       if (b.dataset.do === 'read') { await call('/api/notifications/' + b.dataset.id + '/read', {method: 'POST', body: {}}); S.data = await call('/api/owner/data'); shell(); }

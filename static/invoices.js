@@ -130,15 +130,25 @@
   // ---------- company logo in Settings and on the invoices page
 
   function reviewPanel() {
-    const c = company(), auto = !c.review_invoices, day = Number(c.bill_day) || Number(state.data.bill_day_default) || 15;
+    const c = company(), auto = !c.review_invoices, day = Number(c.bill_day) || Number(state.data.bill_day_default) || 15, can = canBrand();
     // the next automatic run: this month's day if it is still ahead, else next month's; it makes the next month's invoices
     const now = new Date((state.data.today || today()) + 'T12:00:00'), run = new Date(now.getFullYear(), now.getMonth() + (now.getDate() > day ? 1 : 0), day, 12);
     const due = new Date(run.getFullYear(), run.getMonth() + 1, 1, 12), iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const monthName = d => d.toLocaleDateString(window.kreinLang === 'nl' ? 'nl-NL' : 'en-GB', {month: 'long', year: 'numeric'});
-    return panel('Automatic sending', 'Every month the software makes the rent invoices by itself. On: it also sends them to the tenants (portal and email). Off: they wait as drafts here until you check, edit and send them. "Run monthly invoices" always makes drafts.',
-      `<div class="panel-body"><label class="rv-switch"><input type="checkbox" ${auto ? 'checked' : ''} ${canBrand() ? '' : 'disabled'} data-inv-change="review-toggle"> <span>${auto ? 'On: monthly invoices are sent to tenants automatically' : 'Off: monthly invoices wait as drafts until you send them'}</span></label>
-       <div class="bd-row"><label for="bill-day">Make the invoices for the next month on day</label><select id="bill-day" ${canBrand() ? '' : 'disabled'} data-inv-change="bill-day">${Array.from({length: 28}, (_, k) => `<option value="${k + 1}" ${k + 1 === day ? 'selected' : ''}>${k + 1}</option>`).join('')}</select><span>of each month</span></div>
-       <p class="bd-next">Next run: <strong>${e(dateLabel(iso(run)))}</strong>: the invoices for ${e(monthName(due))}, due ${e(dateLabel(iso(due)))}, ${auto ? 'sent to the tenants' : 'made as drafts for you to check and send'}. The due date stays the 1st; about two weeks before it (day 10 to 20) gives tenants time to pay.</p></div>`);
+    return `<section class="panel ai-panel ${auto ? 'is-auto' : 'is-review'}">
+      <div class="ai-head"><div class="ai-icon">${icon('calendar')}</div><div><h2>Automatic invoicing</h2><p>Monthly rent invoices are created automatically on the day you choose.</p></div>
+        <span class="ai-state">${auto ? 'Sent automatically' : 'Review before sending'}</span></div>
+      <div class="ai-grid">
+        <div class="ai-card"><div class="ai-card-top"><div><h3>Send automatically</h3><p>${auto ? 'Invoices go to tenants by email and in their portal as soon as they are created.' : 'Invoices are saved as drafts, so you can review, adjust and send them yourself.'}</p></div>
+          <label class="ai-toggle" title="${can ? '' : 'Only an administrator or manager can change this'}"><input type="checkbox" ${auto ? 'checked' : ''} ${can ? '' : 'disabled'} data-inv-change="review-toggle" aria-label="Send invoices automatically"><span class="ai-track"><span class="ai-knob"></span></span><span class="ai-toggle-label">${auto ? 'On' : 'Off'}</span></label></div></div>
+        <div class="ai-card"><div class="ai-card-top"><div><h3>Invoice day</h3><p>Recommended: day 10 to 20, about two weeks before rent is due on the 1st.</p></div>
+          <label class="ai-day"><span>Day</span><select id="bill-day" ${can ? '' : 'disabled'} data-inv-change="bill-day" aria-label="Day of the month">${Array.from({length: 28}, (_, k) => `<option value="${k + 1}" ${k + 1 === day ? 'selected' : ''}>${k + 1}</option>`).join('')}</select></label></div></div>
+      </div>
+      <div class="ai-next">${icon('clock')}<div><small>Next run</small><strong>${e(dateLabel(iso(run)))}</strong></div><span class="ai-arrow" aria-hidden="true">→</span>
+        <div><small>Invoices for</small><strong>${e(monthName(due))}</strong></div><div><small>Rent due</small><strong>${e(dateLabel(iso(due)))}</strong></div>
+        <span class="ai-result">${auto ? 'Sent to tenants' : 'Saved as drafts'}</span></div>
+      <p class="ai-foot">“Run monthly invoices” always creates drafts, whatever this setting.</p>
+    </section>`;
   }
   const baseRender = renderPage;
   renderPage = () => {
