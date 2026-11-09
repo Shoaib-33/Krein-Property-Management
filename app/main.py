@@ -490,6 +490,13 @@ def login(data: dict, request: Request):
         with transaction() as conn:
             conn.execute('DELETE FROM sessions WHERE token_hash=?', (token_hash(token),))
         raise HTTPException(403, 'This is a developer account: sign in at /developer.' if user['global_admin'] else 'This sign-in is for the developer only. Use the normal sign-in page.')
+    # the tenant portal (linked from the public website) signs in tenants only: a staff or developer account is refused with
+    # the same answer as a wrong password, so the public login reveals nothing about staff accounts
+    if portal == 'tenant':
+        with transaction() as conn:
+            if not conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone():
+                conn.execute('DELETE FROM sessions WHERE token_hash=?', (token_hash(token),))
+                raise HTTPException(401, 'Email or password is incorrect.')
     cookie = 'krein_' + request.headers.get('X-Krein-Portal', '') + '_session' if request.headers.get('X-Krein-Portal', '') in PORTALS else 'krein_session'
     response.set_cookie(cookie, token, httponly=True, samesite='strict', secure=os.environ.get('KREIN_SECURE_COOKIES') == '1', max_age=86400)
     return response

@@ -221,6 +221,25 @@ class WebsiteTests(unittest.TestCase):
             self.assertEqual(set(re.findall(r'from \.(\w*) import|from app\.(\w+)', source)) - {('', ''), ('', 'site_render')}, set())
             self.assertNotIn('import db', source)
 
+    def test_tenant_login_button_opens_the_tenant_portal_only(self):
+        site = self.client('https://pandtbeheer.nl', website_service.app)
+        nl, en = site.get('/').text, site.get('/en').text
+        self.assertIn('href="https://software.example/tenant"', nl)
+        self.assertIn('Inloggen huurders', nl)
+        self.assertIn('Tenant login', en)
+        # the website never links to the staff sign-in
+        for page in (nl, en):
+            self.assertNotIn('href="https://software.example"', page)
+            self.assertNotIn('https://software.example/developer', page)
+        # the tenant portal signs in tenants only: a staff account gets the same answer as a wrong password
+        soft = self.client()
+        portal = {'X-Krein-Portal': 'tenant'}
+        refused = soft.post('/api/login', headers=portal, json={'email': 'admin@krein.local', 'password': PASSWORD})
+        self.assertEqual((refused.status_code, refused.json()['detail']), (401, 'Email or password is incorrect.'))
+        self.assertEqual(soft.post('/api/login', headers=portal, json={'email': 'manager@krein.local', 'password': PASSWORD}).status_code, 401)
+        self.assertEqual(soft.post('/api/login', headers=portal, json={'email': 'tenant@krein.local', 'password': PASSWORD}).status_code, 200)
+        self.assertEqual(self.client().post('/api/login', json={'email': 'admin@krein.local', 'password': PASSWORD}).status_code, 200)   # staff sign in at their own address
+
     def test_the_software_no_longer_serves_website_pages(self):
         software = self.client()
         for path in ('/site/', '/registreren', '/kennismaking', '/api/website/register'):

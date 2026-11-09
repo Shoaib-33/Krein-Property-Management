@@ -123,6 +123,7 @@ def _render(meta, body, layout, lang):
         'crumbs': crumbs,
         'body': body,
         'langswitch': switch,
+        'portal': _portal_button(lang, 'small'), 'portal_drawer': _portal_button(lang, ''),
         # the homepage's big photo starts loading at once, before the stylesheet is read
         'preload': ('<link rel="preload" as="image" fetchpriority="high" href="/site-assets/photo-hero-1200.webp" '
                     'imagesrcset="/site-assets/photo-hero-800.webp 800w, /site-assets/photo-hero-1200.webp 1200w, '
@@ -138,6 +139,17 @@ def _render(meta, body, layout, lang):
     # a version number on every file the page uses (stylesheet, script, photos, icons): after a file changes, browsers
     # fetch the new one at once instead of using the copy they saved earlier (up to a day)
     return _ASSET.sub(lambda m: f'{m.group(0)}?v={v}' if (v := _version(m.group(1))) else m.group(0), out)
+
+
+def _portal_button(lang, size):
+    """"Log in" for tenants: the tenant portal of the software (KREIN_SOFTWARE_URL/tenant). Only tenants can sign in there;
+    staff sign in elsewhere, and that address is not on the website. Without the setting there is no button."""
+    software = os.environ.get('KREIN_SOFTWARE_URL', '').strip().rstrip('/')
+    if not software.startswith(('https://', 'http://127.0.0.1')):
+        return ''
+    label = 'Inloggen huurders' if lang == 'nl' else 'Tenant login'
+    cls = ' '.join(x for x in ('btn', 'secondary', size) if x)
+    return f'<a class="{cls}" href="{html.escape(software)}/tenant" rel="nofollow">{label}</a>'
 
 
 _ASSET = re.compile(r'/site-assets/([A-Za-z0-9._-]+)(?=[\s"\',])')
