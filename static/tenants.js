@@ -148,19 +148,38 @@
     // key figures
     const sched = current && current.schedule, due = sched && sched.due, next = sched && sched.next;
     const lastPay = f.money ? (f.payments || []).find(p => p.amount_cents > 0 && p.how !== 'credit note') : null;
+    // what this user may do from here
+    const role = company().role, live = !t.archived_at;
+    const canSend = live && ['admin', 'manager', 'property'].includes(role), canPaper = live && ['admin', 'manager', 'property', 'landlord'].includes(role);
+    const canBill = live && f.money && ['admin', 'manager', 'finance'].includes(role), canOps = live && ['admin', 'manager', 'property', 'landlord'].includes(role);
+    const openInv = (f.invoices || []).filter(i => i.released_at && i.balance_cents > 0).sort((a, b) => a.due_date.localeCompare(b.due_date));
+    const B = {
+      contract: canPaper ? mb('Add contract', `data-action="manual-contract-form" data-id="${t.id}"`, true) : '',
+      sign: canSend ? mb('Send contract for signature', `data-lease="send" data-id="${t.id}"`, true) : '',
+      paper: canPaper ? mb('Signed on paper? Record it', `data-action="manual-contract-form" data-id="${t.id}"`) : '',
+      rent: canBill && current ? mb('Change rent', `data-action="form" data-kind="rent_proposals" data-preset-contract="${current.id}"`) : '',
+      pay: canBill && openInv.length ? mb('Record payment', `data-action="staff-proof" data-id="${openInv[0].id}"`) : '',
+      invoice: canBill && current ? mb('Send invoice', 'data-tf="invoice"') : '',
+      repair: canOps && current ? mb('Add repair', `data-action="form" data-kind="repairs" data-preset-contract="${current.id}"`) : '',
+      message: canOps && current ? mb('Send message', `data-action="staff-message-new" data-preset-contract="${current.id}"`) : '',
+      doc: live ? mb('Upload document', `data-action="document-form"${current ? ` data-preset-contract="${current.id}"` : ''}`) : '',
+    };
+    const acts = (...b) => b.filter(Boolean).length ? `<div class="actions tf-empty-acts">${b.filter(Boolean).join('')}</div>` : '';
+    const more = (...b) => b.filter(Boolean).length ? `<div class="panel-body tf-more">${b.filter(Boolean).join('')}</div>` : '';
     const stats = `<div class="summary-grid tf-stats">
-      ${statBox('Monthly rent', current ? eur((current.rent.basic_cents || 0) + (current.rent.service_cents || 0)) : '—', current ? e(current.property_name) : 'No tenancy')}
-      ${f.money ? statBox('Open balance', eur(f.totals.open_cents), f.totals.overdue_cents ? `<span class="late-text">${eur(f.totals.overdue_cents)} overdue</span>` : 'Nothing overdue') : ''}
-      ${statBox('Due payment', due ? eur(due.amount_cents) : 'Nothing due', due ? `${e(dateLabel(due.date))} · ${due.overdue ? `<span class="late-text">${-due.days} days late</span>` : `in ${due.days} days`}` : 'Up to date')}
-      ${statBox('Next scheduled payment', next ? e(dateLabel(next.date)) : '—', next ? `${eur(next.amount_cents)}${next.issue_on ? ' · invoice goes out ' + e(dateLabel(next.issue_on)) : ''}` : 'No further payments scheduled')}
-      ${f.money ? statBox('Last payment', lastPay ? eur(lastPay.amount_cents) : '—', lastPay ? `${e(dateLabel(lastPay.date))} · ${e(lastPay.how)}` : 'No payment yet') : ''}
+      ${statBox('Monthly rent', current ? eur((current.rent.basic_cents || 0) + (current.rent.service_cents || 0)) : '—', current ? e(current.property_name) : 'No tenancy', current ? B.rent : B.contract)}
+      ${f.money ? statBox('Open balance', eur(f.totals.open_cents), f.totals.overdue_cents ? `<span class="late-text">${eur(f.totals.overdue_cents)} overdue</span>` : 'Nothing overdue', B.pay) : ''}
+      ${statBox('Due payment', due ? eur(due.amount_cents) : 'Nothing due', due ? `${e(dateLabel(due.date))} · ${due.overdue ? `<span class="late-text">${-due.days} days late</span>` : `in ${due.days} days`}` : 'Up to date', due ? B.pay : '')}
+      ${statBox('Next scheduled payment', next ? e(dateLabel(next.date)) : '—', next ? `${eur(next.amount_cents)}${next.issue_on ? ' · invoice goes out ' + e(dateLabel(next.issue_on)) : ''}` : 'No further payments scheduled', B.invoice && mb('Create invoice now', 'data-tf="invoice"'))}
+      ${f.money ? statBox('Last payment', lastPay ? eur(lastPay.amount_cents) : '—', lastPay ? `${e(dateLabel(lastPay.date))} · ${e(lastPay.how)}` : 'No payment yet', B.pay) : ''}
     </div>`;
     // tenancies
     const contracts = panel('Tenancies', `${f.contracts.length} contract${f.contracts.length === 1 ? '' : 's'}`, table(['Property', 'Period', 'Rent / month', 'Deposit', 'Status', ''], f.contracts.map(c => [
       `<strong>${e(c.property_name)}</strong><small>${e(c.address)}, ${e(c.city)}</small>${withWhom(c)}`, `${e(dateLabel(c.start_date))} – ${c.end_date ? e(dateLabel(c.end_date)) : 'open-ended'}`,
       `<span class="amount">${eur((c.rent.basic_cents || 0) + (c.rent.service_cents || 0))}</span><small>basic ${eur(c.rent.basic_cents)} + service ${eur(c.rent.service_cents)}</small>`,
       eur(c.deposit_cents), badge(c.end_date && c.end_date < today() ? 'ended' : c.status),
-      `<div class="actions">${c.offer && c.offer.final_document_id ? `<a class="button small" href="/api/documents/${c.offer.final_document_id}/file" target="_blank" rel="noopener">Signed contract</a>` : ''}<button type="button" class="button small" data-action="contract-detail" data-id="${c.id}">Open file</button></div>`]), 'No tenancies yet.'));
+      `<div class="actions">${c.offer && c.offer.final_document_id ? `<a class="button small" href="/api/documents/${c.offer.final_document_id}/file" target="_blank" rel="noopener">Signed contract</a>` : ''}<button type="button" class="button small" data-action="contract-detail" data-id="${c.id}">Open file</button></div>`]), 'No tenancies yet.').replace(/<div class=\"empty\">[\s\S]*$/, () => empty('No contract yet', 'Send the contract to sign online, or record one that was signed on paper. Their rented home is chosen for you.', acts(B.sign, B.paper)))
+      + (f.contracts.length ? more(B.paper) : ''));
     // money
     let money_ = '';
     if (f.money) {
@@ -175,10 +194,12 @@
         const [label, tone] = invStatusOf(i);
         return [`<strong>${e(i.number)}</strong>`, e(i.period), `<span class="amount">${eur(i.total_cents)}</span>`, e(dateLabel(i.due_date)), (i.balance_cents > 0 ? `<strong>${eur(i.balance_cents)}</strong>` : '—') + shareLines(i), badge(label, tone), trail(i),
           `<div class="actions"><a class="button small" href="/api/invoices/${i.id}/pdf" target="_blank" rel="noopener">PDF</a>${actionBtn('Manage', 'invoice-detail', i.id)}</div>`];
-      }), 'No invoices yet.'));
+      }), 'No invoices yet.').replace(/<div class=\"empty\">[\s\S]*$/, () => current ? empty('No invoices yet', 'Make the first invoice for this tenant. You check it before it is sent.', acts(B.invoice))
+        : empty('No invoices yet', 'Invoices are made once the tenant has a contract.', acts(B.contract))));
       const history = panel('Payment history', 'Every payment, credit and correction, newest first.', table(['Date', 'Amount', 'Invoice', 'How', 'From'], f.payments.map(p => [
         e(dateLabel(p.date)), `<strong class="${p.amount_cents < 0 ? 'late-text' : ''}">${eur(p.amount_cents)}</strong>`, e((f.invoices.find(i => i.id === p.invoice_id) || {}).number || ''), paidHow(p),
-        fromCell(p)]), 'No payments yet.'));
+        fromCell(p)]), 'No payments yet.').replace(/<div class=\"empty\">[\s\S]*$/, () => empty('No payments yet', openInv.length ? 'Paid in cash, or by a transfer you saw yourself? Record it here. Bank payments appear when a bank statement is imported.' : 'Payments appear here when a bank statement is imported or a receipt is approved.', acts(B.pay)))
+        + (f.payments.length ? more(B.pay) : ''));
       const deposit = f.deposit.length ? panel('Deposit', '', table(['Date', 'What', 'Amount', 'Status', 'Reason'], f.deposit.map(d => [e(dateLabel(d.created_at.slice(0, 10))), e(d.kind), eur(d.amount_cents), badge(d.status), e(d.reason || '')]))) : '';
       const arrears = f.arrears.length ? `<div class="notice warning">${icon('clock')}<span><strong>Arrears follow-up is open</strong> for ${f.arrears.map(a => e(a.number)).join(', ')}. See Finance > Arrears.</span></div>` : '';
       money_ = money_ + arrears + invoices + history + deposit;
@@ -187,14 +208,16 @@
     const SRC = {tenant: 'Given by the tenant', staff: 'Added by staff', learned: 'Learned from a bank payment'};
     const banks = panel('Bank accounts', 'The accounts this tenant pays rent from. Payments from them are matched automatically when a bank statement is imported.',
       table(['IBAN', 'Account holder', 'Bank', 'Source', ''], f.bank_accounts.map(b => [`<strong>${e(iban(b.iban))}</strong>`, e(b.holder || ''), e(b.bank_name || '—'), e(SRC[b.source] || b.source),
-        `<button type="button" class="button small" data-bank="account-remove" data-id="${b.id}">Remove</button>`]), 'No bank account saved yet.')
-      + `<div class="panel-body"><button type="button" class="button small primary" data-bank="account-add" data-id="${t.id}">Add IBAN</button></div>`);
+        `<button type="button" class="button small" data-bank="account-remove" data-id="${b.id}">Remove</button>`]), 'No bank account saved yet.').replace(/<div class=\"empty\">[\s\S]*$/, () => empty('No bank account saved yet', 'Add the IBAN this tenant pays from, so their bank payments are matched automatically.', acts(mb('Add IBAN', `data-bank="account-add" data-id="${t.id}"`, true))))
+      + (f.bank_accounts.length ? more(mb('Add IBAN', `data-bank="account-add" data-id="${t.id}"`)) : ''));
     // requests, repairs, documents
     const requests = panel('Requests and repairs', '', table(['Date', 'What', 'Subject', 'Status'], [
       ...f.requests.map(r => [e(dateLabel(r.created_at.slice(0, 10))), e(r.kind), e(r.subject), badge(r.status)]),
-      ...f.repairs.map(r => [e(dateLabel(r.reported_on)), 'repair', e(r.title), badge(r.status)])], 'No requests or repairs.'));
+      ...f.repairs.map(r => [e(dateLabel(r.reported_on)), 'repair', e(r.title), badge(r.status)])], 'No requests or repairs.').replace(/<div class=\"empty\">[\s\S]*$/, () => empty('No requests or repairs', current ? 'Log a repair for their home, or send them a message in their portal.' : 'Repairs and messages need a contract first.', acts(B.repair, B.message)))
+      + (f.requests.length + f.repairs.length ? more(B.repair, B.message) : ''));
     const docs = panel('Documents', '', table(['Document', 'Type', 'Added', ''], f.documents.map(d => [e(d.name), e(d.kind), e(dateLabel(d.created_at.slice(0, 10))),
-      `<a class="button small" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">View</a>`]), 'No documents.'));
+      `<a class="button small" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">View</a>`]), 'No documents.').replace(/<div class=\"empty\">[\s\S]*$/, () => empty('No documents', 'Upload the contract, the move-in report or other papers for this tenant.', acts(B.doc)))
+      + (f.documents.length ? more(B.doc) : ''));
     return head + stats + `<div class="section-stack">${householdPanel(f)}${contracts}${money_}${banks}<div class="tf-two">${requests}${docs}</div></div>`;
   }
   // the partner / spouse this tenant rents with (added with the tenant, before or without a contract)
@@ -278,7 +301,9 @@
   }
   // a split rent: each person's part and what they paid of it
   const shareLines = i => (i.shares || []).length ? `<div class="co-shares">${i.shares.map(s => `<small class="${s.paid_cents >= s.share_cents ? 'ok' : ''}">${e(s.name)}: ${eur(Math.min(s.paid_cents, s.share_cents))} of ${eur(s.share_cents)}${s.paid_cents >= s.share_cents ? ' ✓' : ''}</small>`).join('')}</div>` : '';
-  const statBox = (label, value, foot) => `<div class="stat"><div class="stat-top">${e(label)}</div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div></div>`;
+  const statBox = (label, value, foot, act = '') => `<div class="stat"><div class="stat-top">${e(label)}</div><div class="stat-value">${value}</div><div class="stat-foot">${foot}</div>${act ? `<div class="stat-act">${act}</div>` : ''}</div>`;
+  // a small button that opens the right form; data-preset-contract fills in this tenant's tenancy in that form
+  const mb = (label, attrs, primary = false) => `<button type="button" class="button small${primary ? ' primary' : ''}" ${attrs}>${e(label)}</button>`;
 
   document.addEventListener('click', ev => {
     const open = ev.target.closest('[data-tenant]');
@@ -294,6 +319,12 @@
       const form = document.getElementById('record-form');
       if (form && window.postalSection) { form.querySelector('.form-grid').insertAdjacentHTML('beforeend', postalSection(t)); wirePostal(form); }
     }
+  });
+  document.addEventListener('click', ev => {
+    const el = ev.target.closest('[data-preset-contract]');
+    if (!el) return;
+    const v = el.dataset.presetContract;
+    setTimeout(() => { const sel = document.getElementById('f-contract_id'); if (sel && [...sel.options].some(o => o.value === v)) { sel.value = v; sel.dispatchEvent(new Event('change', {bubbles: true})); } }, 0);
   });
   document.addEventListener('click', ev => { const y = ev.target.closest('[data-tf-year]'); if (y) { state.tfYear = y.dataset.tfYear; render(); } });
   document.addEventListener('input', ev => {

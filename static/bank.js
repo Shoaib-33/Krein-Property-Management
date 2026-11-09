@@ -166,10 +166,34 @@
       + `<div class="section-stack">${upload}${periodBar('bank', periodValue('bank') ? `Bank payments of ${e(periodLabel('bank'))}` : '')}${tabs}${list}${imports}</div>`;
   }
 
+  // Confirm needs a sent, unpaid invoice: say why there is none and what to do
+  function noInvoiceHelp(line) {
+    const drafts = rows('invoices').filter(i => !i.released_at);
+    const months = [...new Set(drafts.map(i => i.period))].sort();
+    const withContract = new Set(rows('contracts').map(c => c.tenant_id).concat((rows('contract_tenants') || []).filter(x => !x.removed_at).map(x => x.tenant_id)));
+    const noContract = rows('tenants').filter(t => !t.archived_at && !withContract.has(t.id)).length;
+    const item = (title, text, tag = '') => `<li><strong>${title}</strong>${tag ? `<em class="nb-tag">${tag}</em>` : ''}<span>${text}</span></li>`;
+    const reasons = [
+      drafts.length ? item(`${drafts.length} ${drafts.length === 1 ? 'invoice is' : 'invoices are'} still a draft`, 'A draft is not sent yet, so a payment cannot be booked on it. Check the drafts in Invoices and send them, then click Confirm again.', months.map(m => e(dateLabel(m + '-01')).replace(/^1 /, '')).join(', ')) : '',
+      noContract ? item(`${noContract} ${noContract === 1 ? 'tenant has' : 'tenants have'} no contract`, 'A tenant only gets invoices once a contract is recorded. Open the tenant and use “Signed on paper? Record it”, then make their invoice.') : '',
+      item('Every sent invoice is already paid', 'If this money is not rent, or was paid twice, use Ignore, or keep it here until the invoice is made.'),
+    ].join('');
+    modal('This payment cannot be booked yet', `<div class="modal-note"><strong>${eur(line.amount_cents)}</strong> · ${e(line.name || '')} · ${e(dateLabel(line.booked_on))}${line.description ? ` · ${e(line.description)}` : ''}</div>
+      <p class="nb-lead">A payment is booked on an invoice that has been <strong>sent</strong> and is <strong>not paid yet</strong>. There is no such invoice right now. Why:</p>
+      <ul class="nb-why">${reasons}</ul>
+      <div class="modal-footer"><button type="button" class="button" data-nb="close">Close</button>${drafts.length ? '<button type="button" class="button primary" data-nb="drafts">Go to the drafts</button>' : ''}</div>`);
+  }
+  document.addEventListener('click', ev => {
+    const b = ev.target.closest('[data-nb]');
+    if (!b) return;
+    closeModal();
+    if (b.dataset.nb === 'drafts') { state.page = 'invoices'; render(); }
+  });
+
   async function confirmLine(id) {
     const line = (ui.data.items || []).find(l => l.id === Number(id));
     const open = await api(`/api/bank/open-invoices?company_id=${state.company}`);
-    if (!open.length) { toast('There are no open invoices to put this payment on.'); return; }
+    if (!open.length) { noInvoiceHelp(line); return; }
     const pick = open.find(o => o.id === line.invoice_id) || open.find(o => o.tenant_id === line.tenant_id) || open[0];
     const options = open.map(o => [o.id, `${o.number} · ${o.tenant_name} · ${eur(o.balance_cents)} open · due ${o.due_date}${o.notice ? ' · tenant said paid ' + o.notice.paid_on : ''}`]);
     formModal('Book this payment', [selectField('invoice_id', 'Invoice', options, {value: pick.id, wide: true})],
