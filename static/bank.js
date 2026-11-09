@@ -145,10 +145,12 @@
     const tabs = `<div class="tabs bank-tabs" role="tablist">${[['check', `To check (${c.check || 0})`], ['booked', `Booked (${c.booked || 0})`], ['history', `Manual payments (${c.history || 0})`], ['ignored', `Ignored (${c.ignored || 0})`]]
       .map(([k, l]) => `<button type="button" role="tab" class="tab ${ui.tab === k ? 'active' : ''}" aria-selected="${ui.tab === k}" data-bank="tab" data-id="${k}">${e(l)}</button>`).join('')}</div>`;
     const rowsHtml = (ui.data.items || []).map(l => {
-      const [label, tone] = l.status === 'suggested' && l.certain ? ['Match found: approve', 'green'] : STATUS[l.status] || [l.status, 'gray'];
+      const known = l.status === 'unmatched' && l.history_hint && l.history_hint.tenant_id;   // a tenant's saved IBAN, but no invoice to book on
+      const [label, tone] = l.status === 'suggested' && l.certain ? ['Match found: approve', 'green'] : known ? ['Tenant recognised', 'blue'] : STATUS[l.status] || [l.status, 'gray'];
       const who = `<strong>${e(l.name || 'Unknown payer')}</strong><small>${e(iban(l.iban))}</small>`;
       const what = l.status === 'booked'
         ? (l.bookings || []).map(b => `${e(b.number || '')} ${eur(-b.amount_cents)}`).join('<br>') + (l.tenant_name ? `<small>${e(l.tenant_name)}</small>` : '')
+        : known ? `${e(l.history_hint.tenant_name)}<small>Known bank account of this tenant, but there is no invoice to book on. For a month before Krein: save it as a manual payment.</small>`
         : (l.tenant_name || l.invoice_number ? `${e(l.tenant_name || '')}${l.invoice_number ? ' · ' + e(l.invoice_number) : ''}` : '—') + `<small>${e(l.reason || '')}</small>`;
       const show = `<a class="button small" href="/api/bank/lines/${l.id}/statement.pdf" data-pv-title="Bank statement: payment marked">Show in statement</a>`;
       const acts = show + (l.status === 'booked' ? (company().landlord || company().role === 'manager' || company().role === 'admin' ? btn('Undo', 'undo', l.id) : '')

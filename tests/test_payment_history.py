@@ -23,6 +23,9 @@ class PeriodTests(unittest.TestCase):
         self.assertEqual(period_of('huur november 2026, Bethelstraat 14', '2026-10-30'), '2026-11')
         self.assertEqual(period_of('Huur okt', '2026-10-02'), '2026-10')
         self.assertEqual(period_of('rent', '2026-09-28'), '2026-09')
+        self.assertEqual(period_of('Huur Weimarstraat 241 - 11/2026', '2026-10-31'), '2026-11')
+        self.assertEqual(period_of('huur 2026-12', '2026-11-30'), '2026-12')
+        self.assertEqual(period_of('Weimarstraat 225a', '2026-10-31'), '2026-10')   # a house number is not a month
 
 
 class PaymentHistoryTests(unittest.TestCase):

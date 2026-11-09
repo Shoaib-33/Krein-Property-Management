@@ -24,8 +24,14 @@ MONTHS = {'jan': 1, 'januari': 1, 'january': 1, 'feb': 2, 'februari': 2, 'februa
 
 
 def period_of(text, booked_on):
-    """The month a payment is for: 'huur november 2026' -> 2026-11; otherwise the month the bank booked it."""
-    words = re.findall(r'[a-z]+|\d{4}', str(text or '').lower())
+    """The month a payment is for: 'huur november 2026' or '11/2026', '11-2026', '2026-11' -> 2026-11; otherwise the month
+    the bank booked it."""
+    low = str(text or '').lower()
+    for m, y in re.findall(r'(?<!\d)(0?[1-9]|1[0-2])\s*[/.-]\s*(20\d{2})(?!\d)', low):
+        return f'{y}-{int(m):02d}'
+    for y, m in re.findall(r'(?<!\d)(20\d{2})\s*[/.-]\s*(0?[1-9]|1[0-2])(?![\d/.-])', low):
+        return f'{y}-{int(m):02d}'
+    words = re.findall(r'[a-z]+|\d{4}', low)
     for i, w in enumerate(words):
         if w in MONTHS:
             year = next((int(x) for x in words[i + 1:i + 3] if x.isdigit()), None) or int(booked_on[:4])
