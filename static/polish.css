@@ -504,3 +504,11 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .pf-note-head .button{margin-left:auto}
 .pf-note-text{margin:10px 0 4px;font-size:14px;line-height:1.6;color:var(--ink);white-space:pre-wrap}
 .pf-note-meta{font-size:11px;color:#8a7a55}
+
+/* tenants list: one search box (the table's own filter is hidden), and the optional filter buttons under it */
+.no-table-filter .table-filter{display:none}
+.tl-toolbar{border-bottom:0;padding-bottom:6px}
+.tl-toolbar .tenant-search{flex:1;max-width:460px}
+.tl-chips{padding:0 22px 14px;border-bottom:1px solid var(--line)}
+.tl-chips .filter-button span{display:inline-block;margin-left:4px;min-width:18px;padding:0 6px;border-radius:9px;background:#eef2ef;font-size:11px;font-weight:700;color:var(--muted)}
+.tl-chips .filter-button.active span{background:var(--green);color:#fff}

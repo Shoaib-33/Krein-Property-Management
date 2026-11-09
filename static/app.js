@@ -175,7 +175,8 @@ function tenantsPage(){
  const active=rows('tenants').filter(t=>!t.archived_at);
  const money_=!['property','inspector'].includes(company().role);
  const q=(state.tenantSearch||'').toLowerCase();
- const found=active.filter(t=>!q||`${t.name} ${t.email} ${t.phone}`.toLowerCase().includes(q)),list=window.orderHouseholds?orderHouseholds(found):found;
+ const homeName=t=>{const h=byId('properties',t.home_property_id);return h.id?h.name:'';};   // the rented home from the tenant's address
+ const searched=active.filter(t=>!q||`${t.name} ${t.email} ${t.phone} ${homeName(t)}`.toLowerCase().includes(q));
  const homeOf=t=>{const cs=(window.contractsOfTenant?contractsOfTenant(t.id):rows('contracts').filter(c=>c.tenant_id===t.id));return cs.find(c=>['active','notice given'].includes(c.status)&&!(c.end_date&&c.end_date<today()))||cs[0];};
  const openOf=t=>{const mine=new Set((window.contractsOfTenant?contractsOfTenant(t.id):[]).map(c=>c.id));return rows('invoices').filter(i=>(mine.has(i.contract_id)||contract(i.contract_id).tenant_id===t.id)&&i.released_at&&balance(i)>0).reduce((s,i)=>{const own=window.personBill?personBill(i,t.id):null;return s+(own?own.open:balance(i));},0);};
  const canInvite=['admin','manager','property','landlord'].includes(company().role);
@@ -185,27 +186,35 @@ function tenantsPage(){
   return `${badge('No portal login','gray')}${canInvite&&t.email?`<button type="button" class="button link" data-action="invite" data-id="${t.id}">Invite</button>`:''}`;};
  const bankOf=t=>{const n=rows('tenant_bank_accounts').filter(b=>b.tenant_id===t.id).length;return n?badge(`${n} bank account${n===1?'':'s'}`,'blue'):'<span class="muted">No IBAN</span>';};
  const openCell=t=>{const open=openOf(t);return open?`<strong class="late-text">${money(open)}</strong>`:'<span class="muted">Nothing open</span>';};
+ // optional filters; the list always starts with every tenant
+ const hasContract=t=>(window.contractsOfTenant?contractsOfTenant(t.id):rows('contracts').filter(c=>c.tenant_id===t.id)).some(c=>!['ended','cancelled'].includes(c.status)&&!(c.end_date&&c.end_date<today()));
+ const TF={all:['All',()=>true],contract:['With contract',hasContract],nocontract:['No contract',t=>!hasContract(t)],open:['Open balance',t=>openOf(t)>0],
+  noportal:['No portal login',t=>!rows('portal_accounts').some(a=>a.tenant_id===t.id)],noiban:['No IBAN',t=>!rows('tenant_bank_accounts').some(b=>b.tenant_id===t.id)]};
+ if(!money_)delete TF.open;
+ const tf=TF[state.tenantListFilter]?state.tenantListFilter:'all';
+ const found=searched.filter(TF[tf][1]),list=window.orderHouseholds?orderHouseholds(found):found;
+ const chips=`<div class="filters tf-chips">${Object.entries(TF).map(([k,[l,fn]])=>`<button type="button" class="filter-button ${tf===k?'active':''}" data-tl-chip="${k}">${e(l)} <span>${searched.filter(fn).length}</span></button>`).join('')}</div>`;
  // a household (a tenant and the partner / co-tenants who rent with them) is one row: the home once, each person's own details under each other
  const households=[];
  for(const t of list){const m=window.householdMain?householdMain(t):null,g=m&&households.find(h=>h[0].id===m);if(g)g.push(t);else households.push([t]);}
  const body=households.map(g=>{
   const t=g[0],c=homeOf(t),r=c?rentFor(c.id):{},total=(r.basic_cents||0)+(r.service_cents||0);
   if(g.length===1){const main=window.householdMain?householdMain(t):null;
-   return [`<div class="${main?'co-row':''}"><button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>${main?`<small class="co-with">Co-tenant · with ${e(byId('tenants',main).name)}</small>`:''}</div>`,c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)}${c.tenant_id!==t.id?' · co-tenant':''}</small>`:'<span class="muted">No tenancy</span>',
+   return [`<div class="${main?'co-row':''}"><button type="button" class="tenant-link" data-tenant="${t.id}">${tenantCell(t)}</button>${main?`<small class="co-with">Co-tenant · with ${e(byId('tenants',main).name)}</small>`:''}</div>`,c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)}${c.tenant_id!==t.id?' · co-tenant':''}</small>`:homeName(t)?`<strong>${e(homeName(t))}</strong><small>No contract yet</small>`:'<span class="muted">No home yet</span>',
     c?`<span class="amount">${money(total)}</span>${window.partOfRent&&partOfRent(c.id,t.id,total)!=null?`<small>own part ${money(partOfRent(c.id,t.id,total))}</small>`:''}`:'—',c?nextCell(c.id):'—',...(money_?[openCell(t)]:[]),portalOf(t),bankOf(t),
     `<button type="button" class="button small" data-tenant="${t.id}">Open</button>`];}
   const stack=f=>`<div class="hh-stack">${g.map(x=>`<div class="hh-line">${f(x)}</div>`).join('')}</div>`;
   const role=x=>c&&c.tenant_id===x.id?'Main tenant':(x.id===t.id?'Main tenant':'Co-tenant');
   const parts=c&&window.partOfRent?g.map(x=>[x,partOfRent(c.id,x.id,total)]).filter(([,v])=>v!=null):[];
   return [stack(x=>`<button type="button" class="tenant-link" data-tenant="${x.id}">${tenantCell(x)}</button><small class="co-with">${role(x)}</small>`),
-   c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)} · shared by ${g.length}</small>`:'<span class="muted">No tenancy yet</span><small>household of '+g.length+'</small>',
+   c?`<strong>${e(propertyFor(c.id).name)}</strong><small>${e(c.status)} · shared by ${g.length}</small>`:homeName(t)?`<strong>${e(homeName(t))}</strong><small>No contract yet · household of ${g.length}</small>`:'<span class="muted">No home yet</span><small>household of '+g.length+'</small>',
    c?`<span class="amount">${money(total)}</span>${parts.length?`<small>${parts.map(([x,v])=>`${e(x.name.split(' ')[0])} ${money(v)}`).join(' · ')}</small>`:'<small>not split</small>'}`:'—',
    c?nextCell(c.id):'—',...(money_?[stack(x=>`<span class="hh-who">${e(x.name.split(' ')[0])}</span>${openCell(x)}`)]:[]),stack(portalOf),stack(bankOf),
    stack(x=>`<button type="button" class="button small" data-tenant="${x.id}">Open ${e(x.name.split(' ')[0])}</button>`)];
  });
- const search=`<div class="toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email or phone" value="${e(state.tenantSearch||'')}" aria-label="Search tenants"><span class="result-count">${list.length} of ${active.length} tenants</span></div>`;
+ const search=`<div class="toolbar tl-toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email, phone or address" value="${e(state.tenantSearch||'')}" aria-label="Search tenants"><span class="result-count">${list.length} of ${active.length} tenants</span></div><div class="tl-chips">${chips}</div>`;
  return heading('Your tenants','Click a tenant to see everything about them: tenancies, invoices, payments and how they paid, bank accounts, requests and documents.',button('Add tenant','form','data-kind="tenants"','primary'),'TENANTS')
-  +panel('Tenants',`${active.length} people in this company`,search+table(['Tenant','Home','Rent / month','Next payment',...(money_?['Open balance']:[]),'Portal','Bank account',''],body,'No tenants yet. Add the first one.'))
+  +panel('Tenants',`${active.length} people in this company`,search+table(['Tenant','Home','Rent / month','Next payment',...(money_?['Open balance']:[]),'Portal','Bank account',''],body,active.length?'No tenant matches this search or filter.':'No tenants yet. Add the first one.')).replace('<section class="panel">','<section class="panel no-table-filter">')
 ;
 }
 function contractsPage(){

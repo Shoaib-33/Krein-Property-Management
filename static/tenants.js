@@ -30,9 +30,15 @@
     const key = 'tenants', money_ = !['property', 'inspector'].includes(company().role), r = periodRange(key);
     ensurePeriodInvoices(key);
     const q = (state.tenantSearch || '').toLowerCase(), today_ = today();
+    const homeName = t => { const h = byId('properties', t.home_property_id); return h.id ? h.name : ''; };
     const people = rows('tenants').filter(t => !t.archived_at || t.archived_at.slice(0, 10) >= r[0]).map(t => {
       const cs = contractsOfTenant(t.id).filter(c => overlapsPeriod(key, c.start_date, c.end_date));
-      if (!cs.length) return null;
+      if (!cs.length) {   // no contract in this period: still listed, with a manual payment of that period if one was saved
+        if (t.archived_at) return null;
+        const manual = rows('payment_history').filter(h => h.tenant_id === t.id && inPeriod(key, h.period + '-01'));
+        const paid = manual.reduce((s, h) => s + h.paid_cents, 0);
+        return {t, cs: [], inv: [], billed: 0, open: 0, pays: [], manual, paid, status: manual.length ? 'Manual payment' : 'No contract', household: null, movedIn: false, movingOut: false};
+      }
       const ids = new Set(cs.map(c => c.id));
       const inv = rows('invoices').filter(i => ids.has(i.contract_id) && i.released_at && inPeriod(key, i.period + '-01'));
       const own = inv.map(i => personBill(i, t.id)), split = own.some(Boolean);
@@ -44,17 +50,19 @@
       const household = split ? {billed: inv.reduce((s, i) => s + i.total_cents, 0), open: inv.reduce((s, i) => s + Math.max(0, balance(i)), 0), others: inv.flatMap(i => (sharesOf(i) || []).filter(x => x.tenant.id !== t.id && x.paid < x.share).map(x => x.tenant.name))} : null;
       const status = !inv.length ? 'Not invoiced' : open <= 0 ? 'Paid' : late ? 'Overdue' : open < billed ? 'Partly paid' : 'Open';
       return {t, cs, inv, billed, open, pays, status, household, movedIn: cs.some(c => inPeriod(key, c.start_date)), movingOut: cs.some(c => c.end_date && inPeriod(key, c.end_date))};
-    }).filter(Boolean).filter(x => !q || `${x.t.name} ${x.t.email} ${x.t.phone}`.toLowerCase().includes(q));
+    }).filter(Boolean).filter(x => !q || `${x.t.name} ${x.t.email} ${x.t.phone} ${homeName(x.t)}`.toLowerCase().includes(q));
     const order = orderHouseholds(people.map(x => x.t));
     people.sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t));
     const f = state.tenantPeriodFilter || 'all';
     const chips = [['all', 'All', people.length], ['paid', 'Paid', people.filter(x => x.status === 'Paid').length], ['unpaid', 'Not paid', people.filter(x => ['Open', 'Partly paid', 'Overdue'].includes(x.status)).length],
-      ['overdue', 'Overdue', people.filter(x => x.status === 'Overdue').length], ['in', 'Moved in', people.filter(x => x.movedIn).length], ['out', 'Moving out', people.filter(x => x.movingOut).length]];
-    const shown = people.filter(x => f === 'all' || (f === 'paid' && x.status === 'Paid') || (f === 'unpaid' && ['Open', 'Partly paid', 'Overdue'].includes(x.status)) || (f === 'overdue' && x.status === 'Overdue') || (f === 'in' && x.movedIn) || (f === 'out' && x.movingOut));
-    const tone = {Paid: 'green', Overdue: 'red', 'Partly paid': 'amber', Open: 'blue', 'Not invoiced': 'gray'};
+      ['overdue', 'Overdue', people.filter(x => x.status === 'Overdue').length], ['nocontract', 'No contract', people.filter(x => !x.cs.length).length], ['manual', 'Manual payment', people.filter(x => x.status === 'Manual payment').length],
+      ['in', 'Moved in', people.filter(x => x.movedIn).length], ['out', 'Moving out', people.filter(x => x.movingOut).length]];
+    const shown = people.filter(x => f === 'all' || (f === 'paid' && x.status === 'Paid') || (f === 'unpaid' && ['Open', 'Partly paid', 'Overdue'].includes(x.status)) || (f === 'overdue' && x.status === 'Overdue')
+      || (f === 'nocontract' && !x.cs.length) || (f === 'manual' && x.status === 'Manual payment') || (f === 'in' && x.movedIn) || (f === 'out' && x.movingOut));
+    const tone = {Paid: 'green', Overdue: 'red', 'Partly paid': 'amber', Open: 'blue', 'Not invoiced': 'gray', 'No contract': 'gray', 'Manual payment': 'blue'};
     // a household is one row: the home and the bill once, each person's own part, status and payment under each other
     const groups = [];
-    for (const x of shown) { const m = householdMain(x.t), g = m && groups.find(g => g[0].t.id === m); if (g) g.push(x); else groups.push([x]); }
+    for (const x of shown) { const m = householdMain(x.t), g = m && x.cs.length && groups.find(g => g[0].t.id === m && g[0].cs.length); if (g) g.push(x); else groups.push([x]); }
     const statusCell = x => badge(x.household && x.status === 'Paid' && x.household.open > 0 ? 'Own part paid' : x.status, tone[x.status]);
     const openCell = x => x.open > 0 ? `<strong class="${x.status === 'Overdue' ? 'late-text' : ''}">${money(x.open)}</strong>` : '<span class="muted">—</span>';
     const lastCell = x => x.pays[0] ? `<strong>${e(dateLabel(x.pays[0].created_at.slice(0, 10)))}</strong><small>${e(howPaid(x.pays[0]))} · ${money(-x.pays[0].amount_cents)}</small>` : '<span class="muted">No payment</span>';
@@ -70,6 +78,14 @@
         stack(x => `<button type="button" class="button small" data-tenant="${x.t.id}">Open ${first(x.t.name)}</button>`)];
     });
     function single(x) {
+      if (!x.cs.length) {   // no contract in this period: the rented home from the address, and a manual payment if any
+        const m = x.manual.slice().sort((a, b) => String(b.paid_on || '').localeCompare(String(a.paid_on || '')))[0];
+        return [`<button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>`,
+          homeName(x.t) ? `<strong>${e(homeName(x.t))}</strong><small>No contract yet</small>` : '<span class="muted">No home yet</span>',
+          ...(money_ ? [x.manual.length ? `<span class="amount">${money(x.paid)}</span><small>manual payment</small>` : '<span class="muted">—</span>', badge(x.status, tone[x.status]), '<span class="muted">—</span>',
+            m ? `<strong>${e(m.paid_on ? dateLabel(m.paid_on) : m.period)}</strong><small>Manual · ${money(m.paid_cents)}</small>` : '<span class="muted">No payment</span>'] : []),
+          `<button type="button" class="button small" data-tenant="${x.t.id}">Open</button>`];
+      }
       const c = x.cs[0], last = x.pays[0];
       const main = householdMain(x.t);
       return [`<div class="${main ? 'co-row' : ''}"><button type="button" class="tenant-link" data-tenant="${x.t.id}">${tenantCell(x.t)}</button>${main ? `<small class="co-with">Co-tenant · with ${e(byId('tenants', main).name)}</small>` : householdNames(x.t).length ? `<small class="co-with">Rents with ${e(householdNames(x.t).join(', '))}</small>` : ''}</div>`,
@@ -82,17 +98,18 @@
     }
     const head = ['Tenant', 'Home', ...(money_ ? ['Billed', 'Status', 'Still open', 'Last payment'] : []), ''];
     const filterChips = `<div class="filters tf-chips">${chips.map(([k, l, n]) => `<button type="button" class="filter-button ${f === k ? 'active' : ''}" data-tf-chip="${k}">${e(l)} <span>${n}</span></button>`).join('')}</div>`;
-    const search = `<div class="toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email or phone" value="${e(state.tenantSearch || '')}" aria-label="Search tenants">${filterChips}</div>`;
+    const search = `<div class="toolbar tl-toolbar"><input type="search" id="tenant-search" class="tenant-search" placeholder="Search by name, email, phone or address" value="${e(state.tenantSearch || '')}" aria-label="Search tenants"><span class="result-count">${shown.length} of ${people.length} tenants</span></div><div class="tl-chips">${filterChips}</div>`;
     const totals = money_ ? `<div class="tf-period-sum"><span>Billed <strong>${money(people.reduce((s, x) => s + x.billed, 0))}</strong></span><span>Still open <strong>${money(people.reduce((s, x) => s + x.open, 0))}</strong></span><span>${people.filter(x => x.status === 'Paid').length} of ${people.filter(x => x.inv.length).length} paid</span></div>` : '';
     return heading('Your tenants', 'Click a tenant to see everything about them: tenancies, invoices, payments and how they paid, bank accounts, requests and documents.', button('Add tenant', 'form', 'data-kind="tenants"', 'primary'), 'TENANTS')
-      + periodBar(key, `Tenants who rented in ${e(periodLabel(key))}`) + panel(`Tenants in ${periodLabel(key)}`, '', (totals ? `<div class="panel-body">${totals}</div>` : '') + search + table(head, body, 'No tenant rented in this period.'));
+      + periodBar(key, `All tenants, with their rent and payments of ${e(periodLabel(key))}`) + panel('Tenants', `${people.length} tenants · money columns for ${periodLabel(key)}`, (totals ? `<div class="panel-body">${totals}</div>` : '') + search + table(head, body, 'No tenant matches this search or filter.')).replace('<section class="panel">', '<section class="panel no-table-filter">');
   }
   document.addEventListener('click', ev => { const chip = ev.target.closest('[data-tf-chip]'); if (chip) { state.tenantPeriodFilter = chip.dataset.tfChip; render(); } });
+  document.addEventListener('click', ev => { const chip = ev.target.closest('[data-tl-chip]'); if (chip) { state.tenantListFilter = chip.dataset.tlChip; render(); } });
 
   const baseRender = renderPage;
   renderPage = () => {
     if (state.page === 'settings') return baseRender() + removedPanel();
-    if (state.page === 'tenants' && !state.tenantView) return periodValue('tenants') ? periodList() : baseRender().replace('<section class="panel">', () => periodBar('tenants', 'Choose a month to see who paid, who did not, and who moved in or out') + '<section class="panel">');
+    if (state.page === 'tenants' && !state.tenantView) return periodValue('tenants') ? periodList() : baseRender().replace(/<section class="panel[^"]*">/, m => periodBar('tenants', 'Choose a month to see the rent and payments of that month. Every tenant stays in the list.') + m);
     if (state.page !== 'tenants' || !state.tenantView) return baseRender();
     if (ui.id !== state.tenantView) { ui.id = state.tenantView; ui.file = null; setTimeout(load); }
     return filePage();

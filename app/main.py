@@ -597,6 +597,8 @@ def all_data(company_id: int, user=Depends(current_user)):
             from .schedule import default_bill_day
             result['bill_day_default'] = default_bill_day()
             result['payment_schedules'] = [payment_schedule(conn, c) for c in result.get('contracts', []) if c['status'] in ('active', 'notice given')]
+        if role in ('admin', 'manager', 'finance') and not landlord:   # manual payments (app/payment_history.py), for the tenants list
+            result['payment_history'] = [dict(r) for r in conn.execute('SELECT id,tenant_id,period,due_cents,paid_cents,paid_on,method FROM payment_history WHERE company_id=?', (company_id,))]
         if role in ('admin', 'manager', 'finance'):
             from .paging import apply_window
             apply_window(conn, company_id, result, sorted(scope.contracts) if landlord else None)
