@@ -407,3 +407,6 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .bd-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:14px;font-size:12px;color:var(--ink)}
 .bd-row select{border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:12px;background:#fff}
 .bd-next{font-size:12px;color:var(--muted);margin:10px 0 0;line-height:1.6}
+
+/* menu numbers: something urgent waits on this tab */
+.nav-item .count.urgent{background:#c2412d;color:#fff}

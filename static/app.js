@@ -600,7 +600,7 @@ async function pollMessageBadge(){
   if(fresh.length){const newest=fresh[0];toast(`${newest.title}: ${newest.body}`);}
   const unreadFor=target=>state.data.notifications.filter(n=>n.target===target&&!n.is_read).length;
   const count=state.data.notifications.filter(n=>!n.is_read).length;
-  for(const target of ['portal-inbox','tenant-messages']){
+  for(const target of ['tenant-messages']){   // Tickets: its number is what still waits (static/navcounts.js)
    const link=$(`[data-action="navigate"][data-page="${target}"]`);if(!link)continue;
    const n=unreadFor(target);let badge=$('.count',link);
    if(n){if(!badge){link.insertAdjacentHTML('beforeend',`<span class="count" aria-label="${n} unread">${n}</span>`);}else badge.textContent=String(n);}

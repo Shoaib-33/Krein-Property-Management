@@ -2153,6 +2153,8 @@ from .tenant_file import router as tenant_file_router
 app.include_router(tenant_file_router)
 from .tenant_address import router as tenant_address_router
 app.include_router(tenant_address_router)
+from .nav_counts import router as nav_counts_router
+app.include_router(nav_counts_router)
 from .password_reset import router as password_reset_router
 app.include_router(password_reset_router)
 from .contractor_agreements import router as contractor_agreements_router
