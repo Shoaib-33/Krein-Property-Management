@@ -140,8 +140,13 @@ class PropertyFileTests(unittest.TestCase):
         f = self.file(pid)
         self.assertEqual((f['cases'][0]['subject'], f['cases'][0]['next_deadline'], f['cases'][0]['tenant_name'] is not None), ('Tenant asks for a rent reduction', '2026-12-01', True))
         self.assertEqual(next(x for x in f['documents'] if x['id'] == d.json()['id'])['case_id'], kid)
+        open_now = self.manager.get('/api/property-cases?company_id=1')   # the open cases of the company, for the dashboard
+        self.assertEqual(open_now.status_code, 200, open_now.text)
+        self.assertEqual([(k['id'], k['property_id'], k['next_deadline']) for k in open_now.json()], [(kid, pid, '2026-12-01')])
+        self.assertEqual(self.login('tenant@krein.local').get('/api/property-cases?company_id=1').status_code, 403)
         self.assertEqual(self.manager.post(f'/api/property-cases/{kid}', json={**body, 'status': 'closed'}).status_code, 200)
         self.assertIsNotNone(self.file(pid)['cases'][0]['closed_at'])
+        self.assertEqual(self.manager.get('/api/property-cases?company_id=1').json(), [])
         self.assertEqual(self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'subject': ''}).status_code, 422)
         self.assertEqual(self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'contract_id': 999999}).status_code, 422)
 

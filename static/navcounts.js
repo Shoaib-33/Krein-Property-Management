@@ -10,6 +10,7 @@
     document.querySelectorAll('.sidebar .nav-item[data-page]').forEach(link => {
       const page = link.dataset.page;
       if (page === 'tenant-messages') return;   // unread messages: kept by the message poller in app.js
+      if (link.dataset.msection) return;   // a menu section: its number is the sum of its pages (menu.js)
       const c = counts[page];
       let badge = link.querySelector('.count');
       if (!c) { badge?.remove(); return; }
@@ -18,6 +19,7 @@
       badge.classList.toggle('urgent', !!c.urgent);
       badge.setAttribute('aria-label', `${c.n} waiting${c.urgent ? ', urgent' : ''}`);
     });
+    if (window.kreinMenuCounts) window.kreinMenuCounts(counts);
   }
   async function fetchCounts() {
     if (busy || !state.me || !state.company || document.hidden) return;

@@ -302,3 +302,14 @@ async def upload_case_document(case_id: int, file: UploadFile = File(...), user=
         conn.execute('UPDATE documents SET property_id=?,case_id=? WHERE id=?', (case['property_id'], case_id, doc_id))
         audit(conn, user['id'], case['company_id'], 'uploaded', 'document', doc_id, {'name': upload[3], 'case_id': case_id})
     return {'id': doc_id}
+
+
+@router.get('/api/property-cases')
+def open_cases(company_id: int, user=Depends(current_user)):
+    """The cases that are still open in the company (Huurcommissie and similar), for the dashboard deadlines and the
+    homes list. Staff only, like the cases on the property page."""
+    with connect() as conn:
+        authorize(conn, user, company_id, STAFF)
+        return rows(conn, '''SELECT k.id,k.property_id,k.subject,k.kind,k.status,k.next_deadline,k.deadline_note,p.name property_name
+                             FROM property_cases k JOIN properties p ON p.id=k.property_id
+                             WHERE k.company_id=? AND k.status<>'closed' ORDER BY (k.next_deadline IS NULL),k.next_deadline,k.id''', (company_id,))

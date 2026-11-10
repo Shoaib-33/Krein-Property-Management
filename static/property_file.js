@@ -16,7 +16,7 @@
     ui.loading = false;
     if (state.page === 'properties' && state.propertyView === ui.id) render();
   }
-  const open = id => { state.page = 'properties'; state.propertyView = Number(id); ui.id = Number(id); ui.file = null; render(); scrollTo(0, 0); load(); };
+  const open = id => { state.page = 'properties'; state.propertyView = Number(id); ui.id = Number(id); ui.file = null; ui.tab = 'overview'; render(); scrollTo(0, 0); load(); };
   showProperty = open;   // the old pop-up becomes this page
 
   function page() {
@@ -35,8 +35,20 @@
       staff ? mb('Edit details', 'data-pf="edit"') : '',
       state.me.developer ? actionBtn('Delete permanently', 'property-delete-permanent', p.id, 'small danger') : ['admin', 'manager', 'property'].includes(role) ? actionBtn('Delete property', 'property-delete', p.id, 'small danger') : '',
     ].join('');
-    const head = back + `<div class="page-heading tf-head"><div><div class="eyebrow">PROPERTY</div><h1>${e(p.name)} ${status}</h1>
-      <p class="subtitle">${e(p.address)}${p.postcode ? ', ' + e(p.postcode) : ''} ${e(p.city)}</p>${specs}</div><div class="actions">${actions}</div></div>`;
+    const hf = window.kreinHomes ? window.kreinHomes.facts(byId('properties', p.id).id ? byId('properties', p.id) : p) : null;
+    const HST = window.kreinHomes ? window.kreinHomes.STATUS : {};
+    const stat = hf && HST[hf.status] ? `<span class="pf-status ${HST[hf.status][1]}">${e(HST[hf.status][0])}</span>` : status;
+    const addItems = [
+      staff ? ['upload', 'upload', 'Document'] : null, canPaper ? ['contract', 'file', 'Contract'] : null, staff ? ['note', 'message', 'Internal note'] : null,
+      staff && live && ['admin', 'manager', 'property'].includes(role) ? ['repair', 'wrench', 'Maintenance report', `data-action="form" data-kind="repairs" data-preset-contract="${live.id}"`] : null, staff ? ['label', 'leaf', 'Energy label'] : null,
+      staff ? ['case-new', 'clipboard', 'Case (Huurcommissie)'] : null, canContract ? ['sign', 'edit', 'Contract to sign online'] : null,
+    ].filter(Boolean);
+    const addMenu = addItems.length ? `<div class="pf-add"><button type="button" class="button primary" data-pf-addmenu aria-haspopup="true" aria-expanded="false">${icon('plus')}Add ▾</button>
+      <div class="pf-add-menu" role="menu">${addItems.map(([act, ic, label, attrs]) => `<button type="button" role="menuitem" ${attrs || `data-pf="${act}"`}>${icon(ic)}${e(label)}</button>`).join('')}</div></div>` : '';
+    const head = `<div class="tf-back"><button type="button" class="button small" data-pf-back>← All homes</button></div><div class="page-heading tf-head"><div><div class="eyebrow">HOME</div><h1>${e(p.address || p.name)}</h1>
+      <p class="subtitle">${e([p.postcode, p.city].filter(Boolean).join(' '))}${p.name && !p.name.toLowerCase().includes(String(p.address || '').toLowerCase()) ? ' · ' + e(p.name) : ''}</p>
+      <div class="pf-specs"><span>${icon('building')} ${e(p.kind)}</span><span>${icon('area')} ${e(p.area)} m²</span><span>${icon('home')} ${e(p.rooms)} ${Number(p.rooms) === 1 ? 'room' : 'rooms'}</span><span>${icon('leaf')} Label ${e(p.energy_label === 'Unknown' ? '—' : p.energy_label)}</span>${stat}</div></div>
+      <div class="actions">${staff ? mb('Edit', 'data-pf="edit"') : ''}${addMenu}</div></div>`;
 
     // the internal note: what is going on with this home
     const note = staff ? `<section class="pf-note ${p.note ? '' : 'is-empty'}"><div class="pf-note-head"><h2>${icon('message')} Internal note</h2><span class="pf-note-tag">Only for the management team</span>
@@ -149,13 +161,85 @@
         empty('No ongoing cases', 'Record a procedure at the Huurcommissie or another dispute about this home, with its deadlines and letters.', `<div class="actions tf-empty-acts">${mb('New case', 'data-pf="case-new"', true)}</div>`))
       + ((f.cases || []).length ? `<div class="panel-body tf-more">${mb('New case', 'data-pf="case-new"', true)}</div>` : '')) : '';
 
-    return head + note + `<div class="section-stack">${tenants}${contracts}${rentPanel}${cases}${energy}${utilities}${letters}${docs}</div>`;
+    // ---- the six tabs ----
+    const tab = ui.tab || 'overview';
+    const cids = new Set(f.contracts.map(c => c.id));
+    const repairs = rows('repairs').filter(r => cids.has(r.contract_id)).sort((a, b) => String(b.reported_on).localeCompare(String(a.reported_on)));
+    const openRepairs = repairs.filter(r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status));
+    const openCases = (f.cases || []).filter(k => k.status !== 'closed');
+    const TABS = [['overview', 'Overview', 'grid', 0], ['tenants', 'Tenants', 'users', f.tenants.length], ['contracts', 'Contracts', 'file', f.contracts.length],
+      ['technical', 'Technical', 'wrench', openRepairs.length], ['finance', 'Finances', 'wallet', 0], ['documents', 'Documents', 'folder', f.documents.length]];
+    const tabs = `<div class="pf-tabs" role="tablist">${TABS.map(([k, label, ic, n]) => `<button type="button" role="tab" class="pf-tab${tab === k ? ' active' : ''}" aria-selected="${tab === k}" data-pf-tab="${k}">${icon(ic)}${e(label)}${n ? `<span class="count">${n}</span>` : ''}</button>`).join('')}</div>`;
+
+    // Overview: the main facts of the home, and what is going on
+    const resident = live ? f.tenants.find(t => t.id === live.tenant_id) || {name: live.tenant_name, email: live.tenant_email} : f.tenants.find(t => !t.has_active) || null;
+    const chip = (t, tone) => `<span class="pf-chip ${tone}">${e(t)}</span>`;
+    const go2 = (t, title, ic, body) => `<button type="button" class="pf-card" data-pf-tab="${t}"><div class="pf-card-head"><span class="kcard-icon">${icon(ic)}</span><h3>${e(title)}</h3></div><span class="kcard-go">${icon('arrow')}</span>${body}</button>`;
+    const kv = [['Address', p.address], ['City', [p.city, p.postcode].filter(Boolean).join(', ')], ['Type', p.kind], ['Floor area', `${p.area} m²`], ['Rooms', p.rooms],
+      ['Status', stat], ['Owner', hf ? hf.owner : ''], ...(p.bag_id ? [['BAG', p.bag_id]] : [])];
+    const delBtn = state.me.developer ? actionBtn('Delete permanently', 'property-delete-permanent', p.id, 'small danger') : ['admin', 'manager', 'property'].includes(role) ? actionBtn('Delete home', 'property-delete', p.id, 'small danger') : '';
+    const details = `<div class="pf-card"><div class="pf-card-head"><span class="kcard-icon">${icon('building')}</span><h3>Home details</h3></div><table class="pf-kv"><tbody>${kv.map(([k, v]) => `<tr><td>${e(k)}</td><td>${k === 'Status' ? v : e(v ?? '')}</td></tr>`).join('')}</tbody></table>
+      ${staff ? `<div class="actions pf-card-acts">${mb('Edit details', 'data-pf="edit"')}${delBtn}</div>` : ''}</div>`;
+    const tenantCard = go2('tenants', 'Tenant', 'users', resident ? `<p class="big">${e(resident.name)}</p>${resident.email ? `<p class="line">${icon('message')}${e(resident.email)}</p>` : ''}${resident.phone ? `<p class="line">${icon('info')}${e(resident.phone)}</p>` : ''}`
+      : '<p class="muted">No tenant. This home is vacant.</p>');
+    const lblCls = window.kreinHomes ? window.kreinHomes.labelClass(p.energy_label === 'Unknown' ? '' : p.energy_label) : 'n';
+    const labelCard = go2('technical', 'Energy label', 'leaf', p.energy_label && p.energy_label !== 'Unknown'
+      ? `<span class="pf-biglabel lbl ${lblCls}">${e(p.energy_label)}</span>${p.energy_label_issued ? `<p>Issued: ${e(day(p.energy_label_issued))}</p>` : ''}${p.energy_label_expires ? `<p>Valid until: ${e(day(p.energy_label_expires))}${hf && hf.labelState === 'expired' ? ' ' + chip('Expired', 'red') : hf && hf.labelState === 'expiring' ? ' ' + chip('Expiring', 'amber') : ''}</p>` : ''}`
+      : `${chip('Missing', 'red')}<p>Add the valid energy label of this home.</p>`);
+    const nextC = f.contracts.find(c => c.start_date > today() && c.status !== 'ended');
+    const contractCard = go2('contracts', 'Contract status', 'file', live
+      ? `${live.status === 'notice given' ? chip('Notice given', 'amber') : chip('✓ Active contract', 'green')}<p>Start date: ${e(day(live.start_date))}</p><p>End date: ${live.end_date ? e(day(live.end_date)) : 'open-ended'}</p>${live.basic_cents != null ? `<p>Rent: <strong>${eur((live.basic_cents || 0) + (live.service_cents || 0))}</strong> / month</p>` : ''}`
+      : resident ? `${chip('Contract missing', 'red')}<p>${e(resident.name)} lives here, but no contract is registered yet.</p>` : nextC ? `${chip('Reserved', 'gray')}<p>Contract starts ${e(day(nextC.start_date))}</p>` : `${chip('No contract', 'gray')}<p>Vacant: no tenant and no contract.</p>`);
+    const lastR = openRepairs[0];
+    const repairCard = go2('technical', 'Open maintenance', 'wrench', openRepairs.length
+      ? `${chip(openRepairs.length === 1 ? '1 report' : `${openRepairs.length} reports`, 'amber')}<p><strong>${e(lastR.title)}</strong></p><p>${badge(lastR.status)}</p><p>Deadline: ${e(day(lastR.due_date))}</p>` : `${chip('None', 'gray')}<p>No open maintenance reports.</p>`);
+    const nextCase = openCases.slice().sort((a, b) => String(a.next_deadline || '9').localeCompare(String(b.next_deadline || '9')))[0];
+    const caseCard = staff ? go2('contracts', 'Ongoing cases', 'clipboard', openCases.length
+      ? `${chip(openCases.length === 1 ? '1 case' : `${openCases.length} cases`, 'amber')}<p><strong>${e(nextCase.subject)}</strong></p>${nextCase.next_deadline ? `<p>Next deadline: ${e(day(nextCase.next_deadline))}</p>` : ''}` : `${chip('None', 'gray')}<p>No ongoing procedures.</p>`) : '';
+    const overview = `<div class="pf-grid"><div class="pf-col">${details}</div><div class="pf-col">${tenantCard}${labelCard}</div><div class="pf-col">${contractCard}${repairCard}${caseCard}</div></div>`;
+
+    // Technical: maintenance, energy label, utilities and meters, inspections
+    const RS = {received: 'blue', 'in progress': 'blue', planned: 'blue', done: 'green', closed: 'gray'};
+    const canOps = ['admin', 'manager', 'property'].includes(role);
+    const maint = panel('Maintenance', 'Repair reports of this home, open and done.', table(['Repair', 'Reported', 'Urgency', 'Status', 'Deadline', ''], repairs.slice(0, 30).map(r => [
+      `<strong>${e(r.title)}</strong><small>${e(r.category)}</small>`, e(day(r.reported_on)), e(r.urgency), badge(r.status, RS[r.status]), e(day(r.due_date)),
+      `<button type="button" class="button small" data-action="repair-detail" data-id="${r.id}">Open</button>`]), 'No repair reports yet.')
+      + (canOps && live ? `<div class="panel-body tf-more">${mb('New maintenance report', `data-action="form" data-kind="repairs" data-preset-contract="${live.id}"`, true)}</div>` : ''));
+    const insp = rows('inspections').filter(x => cids.has(x.contract_id)).sort((a, b) => String(b.inspected_on).localeCompare(String(a.inspected_on)));
+    const inspections = panel('Inspections', 'Move-in, move-out and periodic inspections, with meter readings and keys.', table(['Inspection', 'Date', 'Status', ''], insp.slice(0, 20).map(x => [
+      `<strong>${e(x.kind)}</strong>`, e(day(x.inspected_on)), badge(x.status), `<button type="button" class="button small" data-action="inspection-detail" data-id="${x.id}">Open</button>`]), 'No inspections yet.')
+      + (canOps && live ? `<div class="panel-body tf-more">${mb('New inspection', `data-action="form" data-kind="inspections" data-preset-contract="${live.id}"`, true)}</div>` : ''));
+
+    // Finances: rent invoiced and received for this home
+    const money_ = ['admin', 'manager', 'finance'].includes(role);
+    const invs = rows('invoices').filter(i => cids.has(i.contract_id) && i.released_at).sort((a, b) => String(b.period).localeCompare(String(a.period)));
+    const year = today().slice(0, 4), thisYear = invs.filter(i => String(i.period).startsWith(year));
+    const billed = thisYear.reduce((t, i) => t + i.total_cents, 0), openNow = invs.reduce((t, i) => t + Math.max(0, balance(i)), 0);
+    const received = billed - thisYear.reduce((t, i) => t + Math.max(0, balance(i)), 0);
+    const yearRent = live && live.basic_cents != null ? ((live.basic_cents || 0) + (live.service_cents || 0)) * 12 : null;
+    const figs = [['Invoiced in ' + year, eur(billed), 'k-blue', 'file'], ['Received in ' + year, eur(received), 'k-green', 'wallet'], ['Open now', eur(openNow), openNow ? 'k-red' : 'k-green', 'clock'], ['Rent per year', yearRent != null ? eur(yearRent) : '—', 'k-violet', 'chart']];
+    const fin = !money_ ? panel('Finances', '', '<p class="pf-coming">Only the finance team and managers see the finances of a home.</p>') :
+      `<div class="kcards">${figs.map(([t, v, tone, ic]) => `<div class="kcard ${tone}"><span class="kcard-icon">${icon(ic)}</span><span class="kcard-body"><span class="kcard-title">${e(t)}</span><span class="kcard-value pf-money">${e(v)}</span></span></div>`).join('')}</div>`
+      + panel('Invoices of this home', 'The rent invoices of every contract of this home.', table(['Invoice', 'Month', 'Tenant', 'Amount', 'Still open', ''], invs.slice(0, 24).map(i => [
+        `<strong>${e(i.number)}</strong>`, e(new Intl.DateTimeFormat('en-GB', {month: 'long', year: 'numeric'}).format(new Date(i.period + '-01T12:00:00'))), e((f.contracts.find(c => c.id === i.contract_id) || {}).tenant_name || ''), `<span class="amount">${eur(i.total_cents)}</span>`,
+        balance(i) > 0 ? `<strong class="late-text">${eur(balance(i))}</strong>` : badge('Paid', 'green'), `<button type="button" class="button small" data-action="invoice-detail" data-id="${i.id}">Open</button>`]), 'No invoices yet.'))
+      + panel('Costs and return', '', '<p class="pf-coming">Costs per home (maintenance, VvE contribution, insurance, taxes) and the return will show here. This needs the costs and the value of the home to be entered; that follows in a next step.</p>');
+
+    const body = {
+      overview,
+      tenants,
+      contracts: `<div class="section-stack">${contracts}${rentPanel}${cases}</div>`,
+      technical: `<div class="section-stack">${maint}${energy}${utilities}${inspections}</div>`,
+      finance: `<div class="section-stack">${fin}${letters}</div>`,
+      documents: docs,
+    }[tab] || overview;
+    return head + note + tabs + body;
   }
 
   const baseRender = renderPage;
   renderPage = () => {
     if (state.page !== 'properties' || !state.propertyView) return baseRender();
-    if (ui.id !== state.propertyView) { ui.id = state.propertyView; ui.file = null; setTimeout(load); }
+    if (ui.id !== state.propertyView) { ui.id = state.propertyView; ui.file = null; ui.tab = 'overview'; setTimeout(load); }
     return page();
   };
   const baseRefresh = refresh;
@@ -173,6 +257,11 @@
 
   document.addEventListener('click', async ev => {
     if (ev.target.closest('[data-pf-back]')) { ev.preventDefault(); state.propertyView = null; ui.id = null; render(); return; }
+    const tabBtn = ev.target.closest('[data-pf-tab]');
+    if (tabBtn) { ev.preventDefault(); ui.tab = tabBtn.dataset.pfTab; render(); document.querySelector('.pf-tabs')?.scrollIntoView({block: 'nearest'}); return; }
+    const menuBtn = ev.target.closest('[data-pf-addmenu]');
+    document.querySelectorAll('.pf-add.open').forEach(m => { if (!menuBtn || !m.contains(menuBtn)) { m.classList.remove('open'); m.querySelector('[data-pf-addmenu]')?.setAttribute('aria-expanded', 'false'); } });
+    if (menuBtn) { ev.preventDefault(); const box = menuBtn.closest('.pf-add'); box.classList.toggle('open'); menuBtn.setAttribute('aria-expanded', String(box.classList.contains('open'))); return; }
     const el = ev.target.closest('[data-pf]');
     if (!el || !ui.file || !ui.file.property) return;
     ev.preventDefault();
