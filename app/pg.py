@@ -212,7 +212,7 @@ def _table_facts(conn):
         if not _tables:   # read once the tables exist; every database (and test schema) has the same tables
             cur = conn.cursor()
             cur.execute("""SELECT c.table_name, c.column_name, c.ordinal_position,
-                                  (c.is_identity = 'YES') AS ident,
+                                  (c.is_identity = 'YES' OR COALESCE(c.column_default, '') LIKE 'nextval(%%') AS ident,
                                   EXISTS (SELECT 1 FROM information_schema.table_constraints t JOIN information_schema.key_column_usage k
                                           ON k.constraint_name = t.constraint_name AND k.table_schema = t.table_schema AND k.table_name = t.table_name
                                           WHERE t.constraint_type = 'PRIMARY KEY' AND t.table_schema = c.table_schema AND t.table_name = c.table_name

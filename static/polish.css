@@ -512,3 +512,17 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .tl-chips{padding:0 22px 14px;border-bottom:1px solid var(--line)}
 .tl-chips .filter-button span{display:inline-block;margin-left:4px;min-width:18px;padding:0 6px;border-radius:9px;background:#eef2ef;font-size:11px;font-weight:700;color:var(--muted)}
 .tl-chips .filter-button.active span{background:var(--green);color:#fff}
+
+/* property page: energy label and utilities */
+.pf-label{display:flex;align-items:center;gap:22px;flex-wrap:wrap}
+.pf-label-badge{width:72px;height:72px;border-radius:14px;display:grid;place-items:center;font-size:24px;font-weight:800;color:#fff;flex-shrink:0}
+.pf-label-badge.tone-green{background:#1f8a5b}.pf-label-badge.tone-amber{background:#d99a1e}.pf-label-badge.tone-red{background:#c2412d}.pf-label-badge.tone-gray{background:#a3aea8}
+.pf-facts{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:6px 24px;margin:0;flex:1}
+.pf-facts dt{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted)}.pf-facts dd{margin:3px 0 0;font-size:14px;color:var(--ink)}
+.pf-label-act{margin-left:auto}
+.pf-years{display:flex;flex-direction:column;gap:4px}
+.pf-year{font-size:12px;font-weight:700}.pf-year small{display:block;font-weight:400;color:var(--muted)}
+.pf-year.is-done{color:#1f8a5b}.pf-year.is-open{color:#b4532a}
+.pf-adv-note{margin:0 22px 14px}
+@media (max-width:800px){.pf-facts{grid-template-columns:repeat(2,minmax(0,1fr))}.pf-label-act{margin-left:0}}
+.pf-years{min-width:170px}.pf-year small{white-space:normal}

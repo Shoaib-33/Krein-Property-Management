@@ -92,5 +92,35 @@ class PropertyFileTests(unittest.TestCase):
         self.assertEqual(self.manager.post(f'/api/properties/{pid}/details', json={**body, 'rooms': '-1'}).status_code, 422)
 
 
+    def test_energy_label_utilities_and_settlement(self):
+        with db.connect() as conn:
+            c = dict(conn.execute('SELECT * FROM contracts WHERE company_id=1 ORDER BY id LIMIT 1').fetchone())
+        pid = c['property_id']
+        r = self.manager.post(f'/api/properties/{pid}/energy-label', data={'label': 'C', 'issued_on': '2021-03-12'}, files={'file': ('label.pdf', PDF, 'application/pdf')})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()['expires_on'], '2031-03-12')   # 10 years after the issue date
+        f = self.file(pid)
+        self.assertEqual((f['property']['energy_label'], f['property']['energy_label_issued']), ('C', '2021-03-12'))
+        self.assertIn(f['property']['energy_label_doc_id'], [d['id'] for d in f['documents']])
+        self.assertEqual(self.manager.post(f'/api/properties/{pid}/energy-label', data={'label': 'Z'}).status_code, 422)
+        self.assertEqual(self.manager.post(f'/api/properties/{pid}/energy-label', data={'label': 'B', 'issued_on': '2024-01-01', 'expires_on': '2023-01-01'}).status_code, 422)
+        # utilities: gas by the tenant, electricity and water in the rent with an advance
+        self.assertEqual([u['tenant_arranges'] for u in f['utilities']], [None, None, None])
+        body = {'gas': {'tenant_arranges': '1'}, 'electricity': {'tenant_arranges': '0', 'advance': '85,00', 'supplier': 'Vattenfall', 'meter_number': '871687120000000001'},
+                'water': {'tenant_arranges': '0', 'advance': '20'}}
+        self.assertEqual(self.manager.post(f'/api/properties/{pid}/utilities', json=body).status_code, 200)
+        u = {x['kind']: x for x in self.file(pid)['utilities']}
+        self.assertEqual((u['gas']['tenant_arranges'], u['electricity']['advance_cents'], u['electricity']['supplier'], u['water']['advance_cents']), (1, 8500, 'Vattenfall', 2000))
+        self.assertIsNotNone(self.file(pid)['service_cents'])
+        # year-end settlement: a refund is stored as a negative amount; saving the same year again updates it
+        r = self.manager.post(f'/api/properties/{pid}/utilities/electricity/settlement', json={'year': 2025, 'settled': '1', 'settled_on': '2026-02-15', 'result': 'refund', 'amount': '120'})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.manager.post(f'/api/properties/{pid}/utilities/electricity/settlement', json={'year': 2025, 'settled': '1', 'result': 'extra', 'amount': '40'})
+        rows_ = self.file(pid)['settlements']
+        self.assertEqual([(x['kind'], x['year'], x['amount_cents']) for x in rows_], [('electricity', 2025, 4000)])
+        self.assertEqual(self.manager.post(f'/api/properties/{pid}/utilities/heat/settlement', json={'year': 2025}).status_code, 404)
+        self.assertEqual(self.manager.post(f'/api/properties/{pid}/utilities/gas/settlement', json={'year': 2099}).status_code, 422)
+
+
 if __name__ == '__main__':
     unittest.main()

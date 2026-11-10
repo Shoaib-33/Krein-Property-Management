@@ -14,6 +14,7 @@ router = APIRouter()
 STAFF = ('property', 'finance', 'manager')   # and admin
 KINDS = ('Apartment', 'House', 'Room', 'Parking', 'Storage')
 LABELS = ('Unknown', 'A++++', 'A+++', 'A++', 'A+', 'A', 'B', 'C', 'D', 'E', 'F', 'G')
+UTILITIES = ('gas', 'electricity', 'water')
 DOC_KINDS = ('General', 'Contract', 'Energy label', 'Huurcommissie', 'VvE', 'Inspection report', 'Valuation', 'Legal notice')
 
 
@@ -50,7 +51,18 @@ def property_file(property_id: int, user=Depends(current_user)):
         if staff and prop.get('note_updated_by'):
             who = conn.execute('SELECT name FROM users WHERE id=?', (prop['note_updated_by'],)).fetchone()
             prop['note_updated_by_name'] = who['name'] if who else ''
-    return {'property': prop, 'contracts': contracts, 'tenants': tenants, 'documents': documents, 'staff': staff, 'doc_kinds': DOC_KINDS}
+        utilities, settlements, statements = [], [], []
+        if staff:
+            have = {u['kind']: u for u in rows(conn, 'SELECT * FROM property_utilities WHERE property_id=?', (property_id,))}
+            utilities = [have.get(k) or {'kind': k, 'tenant_arranges': None, 'advance_cents': None, 'supplier': '', 'meter_number': ''} for k in UTILITIES]
+            settlements = rows(conn, 'SELECT * FROM utility_settlements WHERE property_id=? ORDER BY year DESC, kind', (property_id,))
+            from .utility_statements import statements_for
+            statements = statements_for(conn, property_id)
+        # the contract's service advance, to compare with the utility advances
+        live = next((c for c in contracts if c['status'] in ('active', 'notice given')), None)
+        service_cents = live['service_cents'] if live else None
+    return {'property': prop, 'contracts': contracts, 'tenants': tenants, 'documents': documents, 'staff': staff, 'doc_kinds': DOC_KINDS,
+            'utilities': utilities, 'settlements': settlements, 'statements': statements, 'service_cents': service_cents}
 
 
 @router.post('/api/properties/{property_id}/note')
@@ -102,3 +114,122 @@ async def upload_property_document(property_id: int, kind: str = Form('General')
         conn.execute('UPDATE documents SET property_id=? WHERE id=?', (property_id, doc_id))
         audit(conn, user['id'], prop['company_id'], 'uploaded', 'document', doc_id, {'name': upload[3], 'property_id': property_id})
     return {'id': doc_id}
+
+
+def _date(value, label, required=True):
+    from datetime import date
+    value = str(value or '').strip()
+    if not value:
+        if required:
+            raise HTTPException(422, f'Enter the {label}.')
+        return None
+    try:
+        return date.fromisoformat(value).isoformat()
+    except ValueError:
+        raise HTTPException(422, f'Enter the {label} as a date.')
+
+
+def _money(value, label):
+    if value in (None, ''):
+        return None
+    try:
+        cents = round(float(str(value).replace(',', '.')) * 100)
+    except (TypeError, ValueError):
+        raise HTTPException(422, f'Enter the {label} as an amount, for example 85.00.')
+    if not 0 <= cents <= 10_000_000:
+        raise HTTPException(422, f'Enter a valid {label}.')
+    return cents
+
+
+@router.post('/api/properties/{property_id}/energy-label')
+async def save_energy_label(property_id: int, label: str = Form(...), issued_on: str = Form(''), expires_on: str = Form(''),
+                            file: UploadFile | None = File(None), user=Depends(current_user)):
+    """The current energy label of the home: label, issue date and expiry (issue date + 10 years unless given), and the
+    certificate, which is also filed under the home's documents."""
+    if label not in LABELS:
+        raise HTTPException(422, 'Choose the energy label.')
+    issued = _date(issued_on, 'issue date', required=label != 'Unknown')
+    expires = _date(expires_on, 'expiry date', required=False)
+    if issued and not expires:
+        from datetime import date
+        d = date.fromisoformat(issued)
+        try:
+            expires = d.replace(year=d.year + 10).isoformat()
+        except ValueError:   # 29 February
+            expires = d.replace(year=d.year + 10, day=28).isoformat()
+    if issued and expires and expires <= issued:
+        raise HTTPException(422, 'The expiry date must be after the issue date.')
+    with connect() as conn:
+        prop = record(conn, 'properties', property_id, user, STAFF)
+    upload = None
+    if file is not None and file.filename:
+        from .main import read_upload
+        upload = await read_upload(file)
+    with transaction() as conn:
+        doc_id = prop.get('energy_label_doc_id')
+        if upload:
+            from .main import save_document
+            doc_id = save_document(conn, prop['company_id'], None, user['id'], 'Energy label', upload)
+            conn.execute('UPDATE documents SET property_id=? WHERE id=?', (property_id, doc_id))
+        conn.execute('UPDATE properties SET energy_label=?,energy_label_issued=?,energy_label_expires=?,energy_label_doc_id=? WHERE id=?',
+                     (label, issued, expires, doc_id, property_id))
+        audit(conn, user['id'], prop['company_id'], 'energy_label', 'property', property_id,
+              {'old': {'label': prop['energy_label'], 'issued': prop.get('energy_label_issued'), 'expires': prop.get('energy_label_expires')},
+               'new': {'label': label, 'issued': issued, 'expires': expires, 'document_id': doc_id}})
+    return {'ok': True, 'expires_on': expires}
+
+
+@router.post('/api/properties/{property_id}/utilities')
+def save_utilities(property_id: int, data: dict, user=Depends(current_user)):
+    """Per utility (gas, electricity, water): does the tenant arrange it, or is it in the rent with a monthly advance;
+    supplier and meter/EAN number."""
+    out = {}
+    for kind in UTILITIES:
+        u = data.get(kind) or {}
+        own = str(u.get('tenant_arranges', '1')).lower() in ('1', 'true', 'yes', 'on')
+        out[kind] = {'tenant_arranges': int(own), 'advance_cents': None if own else _money(u.get('advance'), f'monthly advance for {kind}'),
+                     'supplier': ' '.join(str(u.get('supplier') or '').split())[:120], 'meter_number': ' '.join(str(u.get('meter_number') or '').split())[:60]}
+    with transaction() as conn:
+        prop = record(conn, 'properties', property_id, user, STAFF)
+        old = {r['kind']: dict(r) for r in conn.execute('SELECT * FROM property_utilities WHERE property_id=?', (property_id,))}
+        for kind, v in out.items():
+            if kind in old:
+                conn.execute('UPDATE property_utilities SET tenant_arranges=?,advance_cents=?,supplier=?,meter_number=?,updated_by=?,updated_at=? WHERE id=?',
+                             (v['tenant_arranges'], v['advance_cents'], v['supplier'], v['meter_number'], user['id'], now(), old[kind]['id']))
+            else:
+                conn.execute('INSERT INTO property_utilities(company_id,property_id,kind,tenant_arranges,advance_cents,supplier,meter_number,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?)',
+                             (prop['company_id'], property_id, kind, v['tenant_arranges'], v['advance_cents'], v['supplier'], v['meter_number'], user['id'], now()))
+        audit(conn, user['id'], prop['company_id'], 'utilities', 'property', property_id, {'old': old, 'new': out})
+    return {'ok': True}
+
+
+@router.post('/api/properties/{property_id}/utilities/{kind}/settlement')
+def save_settlement(property_id: int, kind: str, data: dict, user=Depends(current_user)):
+    """The year-end settlement of one utility on actual use: settled yes/no, the date, and what came out of it
+    (result 'refund': the tenant gets money back, 'extra': the tenant pays extra, 'even': nothing to pay)."""
+    if kind not in UTILITIES:
+        raise HTTPException(404, 'Unknown utility.')
+    try:
+        year = int(data.get('year'))
+    except (TypeError, ValueError):
+        year = 0
+    if not 2000 <= year <= local_today().year:
+        raise HTTPException(422, 'Choose the year that is settled.')
+    settled = str(data.get('settled', '1')).lower() in ('1', 'true', 'yes', 'on')
+    result = data.get('result') if data.get('result') in ('refund', 'extra', 'even') else 'even'
+    amount = _money(data.get('amount'), 'amount')
+    signed = None if not settled or amount is None or result == 'even' else (-amount if result == 'refund' else amount)
+    settled_on = _date(data.get('settled_on'), 'settlement date', required=False) if settled else None
+    note = str(data.get('note') or '').strip()[:500]
+    with transaction() as conn:
+        prop = record(conn, 'properties', property_id, user, STAFF)
+        old = conn.execute('SELECT * FROM utility_settlements WHERE property_id=? AND kind=? AND year=?', (property_id, kind, year)).fetchone()
+        if old:
+            conn.execute('UPDATE utility_settlements SET settled=?,settled_on=?,amount_cents=?,note=?,updated_by=?,updated_at=? WHERE id=?',
+                         (int(settled), settled_on, signed, note, user['id'], now(), old['id']))
+        else:
+            conn.execute('INSERT INTO utility_settlements(company_id,property_id,kind,year,settled,settled_on,amount_cents,note,updated_by,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)',
+                         (prop['company_id'], property_id, kind, year, int(settled), settled_on, signed, note, user['id'], now()))
+        audit(conn, user['id'], prop['company_id'], 'utility_settlement', 'property', property_id,
+              {'kind': kind, 'year': year, 'old': dict(old) if old else None, 'new': {'settled': settled, 'settled_on': settled_on, 'amount_cents': signed, 'note': note}})
+    return {'ok': True}

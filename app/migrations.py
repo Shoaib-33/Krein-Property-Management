@@ -645,6 +645,40 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V54: year-end settlement letters for utilities in the rent (app/utility_statements.py), and settlement results that wait
+# for the tenancy's next invoice, where they become an extra line
+V54 = '''
+CREATE TABLE invoice_adjustments (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), contract_id INTEGER NOT NULL REFERENCES contracts(id),
+ description TEXT NOT NULL, amount_cents INTEGER NOT NULL, source TEXT NOT NULL DEFAULT '', source_id INTEGER, invoice_id INTEGER REFERENCES invoices(id),
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE TABLE utility_statements (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER NOT NULL REFERENCES properties(id),
+ contract_id INTEGER NOT NULL REFERENCES contracts(id), year INTEGER NOT NULL, months INTEGER NOT NULL, lines TEXT NOT NULL, total_cents INTEGER NOT NULL,
+ status TEXT NOT NULL DEFAULT 'draft', document_id INTEGER REFERENCES documents(id), created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL,
+ approved_by INTEGER REFERENCES users(id), approved_at TEXT, sent_at TEXT, UNIQUE(property_id, contract_id, year)
+);
+'''
+
+# V53: property page, step 2: the current energy label (issue and expiry date, certificate), and per home the utilities
+# (gas, electricity, water: who arranges them, the monthly advance in the rent, supplier, meter/EAN) with a yearly settlement
+V53 = '''
+ALTER TABLE properties ADD COLUMN energy_label_issued TEXT;
+ALTER TABLE properties ADD COLUMN energy_label_expires TEXT;
+ALTER TABLE properties ADD COLUMN energy_label_doc_id INTEGER REFERENCES documents(id);
+CREATE TABLE property_utilities (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER NOT NULL REFERENCES properties(id),
+ kind TEXT NOT NULL, tenant_arranges INTEGER NOT NULL DEFAULT 1, advance_cents INTEGER, supplier TEXT NOT NULL DEFAULT '',
+ meter_number TEXT NOT NULL DEFAULT '', updated_by INTEGER REFERENCES users(id), updated_at TEXT NOT NULL, UNIQUE(property_id, kind)
+);
+CREATE TABLE utility_settlements (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER NOT NULL REFERENCES properties(id),
+ kind TEXT NOT NULL, year INTEGER NOT NULL, settled INTEGER NOT NULL DEFAULT 0, settled_on TEXT, amount_cents INTEGER, note TEXT NOT NULL DEFAULT '',
+ updated_by INTEGER REFERENCES users(id), updated_at TEXT NOT NULL, UNIQUE(property_id, kind, year)
+);
+'''
+
 # V52: the property page (app/property_file.py): an internal note per home, and documents filed on the home itself
 V52 = '''
 ALTER TABLE properties ADD COLUMN note TEXT NOT NULL DEFAULT '';
@@ -821,6 +855,34 @@ ALTER TABLE companies ADD COLUMN bill_day BIGINT;
     50: '''
 ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id);
 ''',
+    54: '''
+CREATE TABLE invoice_adjustments (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), contract_id BIGINT NOT NULL REFERENCES contracts(id),
+ description TEXT NOT NULL, amount_cents BIGINT NOT NULL, source TEXT NOT NULL DEFAULT '', source_id BIGINT, invoice_id BIGINT REFERENCES invoices(id),
+ created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE TABLE utility_statements (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), property_id BIGINT NOT NULL REFERENCES properties(id),
+ contract_id BIGINT NOT NULL REFERENCES contracts(id), year BIGINT NOT NULL, months BIGINT NOT NULL, lines TEXT NOT NULL, total_cents BIGINT NOT NULL,
+ status TEXT NOT NULL DEFAULT 'draft', document_id BIGINT REFERENCES documents(id), created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL,
+ approved_by BIGINT REFERENCES users(id), approved_at TEXT, sent_at TEXT, UNIQUE(property_id, contract_id, year)
+);
+''',
+    53: '''
+ALTER TABLE properties ADD COLUMN energy_label_issued TEXT;
+ALTER TABLE properties ADD COLUMN energy_label_expires TEXT;
+ALTER TABLE properties ADD COLUMN energy_label_doc_id BIGINT REFERENCES documents(id);
+CREATE TABLE property_utilities (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), property_id BIGINT NOT NULL REFERENCES properties(id),
+ kind TEXT NOT NULL, tenant_arranges BIGINT NOT NULL DEFAULT 1, advance_cents BIGINT, supplier TEXT NOT NULL DEFAULT '',
+ meter_number TEXT NOT NULL DEFAULT '', updated_by BIGINT REFERENCES users(id), updated_at TEXT NOT NULL, UNIQUE(property_id, kind)
+);
+CREATE TABLE utility_settlements (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), property_id BIGINT NOT NULL REFERENCES properties(id),
+ kind TEXT NOT NULL, year BIGINT NOT NULL, settled BIGINT NOT NULL DEFAULT 0, settled_on TEXT, amount_cents BIGINT, note TEXT NOT NULL DEFAULT '',
+ updated_by BIGINT REFERENCES users(id), updated_at TEXT NOT NULL, UNIQUE(property_id, kind, year)
+);
+''',
     52: '''
 ALTER TABLE properties ADD COLUMN note TEXT NOT NULL DEFAULT '';
 ALTER TABLE properties ADD COLUMN note_updated_at TEXT;
@@ -850,6 +912,8 @@ def migrate_postgres(conn):
                 link_all_homes(conn)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (version, now()))
     conn.commit()
+    from .pg import forget_tables
+    forget_tables()   # new tables and columns: read the table facts again (ids returned by INSERT)
 
 
 def migrate(conn):
@@ -1251,6 +1315,16 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (52, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=53').fetchone():
+            for statement in V53.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (53, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=54').fetchone():
+            for statement in V54.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (54, now()))
         conn.commit()
     except Exception:
         conn.rollback()

@@ -256,9 +256,18 @@ def issue_month(conn, company_id, period, user_id, only_contracts=None, draft=Fa
         if postal_line(c):   # the tenant gets post elsewhere: the bill goes there, the rented home stays the invoice's subject
             snapshot.update({'object': ', '.join(x for x in (c['property_name'], c['address']) if x), 'address': postal_line(c), 'postal_address': True})
         snapshot.update({'from': start.isoformat(), 'to': end.isoformat(), 'basic_cents': b, 'service_cents': s})
-        invoice_id = insert(conn, 'invoices', {'company_id': company_id, 'contract_id': c['id'], 'number': number, 'period': period, 'due_date': start.isoformat(), 'basic_cents': b, 'service_cents': s, 'total_cents': b+s, 'snapshot': json.dumps(snapshot), 'created_at': now()})
-        insert(conn, 'ledger', {'company_id': company_id, 'contract_id': c['id'], 'invoice_id': invoice_id, 'kind': 'invoice', 'amount_cents': b+s, 'created_by': user_id, 'created_at': now(), 'note': number})
-        audit(conn, user_id, company_id, 'issued', 'invoice', invoice_id, {'number': number, 'total_cents': b+s})
+        from .utility_statements import apply_adjustments, service_breakdown
+        parts = service_breakdown(conn, c['property_id'], s, versions[-1]['service_cents'] if versions else 0)
+        if parts:
+            snapshot['service_breakdown'] = parts
+        extra, adjustment_ids, extra_sum = apply_adjustments(conn, c['id'], b + s)
+        if extra:   # a year-end settlement: refund or extra payment as its own line
+            snapshot['extra_items'] = extra
+        invoice_id = insert(conn, 'invoices', {'company_id': company_id, 'contract_id': c['id'], 'number': number, 'period': period, 'due_date': start.isoformat(), 'basic_cents': b, 'service_cents': s, 'total_cents': b+s+extra_sum, 'snapshot': json.dumps(snapshot), 'created_at': now()})
+        insert(conn, 'ledger', {'company_id': company_id, 'contract_id': c['id'], 'invoice_id': invoice_id, 'kind': 'invoice', 'amount_cents': b+s+extra_sum, 'created_by': user_id, 'created_at': now(), 'note': number})
+        for aid in adjustment_ids:
+            conn.execute('UPDATE invoice_adjustments SET invoice_id=? WHERE id=?', (invoice_id, aid))
+        audit(conn, user_id, company_id, 'issued', 'invoice', invoice_id, {'number': number, 'total_cents': b+s+extra_sum})
         if review:   # a draft: the landlord checks and edits it, then sends it to the tenant
             count += 1
             continue
@@ -2065,7 +2074,7 @@ def invoice_pdf_bytes(inv, snap):
     invoice_info=Table([[para('BILL TO','SectionLabel'),para('INVOICE DETAILS','SectionLabel')],[rich(f'<b>{esc(snap.get("tenant_name", ""))}</b><br/>{esc(snap.get("address", ""))}'),rich(details)]],colWidths=[85*mm,85*mm],style=TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('BACKGROUND',(0,0),(-1,0),pale),('BOX',(0,0),(-1,-1),.6,line),('INNERGRID',(0,0),(-1,-1),.4,line),('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),9),('BOTTOMPADDING',(0,0),(-1,-1),9)]))
     story += [invoice_info,Spacer(1,22),para('CHARGES','SectionLabel')]
     currency=lambda cents:f'€ {cents/100:,.2f}'
-    items=[[para('DESCRIPTION','SectionLabel'),para('AMOUNT','SectionLabel')],[para(snap.get('basic_label') or 'Basic rent'),para(currency(inv['basic_cents']))],[para(snap.get('service_label') or 'Service charge advance'),para(currency(inv['service_cents']))]]+[[para(x.get('description','')),para(currency(x.get('amount_cents',0)))] for x in snap.get('extra_items',[])]
+    items=[[para('DESCRIPTION','SectionLabel'),para('AMOUNT','SectionLabel')],[para(snap.get('basic_label') or 'Basic rent'),para(currency(inv['basic_cents']))],[para(snap.get('service_label') or 'Service charge advance'),para(currency(inv['service_cents']))]]+[[para('    of which '+{'gas':'gas','electricity':'electricity','water':'water','other':'other service costs'}.get(x['kind'],x['kind'])+' (advance)','SmallMuted'),para(currency(x['amount_cents']),'SmallMuted')] for x in (snap.get('service_breakdown') or []) if snap.get('service_cents',inv['service_cents'])==inv['service_cents']]+[[para(x.get('description','')),para(currency(x.get('amount_cents',0)))] for x in snap.get('extra_items',[])]
     item_table=Table(items,colWidths=[130*mm,40*mm],style=TableStyle([('VALIGN',(0,0),(-1,-1),'MIDDLE'),('ALIGN',(1,0),(1,-1),'RIGHT'),('BACKGROUND',(0,0),(-1,0),pale),('LINEBELOW',(0,0),(-1,0),.7,line),('LINEBELOW',(0,1),(-1,-2),.4,line),('LEFTPADDING',(0,0),(-1,-1),10),('RIGHTPADDING',(0,0),(-1,-1),10),('TOPPADDING',(0,0),(-1,-1),10),('BOTTOMPADDING',(0,0),(-1,-1),10)]))
     story += [item_table,Spacer(1,12),Table([[para('TOTAL DUE','TotalLabel'),para(currency(inv['total_cents']),'TotalAmount')]],colWidths=[110*mm,60*mm],style=TableStyle([('BACKGROUND',(0,0),(-1,-1),green),('VALIGN',(0,0),(-1,-1),'MIDDLE'),('LEFTPADDING',(0,0),(-1,-1),12),('RIGHTPADDING',(0,0),(-1,-1),12),('TOPPADDING',(0,0),(-1,-1),12),('BOTTOMPADDING',(0,0),(-1,-1),12)])),Spacer(1,19)]+([para('NOTE','SectionLabel'),para(snap['note']),Spacer(1,12)] if snap.get('note') else [])+[para('HOW TO PAY','SectionLabel'),para(snap.get('payment_instructions') or 'Please contact your property manager for payment instructions.'),Spacer(1,8),rich(f'Put invoice number <b>{esc(inv["number"])}</b> in the description of your bank transfer (omschrijving), so your payment is recognised automatically. You may also upload your receipt in the tenant portal.','SmallMuted')]
     def page_chrome(canvas,doc):
@@ -2208,6 +2217,8 @@ from .payment_history import router as payment_history_router
 app.include_router(payment_history_router)
 from .property_file import router as property_file_router
 app.include_router(property_file_router)
+from .utility_statements import router as utility_statements_router
+app.include_router(utility_statements_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')
