@@ -45,7 +45,7 @@ def property_file(property_id: int, user=Depends(current_user)):
                 FROM tenants t WHERE t.company_id=? AND t.archived_at IS NULL AND (t.home_property_id=? OR t.id IN (SELECT tenant_id FROM contract_people WHERE contract_id IN ({marks})))
                 ORDER BY has_active DESC, t.name''', (property_id, prop['company_id'], property_id, *cids))
         money_kinds = '' if role in ('admin', 'manager', 'finance', 'landlord') else "AND d.kind NOT IN ('payment proof','supplier invoice','deposit evidence') "
-        documents = rows(conn, f'''SELECT d.id,d.name,d.kind,d.contract_id,d.property_id,d.created_at,u.name added_by FROM documents d LEFT JOIN users u ON u.id=d.created_by
+        documents = rows(conn, f'''SELECT d.id,d.name,d.kind,d.contract_id,d.property_id,d.case_id,d.created_at,u.name added_by FROM documents d LEFT JOIN users u ON u.id=d.created_by
                 WHERE d.company_id=? AND d.file_key<>'' AND (d.property_id=? OR d.contract_id IN ({marks})) {money_kinds}ORDER BY d.id DESC LIMIT 100''',
                          (prop['company_id'], property_id, *cids))
         if staff and prop.get('note_updated_by'):
@@ -61,8 +61,15 @@ def property_file(property_id: int, user=Depends(current_user)):
         # the contract's service advance, to compare with the utility advances
         live = next((c for c in contracts if c['status'] in ('active', 'notice given')), None)
         service_cents = live['service_cents'] if live else None
+        cases, rent = [], {'history': [], 'proposals': []}
+        if staff:
+            cases = rows(conn, '''SELECT k.*,t.name tenant_name FROM property_cases k LEFT JOIN contracts c ON c.id=k.contract_id LEFT JOIN tenants t ON t.id=c.tenant_id
+                                  WHERE k.property_id=? ORDER BY (k.status='closed'), k.started_on DESC, k.id DESC''', (property_id,))
+            # rent and indexation: the rent history of each contract of this home, and proposed increases
+            rent['history'] = rows(conn, f'SELECT r.contract_id,r.effective_from,r.basic_cents,r.service_cents FROM rent_versions r WHERE r.contract_id IN ({marks}) ORDER BY r.contract_id,r.effective_from', cids)
+            rent['proposals'] = rows(conn, f'SELECT id,contract_id,effective_from,basic_cents,service_cents,reason,status,created_at FROM rent_proposals WHERE contract_id IN ({marks}) ORDER BY effective_from DESC,id DESC', cids)
     return {'property': prop, 'contracts': contracts, 'tenants': tenants, 'documents': documents, 'staff': staff, 'doc_kinds': DOC_KINDS,
-            'utilities': utilities, 'settlements': settlements, 'statements': statements, 'service_cents': service_cents}
+            'utilities': utilities, 'settlements': settlements, 'statements': statements, 'service_cents': service_cents, 'cases': cases, 'rent': rent}
 
 
 @router.post('/api/properties/{property_id}/note')
@@ -233,3 +240,65 @@ def save_settlement(property_id: int, kind: str, data: dict, user=Depends(curren
         audit(conn, user['id'], prop['company_id'], 'utility_settlement', 'property', property_id,
               {'kind': kind, 'year': year, 'old': dict(old) if old else None, 'new': {'settled': settled, 'settled_on': settled_on, 'amount_cents': signed, 'note': note}})
     return {'ok': True}
+
+
+CASE_STATUS = ('open', 'hearing', 'decision', 'closed')
+
+
+def _case_values(conn, prop, data):
+    subject = ' '.join(str(data.get('subject') or '').split())[:200]
+    if not subject:
+        raise HTTPException(422, 'Describe what the case is about.')
+    status = data.get('status') if data.get('status') in CASE_STATUS else 'open'
+    contract_id = None
+    if data.get('contract_id'):
+        try:
+            contract_id = int(data.get('contract_id'))
+        except (TypeError, ValueError):
+            contract_id = None
+        if contract_id and not conn.execute('SELECT 1 FROM contracts WHERE id=? AND property_id=?', (contract_id, prop['id'])).fetchone():
+            raise HTTPException(422, 'Choose a tenancy of this home.')
+    kind = str(data.get('kind') or 'Huurcommissie').strip()[:60] or 'Huurcommissie'
+    return {'subject': subject, 'kind': kind, 'status': status, 'contract_id': contract_id, 'started_on': _date(data.get('started_on'), 'start date'),
+            'next_deadline': _date(data.get('next_deadline'), 'next deadline', required=False), 'deadline_note': str(data.get('deadline_note') or '').strip()[:200],
+            'note': str(data.get('note') or '').strip()[:3000]}
+
+
+@router.post('/api/properties/{property_id}/cases')
+def add_case(property_id: int, data: dict, user=Depends(current_user)):
+    """An ongoing case of this home, such as a procedure at the Huurcommissie: subject, start, status, next deadline."""
+    with transaction() as conn:
+        prop = record(conn, 'properties', property_id, user, STAFF)
+        v = _case_values(conn, prop, data)
+        cid = conn.execute('INSERT INTO property_cases(company_id,property_id,contract_id,subject,kind,started_on,status,next_deadline,deadline_note,note,created_by,created_at,closed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                           (prop['company_id'], property_id, v['contract_id'], v['subject'], v['kind'], v['started_on'], v['status'], v['next_deadline'], v['deadline_note'], v['note'],
+                            user['id'], now(), now() if v['status'] == 'closed' else None)).lastrowid
+        audit(conn, user['id'], prop['company_id'], 'created', 'property_case', cid, v)
+    return {'id': cid}
+
+
+@router.post('/api/property-cases/{case_id}')
+def update_case(case_id: int, data: dict, user=Depends(current_user)):
+    with transaction() as conn:
+        case = record(conn, 'property_cases', case_id, user, STAFF)
+        prop = dict(conn.execute('SELECT * FROM properties WHERE id=?', (case['property_id'],)).fetchone())
+        v = _case_values(conn, prop, data)
+        closed = case['closed_at'] if case['status'] == 'closed' and v['status'] == 'closed' else (now() if v['status'] == 'closed' else None)
+        conn.execute('UPDATE property_cases SET contract_id=?,subject=?,kind=?,started_on=?,status=?,next_deadline=?,deadline_note=?,note=?,updated_by=?,updated_at=?,closed_at=? WHERE id=?',
+                     (v['contract_id'], v['subject'], v['kind'], v['started_on'], v['status'], v['next_deadline'], v['deadline_note'], v['note'], user['id'], now(), closed, case_id))
+        audit(conn, user['id'], case['company_id'], 'updated', 'property_case', case_id, {'old': dict(case), 'new': v})
+    return {'ok': True}
+
+
+@router.post('/api/property-cases/{case_id}/documents')
+async def upload_case_document(case_id: int, file: UploadFile = File(...), user=Depends(current_user)):
+    """A letter or decision of the case; it is also listed under the home's documents."""
+    from .main import read_upload, save_document
+    with connect() as conn:
+        case = record(conn, 'property_cases', case_id, user, STAFF)
+    upload = await read_upload(file)
+    with transaction() as conn:
+        doc_id = save_document(conn, case['company_id'], case['contract_id'], user['id'], 'Huurcommissie', upload)
+        conn.execute('UPDATE documents SET property_id=?,case_id=? WHERE id=?', (case['property_id'], case_id, doc_id))
+        audit(conn, user['id'], case['company_id'], 'uploaded', 'document', doc_id, {'name': upload[3], 'case_id': case_id})
+    return {'id': doc_id}

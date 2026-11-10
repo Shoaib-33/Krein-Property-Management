@@ -122,5 +122,29 @@ class PropertyFileTests(unittest.TestCase):
         self.assertEqual(self.manager.post(f'/api/properties/{pid}/utilities/gas/settlement', json={'year': 2099}).status_code, 422)
 
 
+    def test_cases_and_rent(self):
+        with db.connect() as conn:
+            c = dict(conn.execute("SELECT * FROM contracts WHERE company_id=1 AND status='active' ORDER BY id LIMIT 1").fetchone())
+        pid = c['property_id']
+        f = self.file(pid)
+        self.assertTrue(any(h['contract_id'] == c['id'] for h in f['rent']['history']))
+        self.assertEqual(f['cases'], [])
+        body = {'subject': 'Tenant asks for a rent reduction', 'kind': 'Huurcommissie', 'status': 'open', 'contract_id': c['id'], 'started_on': '2026-10-01',
+                'next_deadline': '2026-12-01', 'deadline_note': 'Send our response'}
+        r = self.manager.post(f'/api/properties/{pid}/cases', json=body)
+        self.assertEqual(r.status_code, 200, r.text)
+        kid = r.json()['id']
+        self.assertIsNotNone(kid)
+        d = self.manager.post(f'/api/property-cases/{kid}/documents', files={'file': ('letter.pdf', PDF, 'application/pdf')})
+        self.assertEqual(d.status_code, 200, d.text)
+        f = self.file(pid)
+        self.assertEqual((f['cases'][0]['subject'], f['cases'][0]['next_deadline'], f['cases'][0]['tenant_name'] is not None), ('Tenant asks for a rent reduction', '2026-12-01', True))
+        self.assertEqual(next(x for x in f['documents'] if x['id'] == d.json()['id'])['case_id'], kid)
+        self.assertEqual(self.manager.post(f'/api/property-cases/{kid}', json={**body, 'status': 'closed'}).status_code, 200)
+        self.assertIsNotNone(self.file(pid)['cases'][0]['closed_at'])
+        self.assertEqual(self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'subject': ''}).status_code, 422)
+        self.assertEqual(self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'contract_id': 999999}).status_code, 422)
+
+
 if __name__ == '__main__':
     unittest.main()

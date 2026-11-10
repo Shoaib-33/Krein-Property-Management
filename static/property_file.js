@@ -113,7 +113,43 @@
         'No settlement made yet.').replace(/<div class="empty">[\s\S]*$/, () => empty('No settlement made yet', 'After the year ends, enter the actual costs from the supplier\'s yearly bill. The software works out the refund or extra payment and makes the letter.', `<div class="actions tf-empty-acts">${mb('Make year-end settlement', 'data-pf="statement-new"', true)}</div>`))
       + ((f.statements || []).length ? `<div class="panel-body tf-more">${mb('Make year-end settlement', 'data-pf="statement-new"', true)}</div>` : '')) : '';
 
-    return head + note + `<div class="section-stack">${tenants}${contracts}${energy}${utilities}${letters}${docs}</div>`;
+    // rent and indexation: the rent of the current contract, its history, and increases that are proposed
+    const canRent = ['admin', 'manager', 'finance'].includes(role);
+    const rc = live || f.contracts[0];
+    const hist = rc ? (f.rent.history || []).filter(h => h.contract_id === rc.id) : [];
+    const props = rc ? (f.rent.proposals || []).filter(x => x.contract_id === rc.id) : [];
+    const next = props.find(x => x.effective_from > today() && x.status !== 'rejected');
+    const ny = new Date(today()).getFullYear(), july = `${today() >= `${ny}-07-01` ? ny + 1 : ny}-07-01`, letterBy = `${july.slice(0, 4)}-05-01`;
+    const daysLeft = Math.round((new Date(letterBy) - new Date(today())) / 864e5);
+    const PS = {pending: ['Waiting for approval', 'amber'], approved: ['Approved', 'green'], rejected: ['Rejected', 'gray']};
+    const rentPanel = staff ? panel('Rent and indexation', 'The rent of the current contract, how it changed over the years, and the next increase.',
+      !rc ? empty('No contract yet', 'The rent comes from the contract. Add the contract first.', '') :
+      `<div class="panel-body pf-rent"><div class="pf-rent-now"><small>Rent now</small><strong>${eur((rc.basic_cents || 0) + (rc.service_cents || 0))}</strong><span>basic ${eur(rc.basic_cents)} + service ${eur(rc.service_cents)} · ${e(rc.tenant_name)}</span></div>
+        <div class="pf-rent-next ${next ? 'is-set' : daysLeft <= 60 ? 'is-due' : ''}">${next ? `<small>Next increase</small><strong>${eur(next.basic_cents + next.service_cents)}</strong><span>from ${e(day(next.effective_from))} ${badge(...(PS[next.status] || [next.status, 'gray']))}</span>`
+          : `<small>Next yearly increase</small><strong>${e(day(july))}</strong><span>${daysLeft >= 0 ? `Send the letter by ${e(day(letterBy))} (at least 2 months before): ${daysLeft} days left` : `The letter for ${e(day(july))} should have gone out by ${e(day(letterBy))}`}</span>`}</div></div>`
+      + table(['From', 'Basic rent', 'Service', 'Total', 'Increase'], hist.slice().reverse().map((h, i, arr) => {
+          const tot = h.basic_cents + h.service_cents, prev = arr[i + 1], pt = prev ? prev.basic_cents + prev.service_cents : null;
+          return [`<strong>${e(day(h.effective_from))}</strong>`, eur(h.basic_cents), eur(h.service_cents), `<span class="amount">${eur(tot)}</span>`,
+            pt ? `<span class="${tot >= pt ? 'pf-up' : 'pf-down'}">${tot >= pt ? '+' : ''}${((tot - pt) / pt * 100).toFixed(1).replace('.', ',')}%</span>` : '<span class="muted">start</span>'];
+        }), 'No rent history.')
+      + (props.length ? `<div class="panel-body"><h3 class="pf-sub">Proposed changes</h3>${props.map(x => `<div class="pf-prop">${badge(...(PS[x.status] || [x.status, 'gray']))} <strong>${eur(x.basic_cents + x.service_cents)}</strong> from ${e(day(x.effective_from))}<small>${e(x.reason || '')}</small></div>`).join('')}</div>` : '')
+      + (canRent ? `<div class="panel-body tf-more">${mb('Propose rent increase', `data-action="form" data-kind="rent_proposals" data-preset-contract="${rc.id}"`, true)}</div>` : '')) : '';
+
+    // ongoing cases (Huurcommissie and similar)
+    const CS = {open: ['Open', 'blue'], hearing: ['Hearing', 'amber'], decision: ['Decision', 'green'], closed: ['Closed', 'gray']};
+    const docsOf = k => f.documents.filter(d => d.case_id === k.id);
+    const dl = k => { if (!k.next_deadline || k.status === 'closed') return '<span class="muted">—</span>'; const n = Math.round((new Date(k.next_deadline) - new Date(today())) / 864e5);
+      return `<strong class="${n < 0 ? 'late-text' : ''}">${e(day(k.next_deadline))}</strong>${n < 0 ? ` ${badge('Overdue', 'red')}` : n <= 14 ? ` ${badge(`In ${n} days`, 'amber')}` : ''}${k.deadline_note ? `<small>${e(k.deadline_note)}</small>` : ''}`; };
+    const cases = staff ? panel('Ongoing cases', 'Procedures about this home, such as at the Huurcommissie: what it is about, the status and the next deadline.',
+      table(['Case', 'Started', 'Status', 'Next deadline', 'Documents', ''], (f.cases || []).map(k => [
+        `<strong>${e(k.subject)}</strong><small>${e(k.kind)}${k.tenant_name ? ' · ' + e(k.tenant_name) : ''}</small>${k.note ? `<small class="pf-case-note">${e(k.note)}</small>` : ''}`,
+        e(day(k.started_on)), badge(...(CS[k.status] || [k.status, 'gray'])), dl(k),
+        docsOf(k).length ? docsOf(k).map(d => `<a class="pf-doc-link" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">${e(d.name)}</a>`).join('') : '<span class="muted">—</span>',
+        `<div class="actions">${mb('Edit', `data-pf="case-edit" data-id="${k.id}"`)}${mb('Add document', `data-pf="case-doc" data-id="${k.id}"`)}</div>`]), 'No cases.').replace(/<div class="empty">[\s\S]*$/, () =>
+        empty('No ongoing cases', 'Record a procedure at the Huurcommissie or another dispute about this home, with its deadlines and letters.', `<div class="actions tf-empty-acts">${mb('New case', 'data-pf="case-new"', true)}</div>`))
+      + ((f.cases || []).length ? `<div class="panel-body tf-more">${mb('New case', 'data-pf="case-new"', true)}</div>` : '')) : '';
+
+    return head + note + `<div class="section-stack">${tenants}${contracts}${rentPanel}${cases}${energy}${utilities}${letters}${docs}</div>`;
   }
 
   const baseRender = renderPage;
@@ -230,6 +266,22 @@
     } else if (act === 'statement-delete') {
       if (!confirm('Delete this draft?')) return;
       try { await api(`/api/utility-statements/${el.dataset.id}`, {method: 'DELETE'}); ui.file = null; load(); } catch (err) { toast(err.message); }
+    } else if (act === 'case-new' || act === 'case-edit') {
+      const k = act === 'case-edit' ? (ui.file.cases || []).find(x => x.id === Number(el.dataset.id)) : null;
+      formModal(k ? 'Edit case' : 'New case', [['subject', 'What is it about?', 'text', {value: k ? k.subject : '', wide: true, placeholder: 'For example: tenant asks for a rent reduction because of defects'}],
+        selectField('kind', 'Type', ['Huurcommissie', 'Court', 'Dispute', 'Other'], {value: k ? k.kind : 'Huurcommissie'}),
+        selectField('status', 'Status', [['open', 'Open'], ['hearing', 'Hearing planned'], ['decision', 'Decision received'], ['closed', 'Closed']], {value: k ? k.status : 'open'}),
+        selectField('contract_id', 'Tenancy (optional)', ui.file.contracts.map(c => [c.id, `${c.tenant_name} · from ${day(c.start_date)}`]), {optional: true, required: false, value: k ? k.contract_id || '' : ((ui.file.contracts.find(c => ['active', 'notice given'].includes(c.status)) || {}).id || '')}),
+        ['started_on', 'Started on', 'date', {value: k ? k.started_on : today()}],
+        ['next_deadline', 'Next deadline (optional)', 'date', {value: k ? k.next_deadline || '' : '', required: false}],
+        ['deadline_note', 'What must be done by then?', 'text', {value: k ? k.deadline_note : '', required: false, placeholder: 'For example: send our response to the Huurcommissie'}],
+        ['note', 'Notes', 'textarea', {value: k ? k.note : '', required: false, wide: true}]],
+        async data => { await api(k ? `/api/property-cases/${k.id}` : `/api/properties/${p.id}/cases`, {method: 'POST', body: data}); ui.file = null; load(); },
+        {submit: 'Save', success: 'Case saved.'});
+    } else if (act === 'case-doc') {
+      formModal('Add a document to this case', [['file', 'Letter, decision or other document (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}]],
+        async (data, fd) => { await api(`/api/property-cases/${el.dataset.id}/documents`, {method: 'POST', body: fd}); ui.file = null; load(); },
+        {intro: 'The document is also listed under Documents of this home.', submit: 'Upload', success: 'Document added.'});
     } else if (act === 'upload') {
       formModal('Upload a document for this home', [['file', 'File (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}], selectField('kind', 'Category', ui.file.doc_kinds || ['General'])],
         async (data, fd) => { await api(`/api/properties/${p.id}/documents`, {method: 'POST', body: fd}); ui.file = null; load(); },
