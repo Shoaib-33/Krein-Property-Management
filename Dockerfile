@@ -21,6 +21,9 @@ COPY static ./static
 COPY website ./website
 COPY manage.py ./manage.py
 COPY scripts ./scripts
+# the country of an address (DB-IP Lite, CC BY 4.0), for the developer's "every address in the Netherlands" switch;
+# a failed download never stops the build: that switch then lets nobody in by country
+RUN python scripts/fetch_geoip.py || true
 # the sample data for a public demo (KREIN_SAMPLE_DATA=1); no real personal data
 COPY sample-data ./sample-data
 

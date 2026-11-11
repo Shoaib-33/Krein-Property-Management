@@ -21,6 +21,7 @@
   const when = v => v ? e(String(v).replace('T', ' ').slice(0, 16)) : '—';
   const badge = (text, cls) => `<span class="badge ${cls}">${e(text)}</span>`;
   // an IPv6 home address changes its last part regularly; the first half (/64) stays the same
+  const land = code => { try { return new Intl.DisplayNames([document.documentElement.lang || 'en'], {type: 'region'}).of(code); } catch { return code; } };
   const suggest = ip => ip.includes(':') ? ip.split(':').slice(0, 4).join(':') + '::/64' : ip;
 
   function page() {
@@ -29,7 +30,7 @@
     if (ui.error) return H + empty('Could not load the settings', ui.error);
     const d = ui.d, dev = d.developer;
     const you = panel('Your address now', 'The address this server sees for you. Compare it with https://ifconfig.me before you switch anything on.',
-      `<div class="panel-body"><p class="ip-now"><code>${e(d.your_ip)}</code> ${d.entries.some(x => x.matches_you) ? badge('On the staff list', 'green') : badge('Not on the staff list', 'amber')}</p></div>`);
+      `<div class="panel-body"><p class="ip-now"><code>${e(d.your_ip)}</code> ${d.your_country ? `<span class="muted">${e(land(d.your_country))}</span> ` : ''}${d.entries.some(x => x.matches_you) ? badge('On the staff list', 'green') : badge('Not on the staff list', 'amber')}</p></div>`);
 
     const devBody = `<div class="panel-body">
       <p>${dev.set ? (dev.matches_you ? badge('Restricted · your address is allowed', 'green') : badge('Restricted · your address is NOT allowed', 'red')) : badge('Not restricted: anyone with the password can sign in', 'amber')}</p>
@@ -43,15 +44,22 @@
     const sw = d.staff_on
       ? `<button type="button" class="button" data-ipa="off">Switch the check off</button>`
       : `<button type="button" class="button primary" data-ipa="on">Switch the check on</button>`;
+    const nlSw = d.netherlands
+      ? `<button type="button" class="button" data-ipa="nl-off">Only the listed addresses</button>`
+      : `<button type="button" class="button" data-ipa="nl-on"${d.geo.available ? '' : ' disabled'}>Also allow every address in the Netherlands</button>`;
+    const geoNote = d.geo.available
+      ? `<p class="muted">Country of an address: <a href="https://db-ip.com" target="_blank" rel="noopener">IP Geolocation by DB-IP</a>${d.geo.month ? ` (${e(d.geo.month)})` : ''}. A VPN can make an address look Dutch, so the listed addresses are the stronger protection.</p>`
+      : `<p class="form-error">The country data is missing on this server, so addresses in the Netherlands cannot be recognised. Only the listed addresses work.</p>`;
     const staff = panel('Staff software', d.staff_on
-      ? 'ON: admin, manager, finance, property and inspector accounts can only sign in from these addresses. Tenants, owners and contractors are not affected.'
+      ? (d.netherlands ? 'ON: admin, manager, finance, property and inspector accounts can sign in from the addresses below and from every address in the Netherlands. Tenants, owners and contractors are not affected.'
+        : 'ON: admin, manager, finance, property and inspector accounts can only sign in from these addresses. Tenants, owners and contractors are not affected.')
       : 'OFF: staff can sign in from anywhere. Add the addresses first, then switch the check on.',
-      `<div class="panel-body"><p>${d.staff_on ? badge('Check is on', 'green') : badge('Check is off', 'amber')}</p>
-       <div class="actions"><button type="button" class="button primary" data-ipa="add-me">Add my address</button><button type="button" class="button" data-ipa="add">Add an address</button>${sw}</div></div>` +
+      `<div class="panel-body"><p>${d.staff_on ? badge('Check is on', 'green') : badge('Check is off', 'amber')} ${d.netherlands ? badge('+ every address in the Netherlands', 'blue') : badge('Listed addresses only', 'gray')}</p>
+       <div class="actions"><button type="button" class="button primary" data-ipa="add-me">Add my address</button><button type="button" class="button" data-ipa="add">Add an address</button>${sw}${nlSw}</div>${geoNote}</div>` +
       table(['Address', 'Label', 'Added by', 'Added on', ''], rows, 'No addresses yet.'));
 
     const blocks = panel('Refused attempts', 'The last 50, kept for 90 days.',
-      table(['When', 'Address', 'Portal', 'Account', 'At'], d.blocks.map(b => [when(b.created_at), `<code>${e(b.ip)}</code>`, e(b.portal === 'developer' ? 'Developer' : 'Staff'), e(b.email || '—'), e(b.reason === 'sign-in' ? 'Sign-in' : 'Open session')]), 'No refused attempts.'));
+      table(['When', 'Address', 'Country', 'Portal', 'Account', 'At'], d.blocks.map(b => [when(b.created_at), `<code>${e(b.ip)}</code>`, e(b.country ? land(b.country) : '—'), e(b.portal === 'developer' ? 'Developer' : 'Staff'), e(b.email || '—'), e(b.reason === 'sign-in' ? 'Sign-in' : 'Open session')]), 'No refused attempts.'));
     return H + `<div class="section-stack">${you}${staff}${devPanel}${blocks}</div>`;
   }
   const baseRender = renderPage;
@@ -80,6 +88,14 @@
       if (a === 'on') {
         if (!confirm('Switch the check on? Staff can then only sign in from the listed addresses, and staff who are signed in elsewhere are signed out.')) return;
         await api('/api/developer/ip-access/staff', {method: 'POST', body: {on: true}}); await load(); toast('The check is on.');
+      }
+      if (a === 'nl-on') {
+        if (!confirm('Also let staff sign in from every address in the Netherlands, besides the listed addresses?')) return;
+        await api('/api/developer/ip-access/netherlands', {method: 'POST', body: {on: true}}); await load(); toast('Every address in the Netherlands is allowed too.');
+      }
+      if (a === 'nl-off') {
+        if (!confirm('Allow only the listed addresses again? Staff on other Dutch addresses are signed out.')) return;
+        await api('/api/developer/ip-access/netherlands', {method: 'POST', body: {on: false}}); await load(); toast('Only the listed addresses are allowed.');
       }
       if (a === 'off') {
         await api('/api/developer/ip-access/staff', {method: 'POST', body: {on: false}}); await load(); toast('The check is off.');

@@ -645,6 +645,11 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V59: the country of a refused address (app/ip_allowlist.py)
+V59 = '''
+ALTER TABLE ip_blocks ADD COLUMN country TEXT NOT NULL DEFAULT ''
+'''
+
 # V58: the internet addresses allowed for the staff software, and every refused attempt (app/ip_allowlist.py)
 V58 = '''
 CREATE TABLE ip_allowlist (
@@ -922,6 +927,9 @@ ALTER TABLE companies ADD COLUMN bill_day BIGINT;
 ''',
     50: '''
 ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id);
+''',
+    59: '''
+ALTER TABLE ip_blocks ADD COLUMN country TEXT NOT NULL DEFAULT ''
 ''',
     58: '''
 CREATE TABLE ip_allowlist (
@@ -1472,6 +1480,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (58, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=59').fetchone():
+            for statement in V59.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (59, now()))
         conn.commit()
     except Exception:
         conn.rollback()

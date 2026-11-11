@@ -110,6 +110,38 @@ class IpAllowlistTests(unittest.TestCase):
         _, r = self.login('manager@krein.local', OTHER)
         self.assertEqual(r.status_code, 200)
 
+    def test_every_address_in_the_netherlands(self):
+        dutch = '84.24.100.9'
+        lookup = {dutch: 'NL', OFFICE: 'NL', HOME: 'BD', OTHER: 'US'}
+        with mock.patch.object(ip_allowlist, 'country', lambda ip: lookup.get(ip, '')), mock.patch.object(ip_allowlist, 'geo_available', lambda: True):
+            dev, _ = self.login('developer@krein.local', HOME, 'developer')
+            self.assertEqual(dev.post('/api/developer/ip-access/entries', json={'cidr': HOME, 'label': 'Me'}).status_code, 200)
+            self.assertEqual(dev.post('/api/developer/ip-access/staff', json={'on': True}).status_code, 200)
+            ip_allowlist.forget()
+            _, r = self.login('manager@krein.local', dutch)
+            self.assertEqual(r.status_code, 403)   # listed addresses only
+            self.assertEqual(dev.post('/api/developer/ip-access/netherlands', json={'on': True}).status_code, 200)
+            ip_allowlist.forget()
+            manager, r = self.login('manager@krein.local', dutch)
+            self.assertEqual(r.status_code, 200)   # every Dutch address
+            _, r = self.login('admin@krein.local', HOME)
+            self.assertEqual(r.status_code, 200)   # the listed address still works
+            _, r = self.login('manager@krein.local', OTHER)
+            self.assertEqual(r.status_code, 403)   # elsewhere still refused
+            data = dev.get('/api/developer/ip-access').json()
+            self.assertTrue(data['netherlands'])
+            self.assertEqual(data['your_country'], 'BD')
+            self.assertIn('US', {b['country'] for b in data['blocks']})
+            # with the Dutch switch on, the last listed address may go; switching Dutch off then is refused (nobody could sign in)
+            self.assertEqual(dev.delete(f"/api/developer/ip-access/entries/{data['entries'][0]['id']}").status_code, 200)
+            self.assertEqual(dev.post('/api/developer/ip-access/netherlands', json={'on': False}).status_code, 409)
+            dev.post('/api/developer/ip-access/entries', json={'cidr': HOME, 'label': 'Me'})
+            self.assertEqual(dev.post('/api/developer/ip-access/netherlands', json={'on': False}).status_code, 200)
+            ip_allowlist.forget()
+            self.assertEqual(manager.get('/api/me').status_code, 401)   # the Dutch session ends
+        with mock.patch.object(ip_allowlist, 'geo_available', lambda: False):
+            self.assertEqual(dev.post('/api/developer/ip-access/netherlands', json={'on': True}).status_code, 409)
+
     def test_addresses(self):
         nets = [ip_allowlist.parse('145.53.12.0/24'), ip_allowlist.parse(HOME)]
         self.assertTrue(ip_allowlist.allowed('145.53.12.200', nets))
