@@ -126,6 +126,11 @@ def link_home(conn, company_id, tenant_id, t, create=True, allowed=None):
     if not first:
         return None, False
     pid = find_home(conn, company_id, t)
+    choice = str(t.get('home_choice') or '')
+    if choice.isdigit():   # staff chose an existing unit in the same building (address_matches below)
+        row = conn.execute('SELECT id FROM properties WHERE id=? AND company_id=?', (int(choice), company_id)).fetchone()
+        if row:
+            pid = row['id']
     if pid and allowed is not None and pid not in allowed:
         pid = None
     created = False
@@ -158,3 +163,41 @@ def link_all_homes(conn):
         c = conn.execute("SELECT c.property_id FROM contract_people cp JOIN contracts c ON c.id=cp.contract_id WHERE cp.tenant_id=? ORDER BY CASE WHEN c.status IN ('active','notice given','pending signature') THEN 0 ELSE 1 END, c.start_date DESC LIMIT 1", (t['id'],)).fetchone()             or conn.execute("SELECT property_id FROM lease_offers WHERE tenant_id=? ORDER BY id DESC LIMIT 1", (t['id'],)).fetchone()
         if c:
             conn.execute('UPDATE tenants SET home_property_id=? WHERE id=?', (c['property_id'], t['id']))
+
+
+def _building(value):
+    """'Thijssestraat 189-2C' -> 'thijssestraat|189': the street and house number without the addition."""
+    parts = _norm(value).split('|')
+    for i, x in enumerate(parts):
+        if x.isdigit():
+            return '|'.join(parts[:i + 1])
+    return '|'.join(parts)
+
+
+@router.get('/api/address-matches')
+def address_matches(company_id: int, street: str = '', number: str = '', addition: str = '', postcode: str = '', city: str = '', user=Depends(current_user)):
+    """Before a tenant is added: is this home already in Properties, and are there other units in the same building?
+    exact: the home at this address; units: other homes at the same street and house number (another addition)."""
+    from .db import connect
+    from .security import authorize
+    with connect() as conn:
+        authorize(conn, user, company_id, ('property', 'manager', 'landlord'))
+        t = {'addr_street': street, 'addr_number': number, 'addr_addition': addition, 'addr_postcode': postcode, 'addr_city': city, 'addr_country': 'NL'}
+        first = lines(t)[:1]
+        if not first:
+            return {'exact': None, 'units': []}
+        exact = find_home(conn, company_id, t)
+        scope = getattr(conn, 'scope', None)
+        building, code, town = _building(first[0]), _norm(postcode), _norm(city)
+        units = []
+        for p in conn.execute("""SELECT p.id,p.name,p.address,p.postcode,p.city,
+                                   (SELECT t.name FROM contracts c JOIN tenants t ON t.id=c.tenant_id WHERE c.property_id=p.id AND c.status IN ('active','notice given') ORDER BY c.start_date DESC LIMIT 1) tenant_name
+                                 FROM properties p WHERE p.company_id=? ORDER BY p.address""", (company_id,)).fetchall():
+            if scope is not None and p['id'] not in set(scope.properties):
+                continue
+            if _building(p['address']) != building:
+                continue
+            if not ((code and _norm(p['postcode']) == code) or (not _norm(p['postcode']) and _norm(p['city']) == town)):
+                continue
+            units.append(dict(p))
+        return {'exact': next((u for u in units if u['id'] == exact), None) if exact else None, 'units': [u for u in units if u['id'] != exact]}

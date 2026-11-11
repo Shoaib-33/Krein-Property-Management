@@ -849,7 +849,7 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
         home = None
         if kind == 'tenants':   # the address is the rented home: link it, and add it to Properties when it is not there
             from .tenant_address import link_home
-            home, made = link_home(conn, company_id, record_id, values, create=scope is None, allowed=None if scope is None else set(scope.properties))
+            home, made = link_home(conn, company_id, record_id, {**values, 'home_choice': data.get('home_choice')}, create=scope is None, allowed=None if scope is None else set(scope.properties))
             if made:
                 audit(conn, user['id'], company_id, 'created', 'properties', home, {'from_tenant': record_id})
         if kind == 'tenants' and str(data.get('co_name') or '').strip():   # a partner / spouse who rents together with this tenant
@@ -1346,7 +1346,8 @@ def create_manually_signed_contract(data: dict, user=Depends(current_user)):
             raise HTTPException(409, 'This unit already has a tenancy during those dates.')
         if signed_on > start:
             raise HTTPException(422, 'The signing date must be on or before the tenancy start date.')
-        contract_id = insert(conn, 'contracts', {'company_id': company_id, 'property_id': prop_id, 'tenant_id': tenant_id, 'signed_on': signed_on, 'start_date': start, 'end_date': end, 'status': 'active', 'deposit_cents': money(data, 'deposit', True), 'created_at': now()})
+        from .indexation import TYPES as CONTRACT_TYPES
+        contract_id = insert(conn, 'contracts', {'company_id': company_id, 'property_id': prop_id, 'tenant_id': tenant_id, 'signed_on': signed_on, 'start_date': start, 'end_date': end, 'status': 'active', 'deposit_cents': money(data, 'deposit', True), 'created_at': now(), 'contract_type': data.get('contract_type') if data.get('contract_type') in CONTRACT_TYPES else ''})
         insert(conn, 'rent_versions', {'company_id': company_id, 'contract_id': contract_id, 'effective_from': start, 'basic_cents': money(data, 'basic_rent'), 'service_cents': money(data, 'service_charge', True), 'created_at': now(), 'created_by': user['id']})
         from .portal_access import notify_tenant, share_document
         share_document(conn, company_id, contract_id, doc['id'], user['id'])
@@ -2212,6 +2213,12 @@ app.include_router(templates_router)
 from .website import router as website_router
 app.include_router(website_router)
 app.include_router(operations_router)
+from .maintenance import router as maintenance_router
+app.include_router(maintenance_router)
+from .indexation import router as indexation_router
+app.include_router(indexation_router)
+from .opening_arrears import router as opening_arrears_router
+app.include_router(opening_arrears_router)
 app.include_router(finance_ops_router)
 from .payment_history import router as payment_history_router
 app.include_router(payment_history_router)

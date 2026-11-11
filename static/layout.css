@@ -119,3 +119,37 @@ button.pf-card:hover{box-shadow:0 6px 18px #0d352a17}
 @media(max-width:560px){.kcards,.kcards.five{grid-template-columns:1fr}.pf-tab{padding:9px 13px}.hl-filter{min-width:calc(50% - 6px);flex:1}}
 .pf-card-acts{margin-top:12px}
 .kcard-value.pf-money{font-size:22px}
+
+/* technical management (maintenance.js) */
+.kcard.on{outline:2px solid var(--brand-ink);outline-offset:-2px}
+.mw-type{display:inline-block;border-radius:999px;padding:2px 10px;font-size:12px;font-weight:750;white-space:nowrap}
+.mw-job{background:#e6effc;color:#2a5bb5}.mw-repair{background:#efe8fb;color:#6b46b8}.mw-plan{background:#e2f3ec;color:#1f7a5f}
+.mw-tag{display:inline-block;border-radius:6px;padding:1px 7px;font-size:11.5px;font-weight:700;background:#eef2f0;color:#5d6d66}
+.mw-timeline{list-style:none;margin:0;padding:8px 22px 18px}
+.mw-timeline li{display:flex;gap:14px;padding:10px 0;border-bottom:1px solid #e6eee9}
+.mw-timeline li:last-child{border-bottom:0}
+.mw-dot{flex:none;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:#e2f3ec;color:#1f7a5f}
+.mw-dot .icon{width:15px;height:15px}
+.mw-timeline time{display:block;font-size:12px;color:var(--muted);font-weight:650}
+.mw-timeline strong{display:block;font-size:14px;color:var(--ink)}
+.mw-timeline small{display:block;font-size:13px;color:var(--ink-2);margin-top:2px}
+.mw-detail .pf-kv{margin:10px 0}
+.mw-detail .modal-footer{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.panel .hl-filters{border:0;border-radius:0;border-bottom:1px solid var(--line);margin:0;padding:14px 22px}
+.panel .hl-filters select{min-height:42px;border:1px solid #c5d5cc;border-radius:10px;padding:0 10px;background:#fff;font:inherit;font-size:14px}
+
+/* contract type, arrears takeover, same-building check (takeover.js) */
+.pf-rent{grid-template-columns:repeat(3,minmax(0,1fr))}
+.pf-rent-type .actions{margin-top:6px}
+@media (max-width:900px){.pf-rent{grid-template-columns:1fr}}
+.tk-gap{margin-bottom:22px}
+.tk-row{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:10px;margin-bottom:8px}
+.tk-row input{border:1px solid #dce5dc;border-radius:6px;padding:10px 12px;min-height:39px;font:inherit}
+.tk-total{font-weight:700;color:var(--ink)}
+.pa-match{grid-column:1/-1}
+.pa-hit{display:flex;gap:8px;align-items:flex-start;background:#e2f3ec;color:#1f5f4a;border-radius:8px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.pa-hit.new{background:#eef2f0;color:#5d6d66}.pa-hit .icon{width:16px;height:16px;margin-top:1px}
+.pa-choose{border:1px solid #f0dca8;background:#fff8e6;border-radius:10px;padding:12px 14px;margin:0 0 12px}
+.pa-choose legend{font-weight:700;font-size:13px;color:#7a5410;padding:0 4px}
+.pa-choose label{display:flex;gap:8px;align-items:center;font-size:13px;padding:5px 0;cursor:pointer}
+.mw-table table{white-space:normal}.mw-table td:first-child,.mw-table td .badge,.mw-table td .mw-type,.mw-table td .button{white-space:nowrap}

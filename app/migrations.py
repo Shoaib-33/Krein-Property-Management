@@ -645,6 +645,51 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V57: contract types and the indexation percentage per type and year (app/indexation.py)
+V57 = '''
+ALTER TABLE contracts ADD COLUMN contract_type TEXT NOT NULL DEFAULT '';
+CREATE TABLE indexation_rates (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), contract_type TEXT NOT NULL, year INTEGER NOT NULL,
+ percent REAL NOT NULL, note TEXT NOT NULL DEFAULT '', updated_by INTEGER REFERENCES users(id), updated_at TEXT NOT NULL,
+ UNIQUE(company_id, contract_type, year)
+)
+'''
+
+# V56: technical management (app/maintenance.py): work orders on a home (also without a tenancy), recurring maintenance,
+# the costs of a home with who pays them, and more details of a supplier
+V56 = '''
+CREATE TABLE maintenance_plans (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER NOT NULL REFERENCES properties(id),
+ title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'General', interval_months INTEGER NOT NULL, next_due TEXT NOT NULL, last_done TEXT,
+ contractor_id INTEGER REFERENCES contractors(id), note TEXT NOT NULL DEFAULT '', active INTEGER NOT NULL DEFAULT 1,
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE TABLE maintenance_jobs (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER NOT NULL REFERENCES properties(id),
+ plan_id INTEGER REFERENCES maintenance_plans(id), repair_id INTEGER REFERENCES repairs(id), title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'General',
+ description TEXT NOT NULL DEFAULT '', contractor_id INTEGER REFERENCES contractors(id), scheduled_for TEXT, status TEXT NOT NULL DEFAULT 'open',
+ quote_cents INTEGER, final_cents INTEGER, completed_on TEXT, completion_note TEXT NOT NULL DEFAULT '', invoice_document_id INTEGER REFERENCES documents(id),
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT
+);
+CREATE TABLE property_costs (
+ id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER NOT NULL REFERENCES properties(id),
+ incurred_on TEXT NOT NULL, category TEXT NOT NULL, description TEXT NOT NULL, amount_cents INTEGER NOT NULL CHECK(amount_cents>0),
+ vat_rate INTEGER NOT NULL DEFAULT 21, bill_to TEXT NOT NULL, job_id INTEGER REFERENCES maintenance_jobs(id), document_id INTEGER REFERENCES documents(id),
+ status TEXT NOT NULL DEFAULT 'pending', review_note TEXT NOT NULL DEFAULT '', approved_by INTEGER REFERENCES users(id), approved_at TEXT,
+ created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE INDEX maintenance_jobs_company ON maintenance_jobs(company_id,status);
+CREATE INDEX maintenance_plans_company ON maintenance_plans(company_id,next_due);
+CREATE INDEX property_costs_company ON property_costs(company_id,property_id);
+ALTER TABLE contractors ADD COLUMN contact_person TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN address TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN kvk TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN vat_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN iban TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN hourly_rate_cents INTEGER;
+ALTER TABLE contractors ADD COLUMN notes TEXT NOT NULL DEFAULT ''
+'''
+
 # V55: ongoing cases per home (Huurcommissie and similar), with their documents (app/property_file.py)
 V55 = '''
 CREATE TABLE property_cases (
@@ -865,6 +910,46 @@ ALTER TABLE companies ADD COLUMN bill_day BIGINT;
 ''',
     50: '''
 ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id);
+''',
+    57: '''
+ALTER TABLE contracts ADD COLUMN contract_type TEXT NOT NULL DEFAULT '';
+CREATE TABLE indexation_rates (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), contract_type TEXT NOT NULL, year BIGINT NOT NULL,
+ percent DOUBLE PRECISION NOT NULL, note TEXT NOT NULL DEFAULT '', updated_by BIGINT REFERENCES users(id), updated_at TEXT NOT NULL,
+ UNIQUE(company_id, contract_type, year)
+)
+''',
+    56: '''
+CREATE TABLE maintenance_plans (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), property_id BIGINT NOT NULL REFERENCES properties(id),
+ title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'General', interval_months BIGINT NOT NULL, next_due TEXT NOT NULL, last_done TEXT,
+ contractor_id BIGINT REFERENCES contractors(id), note TEXT NOT NULL DEFAULT '', active BIGINT NOT NULL DEFAULT 1,
+ created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE TABLE maintenance_jobs (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), property_id BIGINT NOT NULL REFERENCES properties(id),
+ plan_id BIGINT REFERENCES maintenance_plans(id), repair_id BIGINT REFERENCES repairs(id), title TEXT NOT NULL, category TEXT NOT NULL DEFAULT 'General',
+ description TEXT NOT NULL DEFAULT '', contractor_id BIGINT REFERENCES contractors(id), scheduled_for TEXT, status TEXT NOT NULL DEFAULT 'open',
+ quote_cents BIGINT, final_cents BIGINT, completed_on TEXT, completion_note TEXT NOT NULL DEFAULT '', invoice_document_id BIGINT REFERENCES documents(id),
+ created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL, updated_at TEXT
+);
+CREATE TABLE property_costs (
+ id BIGSERIAL PRIMARY KEY, company_id BIGINT NOT NULL REFERENCES companies(id), property_id BIGINT NOT NULL REFERENCES properties(id),
+ incurred_on TEXT NOT NULL, category TEXT NOT NULL, description TEXT NOT NULL, amount_cents BIGINT NOT NULL CHECK(amount_cents>0),
+ vat_rate BIGINT NOT NULL DEFAULT 21, bill_to TEXT NOT NULL, job_id BIGINT REFERENCES maintenance_jobs(id), document_id BIGINT REFERENCES documents(id),
+ status TEXT NOT NULL DEFAULT 'pending', review_note TEXT NOT NULL DEFAULT '', approved_by BIGINT REFERENCES users(id), approved_at TEXT,
+ created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE INDEX maintenance_jobs_company ON maintenance_jobs(company_id,status);
+CREATE INDEX maintenance_plans_company ON maintenance_plans(company_id,next_due);
+CREATE INDEX property_costs_company ON property_costs(company_id,property_id);
+ALTER TABLE contractors ADD COLUMN contact_person TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN address TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN kvk TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN vat_number TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN iban TEXT NOT NULL DEFAULT '';
+ALTER TABLE contractors ADD COLUMN hourly_rate_cents BIGINT;
+ALTER TABLE contractors ADD COLUMN notes TEXT NOT NULL DEFAULT ''
 ''',
     55: '''
 CREATE TABLE property_cases (
@@ -1350,6 +1435,16 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (55, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=56').fetchone():
+            for statement in V56.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (56, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=57').fetchone():
+            for statement in V57.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (57, now()))
         conn.commit()
     except Exception:
         conn.rollback()

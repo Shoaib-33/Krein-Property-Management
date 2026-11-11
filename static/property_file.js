@@ -131,14 +131,18 @@
     const hist = rc ? (f.rent.history || []).filter(h => h.contract_id === rc.id) : [];
     const props = rc ? (f.rent.proposals || []).filter(x => x.contract_id === rc.id) : [];
     const next = props.find(x => x.effective_from > today() && x.status !== 'rejected');
-    const ny = new Date(today()).getFullYear(), july = `${today() >= `${ny}-07-01` ? ny + 1 : ny}-07-01`, letterBy = `${july.slice(0, 4)}-05-01`;
-    const daysLeft = Math.round((new Date(letterBy) - new Date(today())) / 864e5);
+    const IX = window.kreinIndex, nx = IX && rc ? IX.next(rc) : null;
+    const july = nx ? nx.date : '', letterBy = nx ? nx.letterBy : '';
+    const daysLeft = nx ? Math.round((new Date(letterBy) - new Date(today())) / 864e5) : 999;
     const PS = {pending: ['Waiting for approval', 'amber'], approved: ['Approved', 'green'], rejected: ['Rejected', 'gray']};
     const rentPanel = staff ? panel('Rent and indexation', 'The rent of the current contract, how it changed over the years, and the next increase.',
       !rc ? empty('No contract yet', 'The rent comes from the contract. Add the contract first.', '') :
       `<div class="panel-body pf-rent"><div class="pf-rent-now"><small>Rent now</small><strong>${eur((rc.basic_cents || 0) + (rc.service_cents || 0))}</strong><span>basic ${eur(rc.basic_cents)} + service ${eur(rc.service_cents)} · ${e(rc.tenant_name)}</span></div>
         <div class="pf-rent-next ${next ? 'is-set' : daysLeft <= 60 ? 'is-due' : ''}">${next ? `<small>Next increase</small><strong>${eur(next.basic_cents + next.service_cents)}</strong><span>from ${e(day(next.effective_from))} ${badge(...(PS[next.status] || [next.status, 'gray']))}</span>`
-          : `<small>Next yearly increase</small><strong>${e(day(july))}</strong><span>${daysLeft >= 0 ? `Send the letter by ${e(day(letterBy))} (at least 2 months before): ${daysLeft} days left` : `The letter for ${e(day(july))} should have gone out by ${e(day(letterBy))}`}</span>`}</div></div>`
+          : !nx ? `<small>Next yearly increase</small><strong>—</strong><span>The contract ends before its next anniversary.</span>`
+          : `<small>Next yearly increase</small><strong>${e(day(july))}</strong><span>${daysLeft >= 0 ? `Send the letter by ${e(day(letterBy))} (at least 2 months before): ${daysLeft} days left` : `The letter for ${e(day(july))} should have gone out by ${e(day(letterBy))}`}</span>`}</div>
+        <div class="pf-rent-type"><small>Contract type</small><strong>${e(IX ? IX.typeName(rc.contract_type) : '')}</strong><span>${nx && nx.rate != null ? `Indexation ${e(IX.pct(nx.rate))} in ${e(july.slice(0, 4))}` : nx ? `No indexation percentage set for ${e(july.slice(0, 4))}` : ''}</span>
+          <div class="actions">${['admin', 'manager', 'finance', 'property'].includes(role) ? mb('Change type', `data-pf="ctype" data-id="${rc.id}"`) : ''}${canRent && nx && nx.rate != null && !next ? mb('Propose indexation', `data-pf="index" data-id="${rc.id}"`, true) : ''}</div></div></div>`
       + table(['From', 'Basic rent', 'Service', 'Total', 'Increase'], hist.slice().reverse().map((h, i, arr) => {
           const tot = h.basic_cents + h.service_cents, prev = arr[i + 1], pt = prev ? prev.basic_cents + prev.service_cents : null;
           return [`<strong>${e(day(h.effective_from))}</strong>`, eur(h.basic_cents), eur(h.service_cents), `<span class="amount">${eur(tot)}</span>`,
@@ -167,8 +171,9 @@
     const repairs = rows('repairs').filter(r => cids.has(r.contract_id)).sort((a, b) => String(b.reported_on).localeCompare(String(a.reported_on)));
     const openRepairs = repairs.filter(r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status));
     const openCases = (f.cases || []).filter(k => k.status !== 'closed');
+    const W = window.kreinWork && ['admin', 'manager', 'property', 'finance'].includes(role) ? window.kreinWork.technical(f, role) : null;
     const TABS = [['overview', 'Overview', 'grid', 0], ['tenants', 'Tenants', 'users', f.tenants.length], ['contracts', 'Contracts', 'file', f.contracts.length],
-      ['technical', 'Technical', 'wrench', openRepairs.length], ['finance', 'Finances', 'wallet', 0], ['documents', 'Documents', 'folder', f.documents.length]];
+      ['technical', 'Technical', 'wrench', openRepairs.length + (W ? W.openCount : 0)], ['finance', 'Finances', 'wallet', 0], ['documents', 'Documents', 'folder', f.documents.length]];
     const tabs = `<div class="pf-tabs" role="tablist">${TABS.map(([k, label, ic, n]) => `<button type="button" role="tab" class="pf-tab${tab === k ? ' active' : ''}" aria-selected="${tab === k}" data-pf-tab="${k}">${icon(ic)}${e(label)}${n ? `<span class="count">${n}</span>` : ''}</button>`).join('')}</div>`;
 
     // Overview: the main facts of the home, and what is going on
@@ -201,7 +206,7 @@
     // Technical: maintenance, energy label, utilities and meters, inspections
     const RS = {received: 'blue', 'in progress': 'blue', planned: 'blue', done: 'green', closed: 'gray'};
     const canOps = ['admin', 'manager', 'property'].includes(role);
-    const maint = panel('Maintenance', 'Repair reports of this home, open and done.', table(['Repair', 'Reported', 'Urgency', 'Status', 'Deadline', ''], repairs.slice(0, 30).map(r => [
+    const maint = panel('Repair reports from tenants', 'Repair reports of this home, open and done.', table(['Repair', 'Reported', 'Urgency', 'Status', 'Deadline', ''], repairs.slice(0, 30).map(r => [
       `<strong>${e(r.title)}</strong><small>${e(r.category)}</small>`, e(day(r.reported_on)), e(r.urgency), badge(r.status, RS[r.status]), e(day(r.due_date)),
       `<button type="button" class="button small" data-action="repair-detail" data-id="${r.id}">Open</button>`]), 'No repair reports yet.')
       + (canOps && live ? `<div class="panel-body tf-more">${mb('New maintenance report', `data-action="form" data-kind="repairs" data-preset-contract="${live.id}"`, true)}</div>` : ''));
@@ -223,13 +228,13 @@
       + panel('Invoices of this home', 'The rent invoices of every contract of this home.', table(['Invoice', 'Month', 'Tenant', 'Amount', 'Still open', ''], invs.slice(0, 24).map(i => [
         `<strong>${e(i.number)}</strong>`, e(new Intl.DateTimeFormat('en-GB', {month: 'long', year: 'numeric'}).format(new Date(i.period + '-01T12:00:00'))), e((f.contracts.find(c => c.id === i.contract_id) || {}).tenant_name || ''), `<span class="amount">${eur(i.total_cents)}</span>`,
         balance(i) > 0 ? `<strong class="late-text">${eur(balance(i))}</strong>` : badge('Paid', 'green'), `<button type="button" class="button small" data-action="invoice-detail" data-id="${i.id}">Open</button>`]), 'No invoices yet.'))
-      + panel('Costs and return', '', '<p class="pf-coming">Costs per home (maintenance, VvE contribution, insurance, taxes) and the return will show here. This needs the costs and the value of the home to be entered; that follows in a next step.</p>');
+      + (window.kreinWork ? window.kreinWork.finance(f, role, received) : '');
 
     const body = {
       overview,
       tenants,
       contracts: `<div class="section-stack">${contracts}${rentPanel}${cases}</div>`,
-      technical: `<div class="section-stack">${maint}${energy}${utilities}${inspections}</div>`,
+      technical: `<div class="section-stack">${W ? W.jobs + W.plans : ''}${maint}${W ? W.history : ''}${energy}${utilities}${inspections}</div>`,
       finance: `<div class="section-stack">${fin}${letters}</div>`,
       documents: docs,
     }[tab] || overview;
@@ -371,6 +376,10 @@
       formModal('Add a document to this case', [['file', 'Letter, decision or other document (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}]],
         async (data, fd) => { await api(`/api/property-cases/${el.dataset.id}/documents`, {method: 'POST', body: fd}); ui.file = null; load(); },
         {intro: 'The document is also listed under Documents of this home.', submit: 'Upload', success: 'Document added.'});
+    } else if (act === 'ctype' || act === 'index') {
+      const c = ui.file.contracts.find(x => x.id === Number(el.dataset.id)); if (!c || !window.kreinIndex) return;
+      const done = () => { ui.file = null; load(); };
+      if (act === 'ctype') window.kreinIndex.chooseType(c, done); else window.kreinIndex.propose(c, done);
     } else if (act === 'upload') {
       formModal('Upload a document for this home', [['file', 'File (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}], selectField('kind', 'Category', ui.file.doc_kinds || ['General'])],
         async (data, fd) => { await api(`/api/properties/${p.id}/documents`, {method: 'POST', body: fd}); ui.file = null; load(); },

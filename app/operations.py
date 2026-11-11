@@ -120,7 +120,7 @@ def edit_tenant(tenant_id:int,data:dict,user=Depends(current_user)):
         audit(conn,user['id'],t['company_id'],'contact_updated','tenant',tenant_id,{'old':{k:t[k] for k in values},'new':values})
         from .tenant_address import link_home
         scope=getattr(conn,'scope',None)   # a landlord links to his own homes only, and adds none
-        home,made=link_home(conn,t['company_id'],tenant_id,{**dict(t),**values},create=scope is None,allowed=None if scope is None else set(scope.properties))
+        home,made=link_home(conn,t['company_id'],tenant_id,{**dict(t),**values,'home_choice':data.get('home_choice')},create=scope is None,allowed=None if scope is None else set(scope.properties))
         if made:
             audit(conn,user['id'],t['company_id'],'created','properties',home,{'from_tenant':tenant_id})
     return {'ok':True,'note':'Portal login email remains unchanged.'}
@@ -146,7 +146,7 @@ def delete_property(property_id:int,user=Depends(current_user)):
     from .developer import delete_records, remove_files
     with transaction() as conn:
         p=record(conn,'properties',property_id,user,OPS)
-        for table,what in (('contracts','a tenancy'),('lease_offers','a contract offer'),('settlements','a service-charge settlement'),('cost_lines','service costs'),('owner_expenses','owner expenses')):
+        for table,what in (('contracts','a tenancy'),('lease_offers','a contract offer'),('settlements','a service-charge settlement'),('cost_lines','service costs'),('owner_expenses','owner expenses'),('property_costs','costs'),('maintenance_jobs','work orders')):
             if conn.execute(f'SELECT 1 FROM {table} WHERE property_id=?',(property_id,)).fetchone():
                 raise HTTPException(409,f'This home has {what} on record, so it cannot be deleted. Ask the developer if it was added by mistake.')
         removed,files=delete_records(conn,'properties',property_id)
