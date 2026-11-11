@@ -471,6 +471,9 @@ def login(data: dict, request: Request):
         attempt = conn.execute('SELECT * FROM login_attempts WHERE key=?', (attempt_key,)).fetchone()
         from_ip = conn.execute('SELECT * FROM login_attempts WHERE key=?', (ip_key,)).fetchone()
         user = conn.execute('SELECT * FROM users WHERE email=? AND active=1', (email,)).fetchone()
+    from .ip_allowlist import check_sign_in   # allowed internet addresses: checked before the password is looked at
+    with connect() as conn:
+        check_sign_in(conn, request, request.headers.get('X-Krein-Portal', ''), user, email)
     now_ = time.time()
     if (attempt and attempt['attempts'] >= 8 and attempt['blocked_until'] > now_) or (from_ip and from_ip['attempts'] >= 30 and from_ip['blocked_until'] > now_):
         raise HTTPException(429, 'Too many attempts. Try again in 15 minutes.')
@@ -2226,6 +2229,8 @@ from .property_file import router as property_file_router
 app.include_router(property_file_router)
 from .utility_statements import router as utility_statements_router
 app.include_router(utility_statements_router)
+from .ip_allowlist import router as ip_allowlist_router
+app.include_router(ip_allowlist_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')

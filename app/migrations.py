@@ -645,6 +645,18 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V58: the internet addresses allowed for the staff software, and every refused attempt (app/ip_allowlist.py)
+V58 = '''
+CREATE TABLE ip_allowlist (
+ id INTEGER PRIMARY KEY, cidr TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE TABLE ip_blocks (
+ id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, ip TEXT NOT NULL, portal TEXT NOT NULL, email TEXT NOT NULL DEFAULT '',
+ user_id INTEGER REFERENCES users(id), reason TEXT NOT NULL
+);
+CREATE INDEX ip_blocks_created ON ip_blocks(created_at)
+'''
+
 # V57: contract types and the indexation percentage per type and year (app/indexation.py)
 V57 = '''
 ALTER TABLE contracts ADD COLUMN contract_type TEXT NOT NULL DEFAULT '';
@@ -910,6 +922,16 @@ ALTER TABLE companies ADD COLUMN bill_day BIGINT;
 ''',
     50: '''
 ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id);
+''',
+    58: '''
+CREATE TABLE ip_allowlist (
+ id BIGSERIAL PRIMARY KEY, cidr TEXT NOT NULL UNIQUE, label TEXT NOT NULL DEFAULT '', created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL
+);
+CREATE TABLE ip_blocks (
+ id BIGSERIAL PRIMARY KEY, created_at TEXT NOT NULL, ip TEXT NOT NULL, portal TEXT NOT NULL, email TEXT NOT NULL DEFAULT '',
+ user_id BIGINT REFERENCES users(id), reason TEXT NOT NULL
+);
+CREATE INDEX ip_blocks_created ON ip_blocks(created_at)
 ''',
     57: '''
 ALTER TABLE contracts ADD COLUMN contract_type TEXT NOT NULL DEFAULT '';
@@ -1445,6 +1467,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (57, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=58').fetchone():
+            for statement in V58.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (58, now()))
         conn.commit()
     except Exception:
         conn.rollback()

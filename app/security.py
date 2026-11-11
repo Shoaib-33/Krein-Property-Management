@@ -117,6 +117,14 @@ def current_user(request: Request):
         with transaction() as conn:
             conn.execute('DELETE FROM sessions WHERE token_hash=?', (row['session_key'],))
         raise HTTPException(401, f'You were signed out after {idle_minutes()} minutes without activity. Please sign in again.')
+    from .ip_allowlist import check_session, log_block, refusal   # allowed internet addresses for staff and the developer
+    with connect() as conn:
+        blocked = check_session(conn, request, portal_of(request), row)
+    if blocked:
+        with transaction() as conn:
+            conn.execute('DELETE FROM sessions WHERE token_hash=?', (row['session_key'],))
+        log_block(client_ip(request), blocked, row['email'], row['id'], 'session')
+        raise HTTPException(401, refusal(client_ip(request)))
     if request.method not in ('GET', 'HEAD', 'OPTIONS') and not hmac.compare_digest(request.headers.get('X-CSRF-Token', ''), row['csrf']):
         raise HTTPException(403, 'Session verification failed. Refresh and try again.')
     return dict(row)

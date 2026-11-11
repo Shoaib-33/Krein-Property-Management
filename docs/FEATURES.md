@@ -137,6 +137,8 @@ Legal rules are not certified. Stored reference rules are informational, not an 
 
 For an HTTPS deployment, configure `KREIN_SECURE_COOKIES=1`, a trusted reverse proxy and separate runtime secrets. Behind a reverse proxy set `KREIN_TRUSTED_PROXY_HOPS` to the number of proxies in front of Krein (the Docker image sets 1, right for Render); the visitor's address for the login limit is then read from the part of `X-Forwarded-For` that your own proxy wrote, so it cannot be forged. Set it to 0 when Krein is reached directly. Sign-in is limited to 8 failed attempts per account and address, and 30 per address, for 15 minutes. Do not expose the demo server publicly.
 
+**Allowed addresses.** The developer portal opens only from the addresses in `KREIN_DEVELOPER_IPS` (set in the hosting settings, so a stolen password cannot change it; empty = not restricted). The staff software (admin, manager, finance, property, inspector) can be limited to a list of addresses or ranges that the developer manages under *Settings → Allowed addresses*, with an on/off switch. The check runs at sign-in, before the password is looked at, and on every request, so a session used from another address ends. Tenants, owners, landlords and contractors are never restricted. Refused attempts are listed on the same page for 90 days.
+
 ## Owners, portfolios and statements
 - **Owners & portfolios** (staff): group units into portfolios, set a management fee, invite the owner to `/owner`.
 - **Owner statements** (finance/manager): generate a month from verified ledger payments, subtract fee and recorded expenses, a second person approves, then record the payout by hand. No bank connection exists anywhere in Krein.
@@ -212,6 +214,7 @@ For a demo you can show to others, deploy the included Docker setup to [Render](
 |---|---|
 | `KREIN_SAMPLE_DATA` | `1` loads the sample data from `sample-data/` (households, co-tenants, bank statements; no real personal data) when the workspace is empty. `KREIN_DEMO_SEED=1` loads the smaller built-in demo instead |
 | `KREIN_SECURE_COOKIES` | `1` (Render serves HTTPS) |
+| `KREIN_DEVELOPER_IPS` | Addresses or ranges that may open the developer portal (empty = not restricted) |
 | `KREIN_DATA_DIR` | `/data` |
 | `KREIN_TIMEZONE` | the timezone whose date Krein shows, e.g. `Europe/Amsterdam` or `Asia/Dhaka`. Servers run on UTC, so without it the date can be a day behind your own |
 | `KREIN_DEMO_PASSWORD` | your own password for all demo logins (12+ characters). Without it the public default is used, so always set it online |

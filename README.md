@@ -74,6 +74,7 @@ Settings are read from environment variables (or `.env` for local use). See [.en
 | `KREIN_SMTP_INVOICE_FROM` (+ `_USERNAME`, `_PASSWORD`) | Optional: invoices and payment reminders from their own address, for example `facturen@`; everything else stays on `KREIN_SMTP_FROM` |
 | `KREIN_TIMEZONE` | For example `Europe/Amsterdam` |
 | `KREIN_SECURE_COOKIES` | `1` when served over HTTPS |
+| `KREIN_DEVELOPER_IPS` | Internet addresses or ranges (comma separated) that may open the developer portal; empty = not restricted. Staff addresses are set in the developer portal under *Allowed addresses* |
 | `KREIN_PONTO_*` | Optional automatic bank feed |
 | `KREIN_BOOTSTRAP_DEVELOPER_EMAIL` / `_PASSWORD` | First developer login on a new hosted deployment |
 | `KREIN_SAMPLE_DATA` / `KREIN_DEMO_PASSWORD` | Demo deployments only: load the sample data, with your own password |
