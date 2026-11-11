@@ -40,7 +40,7 @@
     const stat = hf && HST[hf.status] ? `<span class="pf-status ${HST[hf.status][1]}">${e(HST[hf.status][0])}</span>` : status;
     const addItems = [
       staff ? ['upload', 'upload', 'Document'] : null, canPaper ? ['contract', 'file', 'Contract'] : null, staff ? ['note', 'message', 'Internal note'] : null,
-      staff && live && ['admin', 'manager', 'property'].includes(role) ? ['repair', 'wrench', 'Maintenance report', `data-action="form" data-kind="repairs" data-preset-contract="${live.id}"`] : null, staff ? ['label', 'leaf', 'Energy label'] : null,
+      staff && live && ['admin', 'manager', 'property'].includes(role) ? ['repair', 'wrench', 'Maintenance report', `data-action="form" data-kind="repairs" data-preset-contract="${live.id}"`] : null, ['admin', 'manager', 'property'].includes(role) && window.kreinWork ? ['job', 'clipboard', 'Work order', `data-mw="job-new" data-pid="${p.id}"`] : null, staff ? ['label', 'leaf', 'Energy label'] : null,
       staff ? ['case-new', 'clipboard', 'Case (Huurcommissie)'] : null, canContract ? ['sign', 'edit', 'Contract to sign online'] : null,
     ].filter(Boolean);
     const addMenu = addItems.length ? `<div class="pf-add"><button type="button" class="button primary" data-pf-addmenu aria-haspopup="true" aria-expanded="false">${icon('plus')}Add ▾</button>

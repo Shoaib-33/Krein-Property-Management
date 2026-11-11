@@ -153,3 +153,4 @@ button.pf-card:hover{box-shadow:0 6px 18px #0d352a17}
 .pa-choose legend{font-weight:700;font-size:13px;color:#7a5410;padding:0 4px}
 .pa-choose label{display:flex;gap:8px;align-items:center;font-size:13px;padding:5px 0;cursor:pointer}
 .mw-table table{white-space:normal}.mw-table td:first-child,.mw-table td .badge,.mw-table td .mw-type,.mw-table td .button{white-space:nowrap}
+.page-heading.tf-head{position:relative;z-index:25}   /* the "+ Add" menu opens over the internal note below it */
