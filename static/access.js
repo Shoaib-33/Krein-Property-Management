@@ -90,6 +90,7 @@
         `<select class="role-picker" data-dv-role="${p.id}" data-company="${c.company_id}" aria-label="Role in ${e(c.company)}">${[...ROLE_PICK, ...(ROLE_PICK.includes(c.role) ? [] : [c.role])].map(r => `<option value="${r}" ${r === c.role ? 'selected' : ''}>${r}</option>`).join('')}<option value="remove">Remove from company</option></select>`}</div>`).join('');
       const acts = p.id === d.me ? '<span class="muted">You</span>' : `<div class="actions">
         <button type="button" class="button small" data-dv="edit" data-id="${p.id}">Edit</button>
+        ${p.active && !p.developer && d.companies.some(c => !p.companies.some(x => x.company_id === c.id)) ? `<button type="button" class="button small" data-dv="companies" data-id="${p.id}">Add to companies</button>` : ''}
         ${p.active ? `<button type="button" class="button small" data-dv="reset" data-id="${p.id}">Password link</button><button type="button" class="button small danger" data-dv="close" data-id="${p.id}">Close login</button>`
           : `<button type="button" class="button small primary" data-dv="open" data-id="${p.id}">Open login</button>`}</div>`;
       return [`<strong>${e(p.name)}</strong><small>${e(p.email)}</small>`, roles || '<span class="muted">No company</span>',
@@ -121,12 +122,22 @@
           if (own && (d.password || '').length < 12) throw new Error('Use a password of at least 12 characters.');
           const r = await api('/api/developer/admins', {method: 'POST', body: {company_id: Number(d.company_id), name: d.name, email: d.email, password: own ? d.password : ''}});
           team.data = null;
+          if (r.added) { setTimeout(() => toast(`${d.email} already had a login and now has access to this company too. No link needed.`), 50); return; }
           if (r.invite) setTimeout(() => linkModal('Invitation ready', `Send this private link to <strong>${e(r.invite.email)}</strong>. They open it and choose their own password. It is valid for ${r.invite.expires_in_days} days.`, r.invite.path), 50);
           else setTimeout(() => linkModal('Login ready', `<strong>${e(d.email)}</strong> can sign in now with the password you set, on the normal sign-in page below (not the developer page). Give them the password yourself.`, '/'), 50);
         }, {submit: 'Add administrator', success: 'Administrator added.'});
         const method = document.querySelector('#record-form [name=method]'), pw = document.querySelector('#record-form [name=password]');
-        const sync = () => { const own = method.value === 'password'; pw.closest('.field').hidden = !own; pw.required = own; if (!own) pw.value = ''; };
+        const sync = () => { const own = method.value === 'password'; pw.closest('.field').style.display = own ? '' : 'none'; pw.required = own; if (!own) pw.value = ''; };
         method.addEventListener('change', sync); sync();
+        return;
+      }
+      if (act === 'companies') {
+        // one login, several companies: tick the companies this person should also manage (access is given straight away)
+        const free = team.data.companies.filter(c => !p.companies.some(x => x.company_id === c.id));
+        modal(`Add ${p.name} to companies`, `<form id="dv-companies" class="tm-form" data-id="${p.id}"><p class="modal-note">${e(p.email)} keeps the same login and password, and can switch between the companies with "Your company". Access is given straight away; no link is needed.</p>
+          <div class="dv-company-list">${free.map(c => `<label class="tm-check"><input type="checkbox" name="company" value="${c.id}"><span>${e(c.name)}</span></label>`).join('')}</div>
+          <div class="field"><label for="dv-role">Role</label><select id="dv-role" name="role">${['admin', 'manager', 'finance', 'property', 'inspector'].map(r => `<option value="${r}">${r}</option>`).join('')}</select></div>
+          <p class="form-error" role="alert"></p><div class="modal-footer"><button type="button" class="button" data-action="close-modal">Cancel</button><button type="submit" class="button primary">Give access</button></div></form>`);
         return;
       }
       if (act === 'edit') {
@@ -143,6 +154,17 @@
         toast(act === 'close' ? 'Login closed.' : 'Login opened again.'); team.data = null; render();
       }
     } catch (err) { toast(err.message); }
+  });
+  document.addEventListener('submit', async ev => {
+    const f = ev.target.closest('#dv-companies');
+    if (!f) return;
+    ev.preventDefault();
+    const ids = [...f.querySelectorAll('[name=company]:checked')].map(x => Number(x.value)), err = f.querySelector('.form-error');
+    if (!ids.length) { err.textContent = 'Choose at least one company.'; return; }
+    try {
+      await api(`/api/developer/users/${f.dataset.id}/companies`, {method: 'POST', body: {company_ids: ids, role: f.role.value}});
+      closeModal(); toast(ids.length === 1 ? 'Access given to 1 company.' : `Access given to ${ids.length} companies.`); team.data = null; render();
+    } catch (ex) { err.textContent = ex.message; }
   });
   document.addEventListener('change', async ev => {
     const sel = ev.target.closest('[data-dv-role]');

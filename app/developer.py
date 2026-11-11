@@ -70,8 +70,47 @@ def create_admin(data: dict, user=Depends(current_user)):
             conn.execute("INSERT INTO memberships VALUES(?,?,'admin')", (uid, company_id))
             audit(conn, user['id'], company_id, 'created', 'staff', uid, {'email': email, 'role': 'admin', 'by': 'developer'})
             return {'id': uid, 'created': True}
+        if existing and existing['active']:
+            # someone who already has a login (an administrator of another company): the developer gives access straight away, no link
+            return _give_access(conn, user, dict(existing), [company_id], 'admin')
         from .team import new_invite
         return {'invite': new_invite(conn, user, company_id, name, email, 'admin')}
+
+
+def _give_access(conn, actor, person, company_ids, role):
+    added = []
+    for cid in company_ids:
+        if conn.execute('SELECT 1 FROM memberships WHERE user_id=? AND company_id=?', (person['id'], cid)).fetchone():
+            continue
+        conn.execute('INSERT INTO memberships VALUES(?,?,?)', (person['id'], cid, role))
+        conn.execute('UPDATE staff_invites SET revoked=1 WHERE company_id=? AND email=? AND used_at IS NULL', (cid, person['email']))
+        audit(conn, actor['id'], cid, 'created', 'staff', person['id'], {'email': person['email'], 'role': role, 'by': 'developer'})
+        added.append(cid)
+    if not added:
+        raise HTTPException(409, 'This person already has access to that company.')
+    return {'id': person['id'], 'added': added}
+
+
+@router.post('/api/developer/users/{user_id}/companies')
+def give_access(user_id: int, data: dict, user=Depends(current_user)):
+    """One login, several companies: the developer gives an existing staff login access to more companies at once, straight away."""
+    require_developer(user)
+    ids = data.get('company_ids')
+    if not isinstance(ids, list) or not ids or not all(isinstance(x, int) and not isinstance(x, bool) for x in ids):
+        raise HTTPException(422, 'Choose at least one company.')
+    role = data.get('role') or 'admin'
+    if role not in ('admin', 'manager', 'finance', 'property', 'inspector'):
+        raise HTTPException(422, 'Choose a valid role.')
+    with transaction() as conn:
+        person = _staff_user(conn, user_id)
+        if person['global_admin']:
+            raise HTTPException(422, 'The developer already has every company.')
+        if not person['active']:
+            raise HTTPException(409, 'This login is closed. Open it first.')
+        known = {r[0] for r in conn.execute('SELECT id FROM companies')}
+        if any(cid not in known for cid in ids):
+            raise HTTPException(404, 'Company not found.')
+        return _give_access(conn, user, person, sorted(set(ids)), role)
 
 
 @router.patch('/api/developer/users/{user_id}')

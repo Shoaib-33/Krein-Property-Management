@@ -1,5 +1,5 @@
 'use strict';
-const CACHE = 'krein-shell-v109';
+const CACHE = 'krein-shell-v110';
 const SHELL = ['/', '/static/index.html', '/static/styles.css', '/static/portal.css', '/static/enhance.css', '/static/polish.css', '/static/invoices.css', '/static/signature.css', '/static/docedit.css', '/static/pdfview.css', '/static/team.css', '/static/theme.css', '/static/layout.css', '/static/favicon.svg'];
 
 self.addEventListener('install', event => {
