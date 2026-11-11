@@ -1,4 +1,6 @@
 'use strict';
+// the other companies this person administers (a home can move there; app/company_move.py)
+const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state.company && c.role === 'admin');
 /* Properties > one property's page: the internal note at the top (what is going on with this home), the tenants linked to
    it, its contracts and every document of the home. Data: GET /api/properties/{id}/file (app/property_file.py).
    "View details" on a property card, and "Rented home" on a tenant's page, open it. */
@@ -184,7 +186,7 @@
       ['Status', stat], ['Owner', hf ? hf.owner : ''], ...(p.bag_id ? [['BAG', p.bag_id]] : [])];
     const delBtn = state.me.developer ? actionBtn('Delete permanently', 'property-delete-permanent', p.id, 'small danger') : ['admin', 'manager', 'property'].includes(role) ? actionBtn('Delete home', 'property-delete', p.id, 'small danger') : '';
     const details = `<div class="pf-card"><div class="pf-card-head"><span class="kcard-icon">${icon('building')}</span><h3>Home details</h3></div><table class="pf-kv"><tbody>${kv.map(([k, v]) => `<tr><td>${e(k)}</td><td>${k === 'Status' ? v : e(v ?? '')}</td></tr>`).join('')}</tbody></table>
-      ${staff ? `<div class="actions pf-card-acts">${mb('Edit details', 'data-pf="edit"')}${delBtn}</div>` : ''}</div>`;
+      ${staff ? `<div class="actions pf-card-acts">${mb('Edit details', 'data-pf="edit"')}${moveTargets().length && role === 'admin' ? mb('Move to another company', 'data-pf="move"') : ''}${delBtn}</div>` : ''}</div>`;
     const tenantCard = go2('tenants', 'Tenant', 'users', resident ? `<p class="big">${e(resident.name)}</p>${resident.email ? `<p class="line">${icon('message')}${e(resident.email)}</p>` : ''}${resident.phone ? `<p class="line">${icon('info')}${e(resident.phone)}</p>` : ''}`
       : '<p class="muted">No tenant. This home is vacant.</p>');
     const lblCls = window.kreinHomes ? window.kreinHomes.labelClass(p.energy_label === 'Unknown' ? '' : p.energy_label) : 'n';
@@ -275,6 +277,14 @@
       formModal('Note for this home', [['note', 'What is going on with this home?', 'textarea', {value: p.note || '', wide: true, required: false}]],
         async data => { await api(`/api/properties/${p.id}/note`, {method: 'POST', body: data}); ui.file = null; load(); },
         {intro: 'Only the management team sees this note. It is shown at the top of the property page.', submit: 'Save note', success: 'Note saved.'});
+    } else if (act === 'move') {
+      formModal('Move this home to another company', [selectField('company_id', 'Company', moveTargets().map(c => [String(c.id), c.name]), {wide: true})],
+        async data => {
+          await api(`/api/properties/${p.id}/move`, {method: 'POST', body: data});
+          state.company = Number(data.company_id); sessionStorage.setItem('krein_company', state.company);
+          ui.file = null; await refresh(); showProperty(p.id);
+        },
+        {intro: 'Only a home without history can move: no contracts, costs, cases or work orders yet. Its documents, gas/water/electricity details and planned maintenance move along. The owner link is cleared: choose the owner again in the other company.', submit: 'Move home', success: 'Home moved.'});
     } else if (act === 'edit') {
       formModal('Edit property details', [['name', 'Name', 'text', {value: p.name, wide: true}], ['address', 'Street and house number', 'text', {value: p.address, wide: true}],
         ['postcode', 'Postcode', 'text', {value: p.postcode || '', required: false}], ['city', 'City', 'text', {value: p.city}],

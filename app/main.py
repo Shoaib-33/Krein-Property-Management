@@ -2231,6 +2231,8 @@ from .utility_statements import router as utility_statements_router
 app.include_router(utility_statements_router)
 from .ip_allowlist import router as ip_allowlist_router
 app.include_router(ip_allowlist_router)
+from .company_move import router as company_move_router
+app.include_router(company_move_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')
