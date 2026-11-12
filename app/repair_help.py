@@ -105,17 +105,23 @@ def excerpts(question, history_text='', limit=3):
     return [c for s, c in ranked[:limit] if s >= max(2, best / 3)]
 
 
-def knowledge_prompt(question, history_text=''):
+def knowledge_prompt(question, history_text='', full=False):
     """The part of the tenant system prompt with the chatbot rules, the emergency steps and the matching sections."""
     kb = _load()
-    found = excerpts(question, history_text)
+    found = kb['chunks'] if full else excerpts(question, history_text)
     body = '\n\n'.join(c['text'] for c in found) or '(no section of the knowledge base matches this question)'
     return ('\n\nREPAIR HELP. You also help tenants solve problems in their rented home in the Netherlands. Use ONLY the knowledge '
             'below for repair advice; do not add steps of your own. If the knowledge does not cover the question, say you are not '
             'sure, suggest reporting it with a photo, and end your reply with the tag [[gap]].\n'
             'For repair answers you may use up to 8 short numbered steps (one per line). Always end a repair answer with a short line '
             'that they can report it if this does not help, and add [[go:repairs|Report a repair]].\n'
-            'Never promise who pays: say who usually pays and that the contract decides.\n\n'
+            'Never promise who pays: say who usually pays and that the contract decides.\n'
+            'If the tenant sends a PHOTO: first say in one sentence what you see. If you cannot tell what it shows, ask one short question. '
+            'Read fault codes and the pressure gauge from the photo when visible.\n'
+            'When the tenant should report it (the steps did not help, it is not a tenant job, or it is urgent), also add ONE tag '
+            '[[report:Category|Urgency|Short title|One or two sentences: the problem, where, and what the tenant already tried]], '
+            'written in the tenant\'s language, with Category one of Plumbing, Heating, Electrical, Damp / mould, Appliance, General '
+            'and Urgency one of Routine, Urgent, Emergency (follow the urgency levels). Never put names, phone numbers or addresses in it.\n\n'
             + kb['rules'] + '\n\n' + kb['emergency'] + '\n\nKNOWLEDGE FOR THIS QUESTION:\n' + body), found
 
 

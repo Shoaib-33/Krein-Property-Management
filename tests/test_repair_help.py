@@ -93,5 +93,45 @@ class RepairHelpTests(unittest.TestCase):
         self.assertEqual(self.client.delete(f'/api/developer/assistant-gaps/{items[0]["id"]}', headers=dev).status_code, 200)
 
 
+class RepairPhotoTests(RepairHelpTests):
+    """A tenant's photo goes to the AI with the whole knowledge base, and the AI's suggested report fills in the repair form."""
+    test_knowledge_search = test_emergency_and_steps_without_ai = test_ai_gets_the_knowledge_and_unsure_answers_are_kept = None
+
+    PNG = 'data:image/png;base64,' + __import__('base64').b64encode(b'\x89PNG\r\n\x1a\n' + b'\0' * 64).decode()
+
+    def test_photo_goes_to_the_ai_and_suggests_a_report(self):
+        h = self.login('tenant@krein.local', 'tenant')
+        seen = {}
+
+        def fake(who, page, history, message, lang='en', extra='', image=None):
+            seen.update(extra=extra, image=image, message=message)
+            return ('I see a pressure gauge below 1 bar. Top it up to 1.5 bar.\n'
+                    '[[report:Heating|Urgent|Boiler pressure keeps dropping|The pressure drops below 1 bar every week; topped up twice.]]'), 'openrouter'
+        with mock.patch.dict(os.environ, {'OPENROUTER_API_KEY': 'x'}), mock.patch.object(assistant, 'ask_ai', fake):
+            self.assertTrue(self.client.get('/api/assistant/info', headers=h).json()['photos'])
+            r = self.client.post('/api/assistant/chat', headers=h, json={'message': '', 'image': self.PNG}).json()
+        self.assertEqual(seen['image']['mime'], 'image/png')
+        self.assertIn('Boiler fault codes', seen['extra'])     # the whole knowledge base, not 3 sections
+        self.assertIn('Pests', seen['extra'])
+        self.assertTrue(seen['message'])                        # a photo without words still asks a question
+        self.assertNotIn('[[report', r['reply'])
+        self.assertEqual(r['report'], {'category': 'Heating', 'urgency': 'Urgent', 'title': 'Boiler pressure keeps dropping',
+                                       'description': 'The pressure drops below 1 bar every week; topped up twice.'})
+        self.assertEqual(r['actions'][-1]['page'], 'repairs')
+
+    def test_bad_photo_or_no_ai(self):
+        h = self.login('tenant@krein.local', 'tenant')
+        fake_gif = 'data:image/png;base64,' + __import__('base64').b64encode(b'GIF89a' + b'\0' * 20).decode()
+        r = self.client.post('/api/assistant/chat', headers=h, json={'message': 'look', 'image': fake_gif}).json()
+        self.assertIn('could not read', r['reply'])               # the bytes are not really a PNG
+        self.assertFalse(self.client.get('/api/assistant/info', headers=h).json()['photos'])   # no AI key: no camera button
+        r = self.client.post('/api/assistant/chat', headers=h, json={'message': 'look', 'image': self.PNG}).json()
+        self.assertIn('cannot look at photos', r['reply'])
+        self.assertEqual(r['actions'][0]['page'], 'repairs')
+        # staff cannot send photos to the AI
+        staff = self.login('admin@krein.local')
+        self.assertNotIn('photos', [k for k, v in self.client.get('/api/assistant/info', headers=staff).json().items() if v])
+
+
 if __name__ == '__main__':
     unittest.main()

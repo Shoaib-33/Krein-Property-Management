@@ -26,6 +26,8 @@ log = logging.getLogger('krein.assistant')
 API = 'https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent'
 OPENROUTER_API = 'https://openrouter.ai/api/v1/chat/completions'
 OPENROUTER_DEFAULT_MODEL = 'openai/gpt-oss-20b'
+OPENROUTER_VISION_MODEL = 'google/gemini-2.5-flash'   # reads tenants' photos; KREIN_OPENROUTER_VISION_MODEL overrides it
+MAX_IMAGE_BYTES = 1_500_000   # the chat shrinks photos to about 1280 px before sending, well below this
 DEFAULT_MODEL = 'gemini-flash-latest'  # Google's alias for the newest Flash model, which has a free tier.
 MAX_MESSAGE, MAX_TURNS, MAX_TURN_CHARS = 600, 8, 800
 RATE_PER_MINUTE = 15
@@ -114,7 +116,7 @@ GUIDE = {
 }
 GREETING = {
     'staff': 'Hi! I can show you where things are in Krein. Try: "How do I verify a receipt?" or "Where are tenant messages?"',
-    'tenant': 'Hi! I can help you find your way around, and help you solve small problems in your home yourself. Try: "My heating is not working" or "How do I pay my rent?"',
+    'tenant': 'Hi! I can help you find your way around, and help you solve small problems in your home yourself. Describe the problem, or upload a photo of it with the picture button. Try: "My heating is not working".',
     'owner': 'Hi! Ask me where to find your statements, units or documents.',
     'contractor': 'Hi! Ask me how to update a job, send a quote or report completion.',
 }
@@ -208,13 +210,13 @@ def parse_actions(who: str, reply: str):
     return clean, actions[:3]
 
 
-def ask_gemini(who: str, page: str, history: list, message: str, lang: str = 'en', extra: str = ''):
+def ask_gemini(who: str, page: str, history: list, message: str, lang: str = 'en', extra: str = '', image=None):
     key = os.environ.get('GEMINI_API_KEY', '').strip()
     if not key:
         return None
     model = os.environ.get('KREIN_GEMINI_MODEL', DEFAULT_MODEL).strip() or DEFAULT_MODEL
     contents = [{'role': 'user' if h['role'] == 'user' else 'model', 'parts': [{'text': h['text']}]} for h in history]
-    contents.append({'role': 'user', 'parts': [{'text': message}]})
+    contents.append({'role': 'user', 'parts': [{'text': message}] + ([{'inline_data': {'mime_type': image['mime'], 'data': image['b64']}}] if image else [])})
     body = json.dumps({
         'systemInstruction': {'parts': [{'text': system_prompt(who, page, lang, extra)}]},
         'contents': contents,
@@ -222,7 +224,7 @@ def ask_gemini(who: str, page: str, history: list, message: str, lang: str = 'en
     }).encode()
     req = urllib.request.Request(API.format(model=model), data=body, method='POST', headers={'Content-Type': 'application/json', 'x-goog-api-key': key})
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=45 if image else 20) as resp:
             data = json.load(resp)
         parts = data['candidates'][0]['content']['parts']
         return ''.join(p.get('text', '') for p in parts).strip() or None
@@ -278,14 +280,16 @@ def within_daily_limit():
     return True
 
 
-def ask_openrouter(who: str, page: str, history: list, message: str, lang: str = 'en', extra: str = ''):
+def ask_openrouter(who: str, page: str, history: list, message: str, lang: str = 'en', extra: str = '', image=None):
     key = os.environ.get('OPENROUTER_API_KEY', '').strip()
     if not key:
         return None
     model = os.environ.get('KREIN_OPENROUTER_MODEL', OPENROUTER_DEFAULT_MODEL).strip() or OPENROUTER_DEFAULT_MODEL
+    if image:   # the text model may not see images: a photo goes to a vision model
+        model = os.environ.get('KREIN_OPENROUTER_VISION_MODEL', OPENROUTER_VISION_MODEL).strip() or OPENROUTER_VISION_MODEL
     messages = [{'role': 'system', 'content': system_prompt(who, page, lang, extra)}]
     messages += [{'role': 'user' if h['role'] == 'user' else 'assistant', 'content': h['text']} for h in history]
-    messages.append({'role': 'user', 'content': message})
+    messages.append({'role': 'user', 'content': [{'type': 'text', 'text': message}, {'type': 'image_url', 'image_url': {'url': image['url']}}] if image else message})
     # data_collection 'deny': OpenRouter only routes to providers that do not store or train on the prompts
     body = json.dumps({'model': model, 'messages': messages, 'temperature': 0.3, 'max_tokens': 1400 if extra else 800,
                        'reasoning': {'effort': 'low', 'exclude': True}, 'provider': {'data_collection': 'deny'}}).encode()
@@ -294,7 +298,7 @@ def ask_openrouter(who: str, page: str, history: list, message: str, lang: str =
         headers['HTTP-Referer'] = os.environ['KREIN_PUBLIC_URL'].strip()   # shows the app in the OpenRouter dashboard
     req = urllib.request.Request(OPENROUTER_API, data=body, method='POST', headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=45 if image else 20) as resp:
             data = json.load(resp)
         return (data['choices'][0]['message']['content'] or '').strip() or None
     except urllib.error.HTTPError as err:
@@ -305,13 +309,65 @@ def ask_openrouter(who: str, page: str, history: list, message: str, lang: str =
         return None
 
 
-def ask_ai(who, page, history, message, lang='en', extra=''):
-    """OpenRouter first when it has a key, then Gemini; None means neither answered. extra: the tenant repair knowledge."""
-    reply = ask_openrouter(who, page, history, message, lang, *([extra] if extra else []))
+def ask_ai(who, page, history, message, lang='en', extra='', image=None):
+    """OpenRouter first when it has a key, then Gemini; None means neither answered. extra: the tenant repair knowledge;
+    image: a tenant's photo ({'mime', 'b64', 'url'})."""
+    more = [extra, image] if image else [extra] if extra else []
+    reply = ask_openrouter(who, page, history, message, lang, *more)
     if reply:
         return reply, 'openrouter'
-    reply = ask_gemini(who, page, history, message, lang, *([extra] if extra else []))
+    reply = ask_gemini(who, page, history, message, lang, *more)
     return (reply, 'gemini') if reply else (None, '')
+
+
+_images = {'date': '', 'count': 0}
+
+
+def read_image(value):
+    """A chat photo sent as a data URL: returns {'mime', 'b64', 'url'}, or None when it is not a small JPEG, PNG or WebP."""
+    import base64
+    m = re.fullmatch(r'data:(image/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)', str(value or '').strip())
+    if not m or len(m.group(2)) > MAX_IMAGE_BYTES * 4 // 3 + 4:
+        return None
+    try:
+        raw = base64.b64decode(m.group(2), validate=True)
+    except ValueError:
+        return None
+    real = 'image/jpeg' if raw[:3] == b'\xff\xd8\xff' else 'image/png' if raw[:8] == b'\x89PNG\r\n\x1a\n' else 'image/webp' if raw[:4] == b'RIFF' and raw[8:12] == b'WEBP' else ''
+    if real != m.group(1):
+        return None
+    return {'mime': real, 'b64': m.group(2), 'url': f'data:{real};base64,{m.group(2)}'}
+
+
+def images_left_today():
+    """A server-wide cap on photos sent to the AI per day (KREIN_ASSISTANT_DAILY_IMAGES, default 300)."""
+    try:
+        cap = int(os.environ.get('KREIN_ASSISTANT_DAILY_IMAGES', '300'))
+    except ValueError:
+        cap = 300
+    today = time.strftime('%Y-%m-%d')
+    if _images['date'] != today:
+        _images.update(date=today, count=0)
+    if _images['count'] >= cap:
+        return False
+    _images['count'] += 1
+    return True
+
+
+REPORT_TAG = re.compile(r'\[\[report:([^|\]]{1,30})\|([^|\]]{1,20})\|([^|\]]{1,120})\|([^\]]{1,600})\]\]')
+CATEGORIES = ('Plumbing', 'Heating', 'Electrical', 'Damp / mould', 'Appliance', 'General')
+URGENCIES = ('Routine', 'Urgent', 'Emergency')
+
+
+def parse_report(reply):
+    """The AI's suggested repair report, [[report:Category|Urgency|Title|Description]], to fill in the tenant's form."""
+    m = REPORT_TAG.search(reply)
+    clean = REPORT_TAG.sub('', reply).strip()
+    if not m:
+        return clean, None
+    cat, urg, title, desc = (x.strip() for x in m.groups())
+    return clean, {'category': cat if cat in CATEGORIES else 'General', 'urgency': urg if urg in URGENCIES else 'Routine',
+                   'title': title[:120], 'description': desc[:600]}
 
 
 def clean_history(raw):
@@ -329,13 +385,20 @@ def info(request: Request, user=Depends(current_user)):
     who = audience(request)
     ai = ai_configured(who)
     return {'greeting': GREETING[who], 'suggestions': SUGGESTIONS[who], 'ai': ai,
-            'privacy_note': 'Answers come from an AI service (OpenRouter or Google). Do not type personal details such as names, addresses or bank numbers.' if ai else ''}
+            'photos': ai and who == 'tenant',
+            'privacy_note': ('Answers come from an AI service (OpenRouter or Google). Do not type personal details such as names, addresses or bank numbers'
+                             + (', and send photos of the problem only, without people or papers in them.' if who == 'tenant' else '.')) if ai else ''}
 
 
 @router.post('/api/assistant/chat')
 def chat(request: Request, data: dict, user=Depends(current_user)):
     who = audience(request)
     message = str(data.get('message', '')).strip()[:MAX_MESSAGE]
+    image = read_image(data.get('image')) if who == 'tenant' and data.get('image') else None
+    if data.get('image') and who == 'tenant' and not image:
+        return {'reply': 'I could not read that photo. Please send a JPEG, PNG or WebP photo.', 'actions': [], 'source': 'guide'}
+    if image and not message:
+        message = 'What is wrong in this photo, and what can I do?' if data.get('lang') != 'nl' else 'Wat is er mis op deze foto, en wat kan ik doen?'
     if not message:
         return {'reply': 'Type a question and I will point you to the right page.', 'actions': [], 'source': 'guide'}
     if not throttle(user['id']):
@@ -349,18 +412,32 @@ def chat(request: Request, data: dict, user=Depends(current_user)):
             return {'reply': urgent, 'actions': report, 'source': 'guide', 'emergency': True}
     reply, source = None, ''
     history = [{**h, 'text': redact(h['text'])} for h in clean_history(data.get('history'))]
+    if image and not (ai_allowed(who) and ai_configured(who) and images_left_today()):
+        return {'reply': ('Ik kan nu geen foto\'s bekijken. Beschrijf het probleem in een paar woorden, of meld het met de foto.' if lang == 'nl'
+                          else 'I cannot look at photos right now. Describe the problem in a few words, or report it with the photo.'),
+                'actions': report, 'source': 'guide'}
     if ai_allowed(who) and within_daily_limit():
         extra = ''
-        if who == 'tenant':
-            extra, _ = repair_help.knowledge_prompt(redact(message), ' '.join(h['text'] for h in history if h['role'] == 'user'))
-        reply, source = ask_ai(who, page, history, redact(message), lang, extra)
+        if who == 'tenant':   # with a photo the AI sees the whole knowledge base: the words alone may not say what it shows
+            extra, _ = repair_help.knowledge_prompt(redact(message), ' '.join(h['text'] for h in history if h['role'] == 'user'), full=bool(image))
+        reply, source = ask_ai(who, page, history, redact(message), lang, extra, *([image] if image else []))
     if reply:
         unsure = '[[gap]]' in reply
-        text, actions = parse_actions(who, reply.replace('[[gap]]', ''))
+        reply, suggested = parse_report(reply.replace('[[gap]]', '')) if who == 'tenant' else (reply, None)
+        text, actions = parse_actions(who, reply)
         if text:
             if unsure:
-                repair_help.log_gap(who, message, 'ai_unsure')
-            return {'reply': text, 'actions': actions, 'source': source}
+                repair_help.log_gap(who, message + (' [photo]' if image else ''), 'ai_unsure')
+            out = {'reply': text, 'actions': actions, 'source': source}
+            if suggested:
+                out['report'] = suggested
+                if not any(a['page'] == 'repairs' for a in actions):
+                    out['actions'] = actions + report
+            return out
+    if image:
+        return {'reply': ('Ik kon de foto nu niet bekijken. Beschrijf het probleem in een paar woorden, of meld het met de foto.' if lang == 'nl'
+                          else 'I could not look at the photo just now. Describe the problem in a few words, or report it with the photo.'),
+                'actions': report, 'source': 'guide', 'ai_unavailable': True}
     if who == 'tenant':   # no AI: the steps of the best-matching knowledge-base section
         steps = repair_help.local_reply(message, lang)
         if steps:
