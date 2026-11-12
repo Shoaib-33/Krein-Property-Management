@@ -2231,6 +2231,8 @@ from .utility_statements import router as utility_statements_router
 app.include_router(utility_statements_router)
 from .ip_allowlist import router as ip_allowlist_router
 app.include_router(ip_allowlist_router)
+from .repair_help import router as repair_help_router
+app.include_router(repair_help_router)
 from .company_move import router as company_move_router
 app.include_router(company_move_router)
 

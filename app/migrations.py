@@ -645,6 +645,14 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V60: chat questions the tenant repair knowledge base could not answer well (app/repair_help.py), masked, kept 180 days
+V60 = '''
+CREATE TABLE assistant_gaps (
+ id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, audience TEXT NOT NULL, question TEXT NOT NULL, reason TEXT NOT NULL, handled_at TEXT
+);
+CREATE INDEX assistant_gaps_created ON assistant_gaps(created_at)
+'''
+
 # V59: the country of a refused address (app/ip_allowlist.py)
 V59 = '''
 ALTER TABLE ip_blocks ADD COLUMN country TEXT NOT NULL DEFAULT ''
@@ -930,6 +938,12 @@ ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id)
 ''',
     59: '''
 ALTER TABLE ip_blocks ADD COLUMN country TEXT NOT NULL DEFAULT ''
+''',
+    60: '''
+CREATE TABLE assistant_gaps (
+ id BIGSERIAL PRIMARY KEY, created_at TEXT NOT NULL, audience TEXT NOT NULL, question TEXT NOT NULL, reason TEXT NOT NULL, handled_at TEXT
+);
+CREATE INDEX assistant_gaps_created ON assistant_gaps(created_at);
 ''',
     58: '''
 CREATE TABLE ip_allowlist (
@@ -1485,6 +1499,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (59, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=60').fetchone():
+            for statement in V60.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (60, now()))
         conn.commit()
     except Exception:
         conn.rollback()
