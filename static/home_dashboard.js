@@ -39,7 +39,7 @@
     const cases = H().openCases();
     const dated = cases.filter(k => k.next_deadline).sort((a, b) => a.next_deadline.localeCompare(b.next_deadline));
     return {homes, tenants, missing, repairs, jobs, due, costs, noLabel, tasks, overdue, soon, proofs, july, letterBy, toIndex, expiring, cases, dated,
-      rented: homes.filter(x => ['rented', 'nocontract'].includes(x.status)).length};
+      occ: H().occupancy(homes)};
   }
 
   const goto = (attrs) => `data-dash-go='${e(JSON.stringify(attrs))}'`;
@@ -49,7 +49,7 @@
   function block() {
     const d = figures();
     const card = (title, value, foot, ic, tone, go) => `<button type="button" class="kcard ${tone}" ${goto(go)}><span class="kcard-icon">${icon(ic)}</span><span class="kcard-body"><span class="kcard-title">${e(title)}</span><span class="kcard-value">${e(value)}</span><span class="kcard-foot">${e(foot)}</span></span><span class="kcard-go">${icon('arrow')}</span></button>`;
-    const cards = `<div class="kcards">${card('Homes', d.homes.length, `${d.rented} rented · ${d.homes.length - d.rented} vacant`, 'building', 'k-blue', {homes: {}})}
+    const cards = `<div class="kcards">${card('Homes', d.homes.length, `${d.occ.rented} rented · ${d.occ.vacant} vacant`, 'building', 'k-blue', {homes: {}})}
       ${card('Tenants', d.tenants.length, 'Active tenants', 'users', 'k-green', {page: 'tenants'})}
       ${card('Missing contracts', d.missing.length, 'Tenants without a contract', 'file', 'k-amber', {page: 'tenants', tenants: 'nocontract'})}
       ${card('Open maintenance', d.repairs.length + d.jobs, d.jobs ? `${d.repairs.length} reports · ${d.jobs} work orders` : d.repairs.length === 1 ? 'Open report' : 'Open reports', 'wrench', 'k-violet', {page: repairPage()})}</div>`;

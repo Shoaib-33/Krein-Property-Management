@@ -68,7 +68,15 @@
     return {p, live, next, tenant, rent, status, label, labelState, exp, repairs, cases, owner, missing, issues, open, anyMissing: Object.values(missing).some(Boolean)};
   }
   const allFacts = () => rows('properties').map(facts);
-  window.kreinHomes = {facts, allFacts, withoutContract, openCases: () => openCases, running, comingUp};
+  /** The one occupancy rule, used on Homes, the dashboard and All companies (app/team.py counts the same way):
+      rented = a contract runs today, or a tenant lives here without a registered contract ("contract missing");
+      vacant = every other home, of which "reserved" have a contract that starts later. */
+  function occupancy(all = allFacts()) {
+    const n = s => all.filter(x => x.status === s).length;
+    const total = all.length, contract = n('rented'), nocontract = n('nocontract'), reserved = n('reserved'), rented = contract + nocontract;
+    return {total, rented, contract, nocontract, reserved, vacant: total - rented, pct: total ? Math.round(rented / total * 100) : 0};
+  }
+  window.kreinHomes = {facts, allFacts, withoutContract, occupancy, openCases: () => openCases, running, comingUp};
 
   const STATUS = {rented: ['Rented', 'green'], nocontract: ['Rented, contract missing', 'amber'], reserved: ['Reserved', 'blue'], vacant: ['Vacant', 'gray']};
   window.kreinHomes.STATUS = STATUS;
@@ -80,7 +88,7 @@
     try { if (!state.homes.viewSet) { state.homes.view = localStorage.getItem('krein_homes_view') === 'tiles' ? 'tiles' : 'list'; state.homes.viewSet = true; } } catch { /* storage unavailable */ }
     const all = allFacts();
     const can = ['admin', 'manager', 'property'].includes(company().role);
-    const total = all.length, rented = all.filter(x => ['rented', 'nocontract'].includes(x.status)).length, vacant = total - rented;
+    const {total, rented, vacant} = occupancy(all);
     const pct = n => total ? Math.round(n / total * 100) : 0;
     const card = (key, title, value, ic, tone, extra = '') => `<button type="button" class="kcard ${tone}" data-hl-card="${key}"><span class="kcard-icon">${icon(ic)}</span><span class="kcard-body"><span class="kcard-title">${e(title)}</span><span class="kcard-value">${e(value)}${extra}</span></span></button>`;
     const cards = `<div class="kcards five">${card('', 'Total homes', total, 'building', 'k-blue')}${card('rented', 'Rented', rented, 'home', 'k-green', `<span class="kcard-pct">${pct(rented)}%</span>`)}
@@ -134,6 +142,7 @@
     return heading('Homes', 'Overview of all homes in your portfolio.', can ? button('Add home', 'form', 'data-kind="properties"', 'primary') : '', 'HOMES') + cards + filters + body;
   }
 
+  window.kreinHomes.page = page;   // app.js propertiesPage() shows this list, so #properties never opens the old card view
   const baseRender = renderPage;
   renderPage = () => (state.page === 'properties' && !state.propertyView ? page() : baseRender());
 

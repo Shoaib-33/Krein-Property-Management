@@ -126,10 +126,20 @@ def group_overview(user=Depends(current_user)):
             money = c['role'] in MONEY_ROLES
             houses = conn.execute('SELECT COUNT(*) FROM properties WHERE company_id=?', (cid,)).fetchone()[0]
             active = "c.company_id=? AND c.status IN ('active','notice given') AND c.start_date<=? AND (c.end_date IS NULL OR c.end_date>=?)"
-            occupied = conn.execute(f'SELECT COUNT(DISTINCT c.property_id) FROM contracts c WHERE {active}', (cid, today, today)).fetchone()[0]
+            # the same occupancy rule as Homes and the dashboard (static/homes_list.js occupancy()): rented = a contract runs today,
+            # or a tenant lives in the home without a registered contract; every other home is vacant, some of them reserved
+            with_contract = conn.execute(f'SELECT COUNT(DISTINCT c.property_id) FROM contracts c WHERE {active}', (cid, today, today)).fetchone()[0]
+            nocontract = conn.execute('SELECT COUNT(DISTINCT t.home_property_id) FROM tenants t JOIN properties p ON p.id=t.home_property_id AND p.company_id=? '
+                                      'WHERE t.archived_at IS NULL AND t.erased_at IS NULL '
+                                      f'AND t.home_property_id NOT IN (SELECT c.property_id FROM contracts c WHERE {active}) '
+                                      "AND NOT EXISTS (SELECT 1 FROM contracts x WHERE x.tenant_id=t.id AND x.status IN ('active','notice given') AND x.start_date<=? AND (x.end_date IS NULL OR x.end_date>=?))",
+                                      (cid, cid, today, today, today, today)).fetchone()[0]
+            occupied = with_contract + nocontract
             reserved = conn.execute("SELECT COUNT(DISTINCT c.property_id) FROM contracts c WHERE c.company_id=? AND c.status IN ('active','notice given') AND c.start_date>? "
-                                    f"AND c.property_id NOT IN (SELECT c.property_id FROM contracts c WHERE {active})", (cid, today, cid, today, today)).fetchone()[0]
-            item = {'id': cid, 'name': c['name'], 'kvk': c['kvk'], 'role': c['role'], 'houses': houses, 'occupied': occupied, 'reserved': reserved, 'vacant': max(0, houses - occupied - reserved),
+                                    f"AND c.property_id NOT IN (SELECT c.property_id FROM contracts c WHERE {active}) "
+                                    'AND c.property_id NOT IN (SELECT t.home_property_id FROM tenants t WHERE t.home_property_id IS NOT NULL AND t.archived_at IS NULL AND t.erased_at IS NULL)',
+                                    (cid, today, cid, today, today)).fetchone()[0]
+            item = {'id': cid, 'name': c['name'], 'kvk': c['kvk'], 'role': c['role'], 'houses': houses, 'occupied': occupied, 'nocontract': nocontract, 'reserved': reserved, 'vacant': max(0, houses - occupied),
                     'tickets': conn.execute("SELECT (SELECT COUNT(*) FROM requests WHERE company_id=? AND status IN ('open','in progress')) + (SELECT COUNT(*) FROM repairs WHERE company_id=? AND status NOT IN ('done','closed'))", (cid, cid)).fetchone()[0],
                     'receipts_waiting': conn.execute("SELECT COUNT(*) FROM payment_proofs WHERE company_id=? AND status='pending'", (cid,)).fetchone()[0],
                     'contracts_waiting': conn.execute("SELECT COUNT(*) FROM lease_offers WHERE company_id=? AND status='signed'", (cid,)).fetchone()[0]}
@@ -142,6 +152,6 @@ def group_overview(user=Depends(current_user)):
                              'drafts': conn.execute('SELECT COUNT(*) FROM invoices WHERE company_id=? AND released_at IS NULL', (cid,)).fetchone()[0]})
             out.append(item)
     totals = {}
-    for key in ('houses', 'occupied', 'reserved', 'vacant', 'tickets', 'receipts_waiting', 'contracts_waiting', 'rent_roll_cents', 'open_invoices', 'open_cents', 'overdue_invoices', 'overdue_cents', 'drafts'):
+    for key in ('houses', 'occupied', 'nocontract', 'reserved', 'vacant', 'tickets', 'receipts_waiting', 'contracts_waiting', 'rent_roll_cents', 'open_invoices', 'open_cents', 'overdue_invoices', 'overdue_cents', 'drafts'):
         totals[key] = sum(i.get(key) or 0 for i in out)
     return {'companies': out, 'totals': totals, 'money_hidden_for': [i['name'] for i in out if 'rent_roll_cents' not in i]}

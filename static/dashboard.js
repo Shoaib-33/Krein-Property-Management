@@ -91,13 +91,17 @@
   }
 
   function donut() {
-    const props = rows('properties'), occ = props.filter(p => activeContract(p.id)).length, res = props.filter(p => !activeContract(p.id) && upcomingContract(p.id)).length, vac = props.length - occ - res;
-    const r = 52, c = 2 * Math.PI * r, pct = props.length ? Math.round(occ / props.length * 100) : 0;
-    const seg = (val, color, offset, page, label) => val ? `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${color}" stroke-width="16" stroke-dasharray="${c * val / props.length} ${c}" stroke-dashoffset="${-offset}" transform="rotate(-90 70 70)" class="seg" data-dash-go="${page}" data-dash-tip="${e(label)}" tabindex="0" role="button" aria-label="${e(label)}"/>` : '';
-    return `<div class="donut-wrap"><svg viewBox="0 0 140 140" class="donut" role="img" aria-label="${pct}% occupied"><circle cx="70" cy="70" r="${r}" fill="none" stroke="#e8f0eb" stroke-width="16"/>
-      ${seg(occ, '#176b55', 0, 'properties', `${occ} occupied units`)}${seg(res, '#6c9bd1', c * occ / (props.length || 1), 'properties', `${res} reserved units`)}${seg(vac, '#e0b85a', c * (occ + res) / (props.length || 1), 'properties', `${vac} vacant units`)}
-      <text x="70" y="68" text-anchor="middle" class="donut-n">${pct}%</text><text x="70" y="86" text-anchor="middle" class="axis">occupied</text></svg>
-      <ul class="legend-list"><li><i class="dot" data-c="g"></i>${occ} occupied</li>${res ? `<li><i class="dot" data-c="blue"></i>${res} reserved</li>` : ''}<li><i class="dot" data-c="a"></i>${vac} vacant</li><li class="muted">${props.length} units in total</li></ul></div>`;
+    // the same rule as Homes and All companies (window.kreinHomes.occupancy in homes_list.js)
+    const O = window.kreinHomes ? window.kreinHomes.occupancy() : null;
+    if (!O) return '';
+    const total = O.total, free = O.vacant - O.reserved, pct = O.pct;
+    const r = 52, c = 2 * Math.PI * r;
+    const seg = (val, color, offset, label) => val ? `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${color}" stroke-width="16" stroke-dasharray="${c * val / total} ${c}" stroke-dashoffset="${-offset}" transform="rotate(-90 70 70)" class="seg" data-dash-go="properties" data-dash-tip="${e(label)}" tabindex="0" role="button" aria-label="${e(label)}"/>` : '';
+    const at = n => c * n / (total || 1);
+    return `<div class="donut-wrap"><svg viewBox="0 0 140 140" class="donut" role="img" aria-label="${pct}% rented"><circle cx="70" cy="70" r="${r}" fill="none" stroke="#e8f0eb" stroke-width="16"/>
+      ${seg(O.contract, '#176b55', 0, `${O.contract} rented with a contract`)}${seg(O.nocontract, '#7fb59f', at(O.contract), `${O.nocontract} rented, contract missing`)}${seg(O.reserved, '#6c9bd1', at(O.rented), `${O.reserved} reserved`)}${seg(free, '#e0b85a', at(O.rented + O.reserved), `${free} vacant`)}
+      <text x="70" y="68" text-anchor="middle" class="donut-n">${pct}%</text><text x="70" y="86" text-anchor="middle" class="axis">rented</text></svg>
+      <ul class="legend-list"><li><i class="dot" data-c="g"></i>${O.rented} rented${O.nocontract ? ` <small class="muted">(${O.nocontract} contract missing)</small>` : ''}</li><li><i class="dot" data-c="a"></i>${O.vacant} vacant${O.reserved ? ` <small class="muted">(${O.reserved} reserved)</small>` : ''}</li><li class="muted">${total} homes in total</li></ul></div>`;
   }
 
   function aging() {
