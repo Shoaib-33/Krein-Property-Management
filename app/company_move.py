@@ -24,6 +24,7 @@ BLOCKERS = [
     ('utility_settlements', 'property_id', 'gas/water/electricity settlements'),
     ('utility_statements', 'property_id', 'year-end letters'),
     ('property_cases', 'property_id', 'ongoing cases'),
+    ('mail_messages', 'property_id', 'emails'),
     ('maintenance_jobs', 'property_id', 'work orders'),
     ('service_charge_group_units', 'property_id', 'a service charge group'),
     ('tenants', 'home_property_id', 'tenants living there'),

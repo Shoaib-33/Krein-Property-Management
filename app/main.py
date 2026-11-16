@@ -34,7 +34,7 @@ OPERATIONS = ('property', 'manager')
 @asynccontextmanager
 async def lifespan(app):
     db.init_db()
-    tasks = [asyncio.create_task(monthly_billing_scheduler()), asyncio.create_task(email_delivery_loop()), asyncio.create_task(bank_connection_loop())]
+    tasks = [asyncio.create_task(monthly_billing_scheduler()), asyncio.create_task(email_delivery_loop()), asyncio.create_task(bank_connection_loop()), asyncio.create_task(mailbox_loop())]
     app.state.billing_task = tasks[0]
     yield
     for t in tasks:
@@ -452,6 +452,20 @@ async def bank_connection_loop():
         except Exception:
             logging.exception('Bank connection loop failed; it tries again later.')
         await asyncio.sleep(sync_minutes() * 60)
+
+
+async def mailbox_loop():
+    """The company mailbox (app/mailbox.py) is read every KREIN_MAILBOX_MINUTES; it does nothing until KREIN_IMAP_HOST is set."""
+    from .mailbox import check_all, minutes
+    await asyncio.sleep(60)   # let the server start first
+    while True:
+        try:
+            await asyncio.to_thread(check_all)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logging.exception('Mailbox loop failed; it tries again later.')
+        await asyncio.sleep(minutes() * 60)
 
 
 @app.get('/api/health')
@@ -2282,3 +2296,5 @@ def landing():
 @app.get('/contractor')
 def index(request: Request, token: str = ''):
     return FileResponse(ROOT / 'static' / 'index.html')
+from .mailbox import router as mailbox_router
+app.include_router(mailbox_router)

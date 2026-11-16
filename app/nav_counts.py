@@ -13,6 +13,7 @@ OPS = ('admin', 'manager', 'property')
 ROLES = {   # which roles see the number of each tab (the same roles that can open the tab)
     'portal-inbox': OPS + ('landlord',), 'payments': FINANCE + ('landlord',), 'invoices': FINANCE + ('landlord',),
     'contracts': OPS + ('landlord',), 'registrations': OPS, 'enquiries': OPS, 'tasks': OPS + ('finance', 'landlord'),
+    'mailbox': OPS + ('finance',),
 }
 
 
@@ -46,4 +47,7 @@ def nav_counts(company_id: int, user=Depends(current_user)):
             put('enquiries', conn.execute("SELECT COUNT(*) FROM owner_enquiries WHERE company_id=? AND status='new'", (company_id,)).fetchone()[0])
         tasks = [r for r in conn.execute("SELECT contract_id,due_date FROM tasks WHERE company_id=? AND status='open' AND due_date<=?", (company_id, today)) if r['contract_id'] is None and scope is None or r['contract_id'] is not None and own(r['contract_id'])]
         put('tasks', len(tasks), any(r['due_date'] < today for r in tasks))
+        if role in ROLES['mailbox'] and scope is None:   # emails that wait for the team (app/mailbox.py)
+            mail = conn.execute("SELECT COUNT(*) n,SUM(urgent) u FROM mail_messages WHERE company_id=? AND direction='in' AND status='new'", (company_id,)).fetchone()
+            put('mailbox', mail['n'] or 0, mail['u'])
     return out

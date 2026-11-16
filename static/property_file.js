@@ -268,7 +268,8 @@ window.kreinCases = (() => {
       finance: `<div class="section-stack">${fin}${letters}</div>`,
       documents: docs,
     }[tab] || overview;
-    return head + cases + note + tabs + body;
+    const mail = staff && window.kreinMail ? window.kreinMail.panel(p.id) : '';   // the emails about this home (static/mailbox.js)
+    return head + cases + mail + note + tabs + body;
   }
 
   const baseRender = renderPage;

@@ -77,12 +77,13 @@
     const deadlines = evs.filter(x => DEAD.includes(x.type) && x.date >= t && x.date <= soon);
     // 3. tasks past their due date
     const tasks = rows('tasks').filter(x => x.status !== 'done' && x.due_date < t).sort((a, b) => a.due_date.localeCompare(b.due_date));
-    // 4. tenants waiting for an answer (the mailbox joins this box later)
-    const waiting = [...rows('repairs').filter(r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status) && !r.responded_at)
+    // 4. new emails in the mailbox (static/mailbox.js) and tenants waiting for an answer
+    const mails = window.kreinMail ? window.kreinMail.waiting() : [];
+    const waiting = [...mails, ...rows('repairs').filter(r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status) && !r.responded_at)
       .map(r => ({date: String(r.reported_on || r.created_at || '').slice(0, 10), text: r.title, sub: 'Repair report', kind: 'repair', id: r.id})),
       ...rows('requests').filter(r => r.status === 'open').map(r => ({date: String(r.created_at || '').slice(0, 10), text: r.subject, sub: r.kind, kind: 'request', id: r.id}))]
-      .sort((a, b) => a.date.localeCompare(b.date));
-    const inbox = allowedPage('portal-inbox') ? 'portal-inbox' : allowedPage('repairs') ? 'repairs' : null;
+      .sort((a, b) => (b.urgent ? 1 : 0) - (a.urgent ? 1 : 0) || a.date.localeCompare(b.date));
+    const inbox = mails.length && allowedPage('mailbox') ? 'mailbox' : allowedPage('portal-inbox') ? 'portal-inbox' : allowedPage('repairs') ? 'repairs' : null;
     // 5. appointments in the next 14 days
     const appts = evs.filter(x => ['appointment', 'inspection', 'maintenance'].includes(x.type) && x.date >= t && x.date <= soon);
 
@@ -96,7 +97,7 @@
       box('k-amber', 'calendar', 'Upcoming deadlines', deadlines.length, deadlines.map(calLine), allowedPage('calendar') ? goto({page: 'calendar'}) : '', cal.d ? 'Nothing due in the next 14 days.' : 'Loading…'),
       box('k-violet', 'clock', 'Overdue tasks', tasks.length, tasks.map(x => ({date: x.due_date, late: true, text: x.title, sub: x.category || '',
         attrs: propOfContract(x.contract_id) ? goto({property: propOfContract(x.contract_id)}) : goto({page: 'tasks'})})), goto({page: 'tasks'}), 'No tasks past their date.'),
-      box('k-blue', 'message', 'Messages requiring action', waiting.length, waiting.map(w => ({...w, attrs: inbox ? goto({page: inbox}) : ''})), inbox ? goto({page: inbox}) : '', 'Every tenant has an answer.'),
+      box('k-blue', 'message', 'Messages requiring action', waiting.length, waiting.map(w => ({...w, attrs: w.attrs || (inbox ? goto({page: w.kind ? (allowedPage('portal-inbox') ? 'portal-inbox' : 'repairs') : inbox}) : '')})), inbox ? goto({page: inbox}) : '', 'No emails or messages waiting.'),
       box('k-green', 'wrench', 'Upcoming appointments', appts.length, appts.map(x => ({...calLine(x), sub: [x.time, x.place].filter(Boolean).join(' · ')})), allowedPage('calendar') ? goto({page: 'calendar'}) : '', cal.d ? 'No appointments in the next 14 days.' : 'Loading…'),
     ];
     return `<section class="att-top" aria-label="Needs your attention">${boxes.join('')}</section>`;

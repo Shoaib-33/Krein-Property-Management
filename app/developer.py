@@ -239,7 +239,9 @@ def rename_company(company_id: int, data: dict, user=Depends(current_user)):
 # Bank statement lines stay (the money really came in) and go back to "to check"; a home's tenants stay as contacts.
 # The audit log keeps every earlier event and records the deletion itself, with the reason.
 KEEP = {('bank_lines', 'tenant_id'), ('bank_lines', 'invoice_id'), ('contractors', 'agreement_document_id'), ('valuations', 'document_id'),
-        ('cost_lines', 'document_id'), ('owner_expenses', 'document_id'), ('contractor_agreement_submissions', 'document_id')}
+        ('cost_lines', 'document_id'), ('owner_expenses', 'document_id'), ('contractor_agreement_submissions', 'document_id'),
+        # emails stay in the mailbox (back to Unassigned) when their home, tenancy, case or team member goes; a deleted tenant's emails go too
+        ('mail_messages', 'property_id'), ('mail_messages', 'contract_id'), ('mail_messages', 'case_id'), ('mail_messages', 'handled_by'), ('mail_messages', 'sent_by')}
 COLLECT = {'portal_accounts': 'user_id', 'bank_bookings': 'line_id', 'documents': 'file_key'}   # read before the rows go
 CUSTOM = {'tenants': 'tenant', 'contracts': 'contract', 'properties': 'property'}
 
