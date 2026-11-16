@@ -645,6 +645,17 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V61: ongoing cases get a priority and a responsible team member; the statuses become open, in progress, waiting for
+# a response and completed, and the categories cover more than the Huurcommissie (app/property_file.py)
+V61 = '''
+ALTER TABLE property_cases ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium';
+ALTER TABLE property_cases ADD COLUMN assignee_id INTEGER REFERENCES users(id);
+UPDATE property_cases SET status='completed' WHERE status='closed';
+UPDATE property_cases SET status='waiting' WHERE status='hearing';
+UPDATE property_cases SET status='in progress' WHERE status='decision';
+UPDATE property_cases SET kind='Legal' WHERE kind IN ('Court','Dispute')
+'''
+
 # V60: chat questions the tenant repair knowledge base could not answer well (app/repair_help.py), masked, kept 180 days
 V60 = '''
 CREATE TABLE assistant_gaps (
@@ -938,6 +949,14 @@ ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id)
 ''',
     59: '''
 ALTER TABLE ip_blocks ADD COLUMN country TEXT NOT NULL DEFAULT ''
+''',
+    61: '''
+ALTER TABLE property_cases ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium';
+ALTER TABLE property_cases ADD COLUMN assignee_id BIGINT REFERENCES users(id);
+UPDATE property_cases SET status='completed' WHERE status='closed';
+UPDATE property_cases SET status='waiting' WHERE status='hearing';
+UPDATE property_cases SET status='in progress' WHERE status='decision';
+UPDATE property_cases SET kind='Legal' WHERE kind IN ('Court','Dispute');
 ''',
     60: '''
 CREATE TABLE assistant_gaps (
@@ -1504,6 +1523,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (60, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=61').fetchone():
+            for statement in V61.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (61, now()))
         conn.commit()
     except Exception:
         conn.rollback()

@@ -38,8 +38,36 @@
     const jobs = W ? W.jobs.length : 0, due = W ? W.due.slice().sort((a, b) => a.next_due.localeCompare(b.next_due)) : [], costs = W && window.kreinWork.data().can_approve ? W.costs : [];
     const cases = H().openCases();
     const dated = cases.filter(k => k.next_deadline).sort((a, b) => a.next_deadline.localeCompare(b.next_deadline));
-    return {homes, tenants, missing, repairs, jobs, due, costs, noLabel, tasks, overdue, soon, proofs, july, letterBy, toIndex, expiring, cases, dated,
+    const lateCases = dated.filter(k => k.next_deadline < todayStr());
+    return {homes, tenants, missing, repairs, jobs, due, costs, noLabel, tasks, overdue, soon, proofs, july, letterBy, toIndex, expiring, cases, dated, lateCases,
       occ: H().occupancy(homes)};
+  }
+
+  // every ongoing case of the portfolio: overdue first, then the nearest deadline; filter on mine or urgent
+  const dc = {filter: 'all', all: false};
+  function casesPanel() {
+    const C = window.kreinCases;
+    if (!C || !['admin', 'manager', 'property', 'finance'].includes(company().role)) return '';
+    const all = C.sort(H().openCases());
+    const urgent = k => k.priority === 'urgent' || k.priority === 'high' || C.due(k).cls === 'is-overdue';
+    const mine = all.filter(k => k.assignee_id === state.me.id);
+    const list = dc.filter === 'mine' ? mine : dc.filter === 'urgent' ? all.filter(urgent) : all;
+    const shown = dc.all ? list : list.slice(0, 8);
+    const overdue = all.filter(k => C.due(k).cls === 'is-overdue').length, soon = all.filter(k => C.due(k).cls === 'is-soon').length;
+    const tab = (key, label, n) => `<button type="button" class="dash-case-tab${dc.filter === key ? ' active' : ''}" data-dash-cases="${key}" aria-pressed="${dc.filter === key}">${e(label)} <span class="count">${n}</span></button>`;
+    const home = k => k.property_address || k.property_name || '';
+    const body = !all.length ? '<p class="dash-ok">No ongoing cases. Add one on the page of a home (Add > Ongoing case).</p>'
+      : !list.length ? `<p class="dash-ok">${dc.filter === 'mine' ? 'No cases are assigned to you.' : 'No urgent cases.'}</p>`
+      : `<div class="table-wrap"><table class="pf-cases dash-cases"><thead><tr><th>Home</th><th>Case</th><th>Category · priority</th><th>Status</th><th>Deadline</th><th>Assigned to</th></tr></thead><tbody>
+        ${shown.map(k => { const d = C.due(k); return `<tr class="pf-case ${d.cls}" ${goto({property: k.property_id})} tabindex="0" role="link">
+          <td><strong>${e(home(k))}</strong>${k.property_city ? `<small>${e(k.property_city)}</small>` : ''}</td>
+          <td><strong>${e(k.subject)}</strong>${k.tenant_name ? `<small>${e(k.tenant_name)}</small>` : ''}</td><td>${e(k.kind)}<div class="case-prio">${C.priority(k.priority)}</div></td>
+          <td>${C.status(k.status)}</td><td>${d.html}</td>
+          <td>${k.assignee_name ? e(k.assignee_name) : '<span class="muted">Unassigned</span>'}</td></tr>`; }).join('')}</tbody></table></div>
+        ${list.length > 8 ? `<button type="button" class="button link dash-more" data-dash-cases-all>${dc.all ? 'Show fewer' : `Show all ${list.length} cases`} ${icon('arrow')}</button>` : ''}`;
+    return `<section class="panel" id="dash-cases"><div class="panel-header"><div><h2>${icon('clipboard')} Ongoing cases</h2>
+        <p>${all.length ? `<span>${all.length} ongoing across your homes</span>${overdue ? ` · <strong class="late-text">${overdue} past the deadline</strong>` : ''}${soon ? ` · <strong class="soon-text">${soon} due within 2 weeks</strong>` : ''}` : 'Maintenance, Huurcommissie, financial and legal matters of your homes.'}</p></div>
+        ${all.length ? `<div class="dash-case-tabs" role="group" aria-label="Show cases">${tab('all', 'All', all.length)}${tab('mine', 'Assigned to me', mine.length)}${tab('urgent', 'Urgent', all.filter(urgent).length)}</div>` : ''}</div>${body}</section>`;
   }
 
   const goto = (attrs) => `data-dash-go='${e(JSON.stringify(attrs))}'`;
@@ -59,13 +87,14 @@
       row('wrench', 'k-violet', 'Open maintenance reports', 'Open reports that still need follow-up.', d.repairs.length, d.repairs.length ? 'warn' : 'calm', {page: repairPage()}),
       d.proofs.length ? row('shield', 'k-blue', 'Payment receipts to check', 'Tenants sent a receipt; check that the money arrived.', d.proofs.length, 'warn', {page: 'payments'}) : '',
       d.costs.length ? row('wallet', 'k-amber', 'Costs to approve', 'Decide who pays: owner, tenant, VvE or our company.', d.costs.length, 'warn', {page: 'open-work', work: 'cost'}) : '',
+      d.lateCases.length ? row('clipboard', 'k-red', 'Cases past their deadline', 'Ongoing cases whose deadline has passed.', d.lateCases.length, 'hot', {cases: 'urgent'}) : '',
       d.overdue.length ? row('clock', 'k-red', 'Tasks past their due date', 'Follow up on the tasks that are late.', d.overdue.length, 'hot', {page: 'tasks'}) : '',
     ].join('');
     const lbl = d.expiring[0];
     const deadlines = [
       d.toIndex.length ? row('file', 'k-green', 'Rent indexation', `${d.toIndex.length} ${d.toIndex.length === 1 ? 'home' : 'homes'} – ${days(d.letterBy) < 0 ? `letter was due ${dateLabel(d.letterBy)}` : `first letter by ${dateLabel(d.letterBy)}`}`, d.toIndex.length, days(d.letterBy) <= 30 ? 'hot' : 'calm', d.toIndex.length === 1 ? {property: d.toIndex[0].x.id} : {page: 'rent'}) : '',
       d.expiring.length ? row('leaf', 'k-green', 'Energy labels expiring', `${d.expiring.length} ${d.expiring.length === 1 ? 'home' : 'homes'} – ${lbl.exp < todayStr() ? `expired on ${dateLabel(lbl.exp)}` : `renew before ${dateLabel(lbl.exp)}`}`, d.expiring.length, lbl.exp < todayStr() ? 'hot' : 'warn', {homes: {missing: 'labelexp'}}) : '',
-      d.cases.length ? row('clipboard', 'k-violet', 'Huurcommissie and other cases', `${d.cases.length} ${d.cases.length === 1 ? 'case' : 'cases'}${d.dated.length ? ` – next deadline ${days(d.dated[0].next_deadline) < 0 ? `was ${dateLabel(d.dated[0].next_deadline)}` : days(d.dated[0].next_deadline) === 0 ? 'today' : `in ${days(d.dated[0].next_deadline)} days`}` : ''}`, d.cases.length, d.dated.length && days(d.dated[0].next_deadline) <= 14 ? 'hot' : 'calm', d.dated.length ? {property: d.dated[0].property_id} : {homes: {missing: 'open'}}) : '',
+      d.cases.length ? row('clipboard', 'k-violet', 'Ongoing cases', `${d.cases.length} ${d.cases.length === 1 ? 'case' : 'cases'}${d.dated.length ? ` – next deadline ${days(d.dated[0].next_deadline) < 0 ? `was ${dateLabel(d.dated[0].next_deadline)}` : days(d.dated[0].next_deadline) === 0 ? 'today' : `in ${days(d.dated[0].next_deadline)} days`}` : ''}`, d.cases.length, d.dated.length && days(d.dated[0].next_deadline) <= 14 ? 'hot' : 'calm', {cases: 'all'}) : '',
       d.due.length ? row('wrench', 'k-violet', 'Planned maintenance', `${d.due.length} ${d.due.length === 1 ? 'job' : 'jobs'} – ${d.due[0].next_due < todayStr() ? `overdue since ${dateLabel(d.due[0].next_due)}` : `the first on ${dateLabel(d.due[0].next_due)}`}`, d.due.length, d.due[0].next_due < todayStr() ? 'hot' : 'warn', {page: 'open-work', work: 'plan'}) : '',
       d.soon.length ? row('calendar', 'k-blue', 'Tasks due this month', `${d.soon.length} ${d.soon.length === 1 ? 'task' : 'tasks'} – the first on ${dateLabel(d.soon.slice().sort((a, b) => a.due_date.localeCompare(b.due_date))[0].due_date)}`, d.soon.length, 'calm', {page: 'tasks'}) : '',
     ].join('');
@@ -73,7 +102,7 @@
     const upcoming = `<section class="panel"><div class="panel-header"><div><h2>${icon('calendar')} Upcoming deadlines</h2><p>Important actions and dates in the coming period.</p></div></div>
       ${deadlines ? `<div class="dash-list">${deadlines}</div>` : '<p class="dash-ok">No deadlines coming up. Rent indexation, energy labels, maintenance, cases and tasks show here when they need you.</p>'}
       ${allowedPage('tasks') ? `<button type="button" class="button link dash-more" ${goto({page: 'tasks'})}>View all deadlines and tasks ${icon('arrow')}</button>` : ''}</section>`;
-    return cards + `<div class="dash2">${attention}${upcoming}</div>`;
+    return cards + casesPanel() + `<div class="dash2">${attention}${upcoming}</div>`;
   }
 
   const baseRender = renderPage;
@@ -89,11 +118,18 @@
     return end > 0 ? html.slice(0, end) + block() + html.slice(end) : block() + html;
   };
 
+  document.addEventListener('keydown', ev => {   // a case row opens with Enter, like a link
+    if (ev.key === 'Enter' && ev.target.matches && ev.target.matches('tr[data-dash-go]')) ev.target.click();
+  });
   document.addEventListener('click', ev => {
+    const f = ev.target.closest('[data-dash-cases]');
+    if (f) { dc.filter = f.dataset.dashCases; dc.all = false; render(); return; }
+    if (ev.target.closest('[data-dash-cases-all]')) { dc.all = !dc.all; render(); return; }
     const el = ev.target.closest('[data-dash-go]');
     if (!el) return;
     ev.preventDefault();
     let go; try { go = JSON.parse(el.dataset.dashGo); } catch { return; }
+    if (go.cases) { dc.filter = go.cases; dc.all = false; render(); document.getElementById('dash-cases')?.scrollIntoView({behavior: 'smooth', block: 'start'}); return; }
     if (go.homes) return H().openWith(go.homes);
     if (go.property) return showProperty(go.property);
     if (go.page && allowedPage(go.page)) {

@@ -61,15 +61,19 @@ def property_file(property_id: int, user=Depends(current_user)):
         # the contract's service advance, to compare with the utility advances
         live = next((c for c in contracts if c['status'] in ('active', 'notice given')), None)
         service_cents = live['service_cents'] if live else None
-        cases, rent = [], {'history': [], 'proposals': []}
+        cases, team, rent = [], [], {'history': [], 'proposals': []}
         if staff:
-            cases = rows(conn, '''SELECT k.*,t.name tenant_name FROM property_cases k LEFT JOIN contracts c ON c.id=k.contract_id LEFT JOIN tenants t ON t.id=c.tenant_id
-                                  WHERE k.property_id=? ORDER BY (k.status='closed'), k.started_on DESC, k.id DESC''', (property_id,))
+            cases = rows(conn, '''SELECT k.*,t.name tenant_name,u.name assignee_name FROM property_cases k LEFT JOIN contracts c ON c.id=k.contract_id
+                                  LEFT JOIN tenants t ON t.id=c.tenant_id LEFT JOIN users u ON u.id=k.assignee_id
+                                  WHERE k.property_id=? ORDER BY (k.status='completed'), (k.next_deadline IS NULL), k.next_deadline, k.id DESC''', (property_id,))
+            team = rows(conn, f'''SELECT u.id,u.name FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=? AND m.role IN ({','.join('?' for _ in CASE_TEAM)})
+                                 ORDER BY u.name''', (prop['company_id'], *CASE_TEAM))
             # rent and indexation: the rent history of each contract of this home, and proposed increases
             rent['history'] = rows(conn, f'SELECT r.contract_id,r.effective_from,r.basic_cents,r.service_cents FROM rent_versions r WHERE r.contract_id IN ({marks}) ORDER BY r.contract_id,r.effective_from', cids)
             rent['proposals'] = rows(conn, f'SELECT id,contract_id,effective_from,basic_cents,service_cents,reason,status,created_at FROM rent_proposals WHERE contract_id IN ({marks}) ORDER BY effective_from DESC,id DESC', cids)
     return {'property': prop, 'contracts': contracts, 'tenants': tenants, 'documents': documents, 'staff': staff, 'doc_kinds': DOC_KINDS,
-            'utilities': utilities, 'settlements': settlements, 'statements': statements, 'service_cents': service_cents, 'cases': cases, 'rent': rent}
+            'utilities': utilities, 'settlements': settlements, 'statements': statements, 'service_cents': service_cents, 'cases': cases, 'rent': rent,
+            'case_team': team, 'case_kinds': CASE_KINDS}
 
 
 @router.post('/api/properties/{property_id}/note')
@@ -242,14 +246,18 @@ def save_settlement(property_id: int, kind: str, data: dict, user=Depends(curren
     return {'ok': True}
 
 
-CASE_STATUS = ('open', 'hearing', 'decision', 'closed')
+CASE_STATUS = ('open', 'in progress', 'waiting', 'completed')
+CASE_KINDS = ('Maintenance', 'Huurcommissie', 'Financial', 'Legal', 'Contract', 'Complaint', 'Other')
+CASE_PRIORITY = ('low', 'medium', 'high', 'urgent')
+CASE_TEAM = ('admin', 'manager', 'property', 'finance')   # who can be responsible for a case
 
 
 def _case_values(conn, prop, data):
     subject = ' '.join(str(data.get('subject') or '').split())[:200]
     if not subject:
         raise HTTPException(422, 'Describe what the case is about.')
-    status = data.get('status') if data.get('status') in CASE_STATUS else 'open'
+    status = {'closed': 'completed', 'hearing': 'waiting', 'decision': 'in progress'}.get(data.get('status'), data.get('status'))   # the old names
+    status = status if status in CASE_STATUS else 'open'
     contract_id = None
     if data.get('contract_id'):
         try:
@@ -258,10 +266,30 @@ def _case_values(conn, prop, data):
             contract_id = None
         if contract_id and not conn.execute('SELECT 1 FROM contracts WHERE id=? AND property_id=?', (contract_id, prop['id'])).fetchone():
             raise HTTPException(422, 'Choose a tenancy of this home.')
-    kind = str(data.get('kind') or 'Huurcommissie').strip()[:60] or 'Huurcommissie'
-    return {'subject': subject, 'kind': kind, 'status': status, 'contract_id': contract_id, 'started_on': _date(data.get('started_on'), 'start date'),
+    kind = data.get('kind') if data.get('kind') in CASE_KINDS else 'Other'
+    priority = data.get('priority') if data.get('priority') in CASE_PRIORITY else 'medium'
+    assignee_id = None
+    if data.get('assignee_id'):
+        try:
+            assignee_id = int(data.get('assignee_id'))
+        except (TypeError, ValueError):
+            assignee_id = None
+        marks = ','.join('?' for _ in CASE_TEAM)
+        if not assignee_id or not conn.execute(f'SELECT 1 FROM memberships WHERE user_id=? AND company_id=? AND role IN ({marks})',
+                                               (assignee_id, prop['company_id'], *CASE_TEAM)).fetchone():
+            raise HTTPException(422, 'Choose a team member of this company.')
+    started = _date(data.get('started_on'), 'start date', required=False) or local_today().isoformat()
+    return {'subject': subject, 'kind': kind, 'status': status, 'priority': priority, 'assignee_id': assignee_id, 'contract_id': contract_id, 'started_on': started,
             'next_deadline': _date(data.get('next_deadline'), 'next deadline', required=False), 'deadline_note': str(data.get('deadline_note') or '').strip()[:200],
             'note': str(data.get('note') or '').strip()[:3000]}
+
+
+def _tell_assignee(conn, prop, v, before, user):
+    """A notice for the team member who becomes responsible for a case (not when they assign it to themselves)."""
+    if v['assignee_id'] and v['assignee_id'] != before and v['assignee_id'] != user['id'] and v['status'] != 'completed':
+        from .portal_access import notify
+        when = f" Deadline: {v['next_deadline']}." if v['next_deadline'] else ''
+        notify(conn, prop['company_id'], [v['assignee_id']], 'A case was assigned to you', f"{prop['address'] or prop['name']}: {v['subject']}.{when}", 'overview')
 
 
 @router.post('/api/properties/{property_id}/cases')
@@ -270,9 +298,10 @@ def add_case(property_id: int, data: dict, user=Depends(current_user)):
     with transaction() as conn:
         prop = record(conn, 'properties', property_id, user, STAFF)
         v = _case_values(conn, prop, data)
-        cid = conn.execute('INSERT INTO property_cases(company_id,property_id,contract_id,subject,kind,started_on,status,next_deadline,deadline_note,note,created_by,created_at,closed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                           (prop['company_id'], property_id, v['contract_id'], v['subject'], v['kind'], v['started_on'], v['status'], v['next_deadline'], v['deadline_note'], v['note'],
-                            user['id'], now(), now() if v['status'] == 'closed' else None)).lastrowid
+        cid = conn.execute('INSERT INTO property_cases(company_id,property_id,contract_id,subject,kind,started_on,status,priority,assignee_id,next_deadline,deadline_note,note,created_by,created_at,closed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                           (prop['company_id'], property_id, v['contract_id'], v['subject'], v['kind'], v['started_on'], v['status'], v['priority'], v['assignee_id'],
+                            v['next_deadline'], v['deadline_note'], v['note'], user['id'], now(), now() if v['status'] == 'completed' else None)).lastrowid
+        _tell_assignee(conn, prop, v, None, user)
         audit(conn, user['id'], prop['company_id'], 'created', 'property_case', cid, v)
     return {'id': cid}
 
@@ -283,9 +312,11 @@ def update_case(case_id: int, data: dict, user=Depends(current_user)):
         case = record(conn, 'property_cases', case_id, user, STAFF)
         prop = dict(conn.execute('SELECT * FROM properties WHERE id=?', (case['property_id'],)).fetchone())
         v = _case_values(conn, prop, data)
-        closed = case['closed_at'] if case['status'] == 'closed' and v['status'] == 'closed' else (now() if v['status'] == 'closed' else None)
-        conn.execute('UPDATE property_cases SET contract_id=?,subject=?,kind=?,started_on=?,status=?,next_deadline=?,deadline_note=?,note=?,updated_by=?,updated_at=?,closed_at=? WHERE id=?',
-                     (v['contract_id'], v['subject'], v['kind'], v['started_on'], v['status'], v['next_deadline'], v['deadline_note'], v['note'], user['id'], now(), closed, case_id))
+        closed = case['closed_at'] if case['status'] == 'completed' and v['status'] == 'completed' else (now() if v['status'] == 'completed' else None)
+        conn.execute('UPDATE property_cases SET contract_id=?,subject=?,kind=?,started_on=?,status=?,priority=?,assignee_id=?,next_deadline=?,deadline_note=?,note=?,updated_by=?,updated_at=?,closed_at=? WHERE id=?',
+                     (v['contract_id'], v['subject'], v['kind'], v['started_on'], v['status'], v['priority'], v['assignee_id'], v['next_deadline'], v['deadline_note'], v['note'],
+                      user['id'], now(), closed, case_id))
+        _tell_assignee(conn, prop, v, case['assignee_id'], user)
         audit(conn, user['id'], case['company_id'], 'updated', 'property_case', case_id, {'old': dict(case), 'new': v})
     return {'ok': True}
 
@@ -310,6 +341,8 @@ def open_cases(company_id: int, user=Depends(current_user)):
     homes list. Staff only, like the cases on the property page."""
     with connect() as conn:
         authorize(conn, user, company_id, STAFF)
-        return rows(conn, '''SELECT k.id,k.property_id,k.subject,k.kind,k.status,k.next_deadline,k.deadline_note,p.name property_name
-                             FROM property_cases k JOIN properties p ON p.id=k.property_id
-                             WHERE k.company_id=? AND k.status<>'closed' ORDER BY (k.next_deadline IS NULL),k.next_deadline,k.id''', (company_id,))
+        return rows(conn, '''SELECT k.id,k.property_id,k.subject,k.kind,k.status,k.priority,k.assignee_id,k.next_deadline,k.deadline_note,k.note,
+                                    p.name property_name,p.address property_address,p.city property_city,u.name assignee_name,t.name tenant_name
+                             FROM property_cases k JOIN properties p ON p.id=k.property_id LEFT JOIN users u ON u.id=k.assignee_id
+                             LEFT JOIN contracts c ON c.id=k.contract_id LEFT JOIN tenants t ON t.id=c.tenant_id
+                             WHERE k.company_id=? AND k.status<>'completed' ORDER BY (k.next_deadline IS NULL),k.next_deadline,k.id''', (company_id,))

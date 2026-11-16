@@ -4,9 +4,32 @@ const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state
 /* Properties > one property's page: the internal note at the top (what is going on with this home), the tenants linked to
    it, its contracts and every document of the home. Data: GET /api/properties/{id}/file (app/property_file.py).
    "View details" on a property card, and "Rented home" on a tenant's page, open it. */
+window.kreinCases = (() => {
+  // "Open" alone is translated as the verb "Openen"; the invisible word joiner keeps the status word as it is
+  const STATUS = {open: ['Open⁠', 'gray'], 'in progress': ['In progress', 'blue'], waiting: ['Waiting for response', 'amber'], completed: ['Completed', 'green']};
+  const PRIORITY = {low: ['Low', 'gray'], medium: ['Medium', 'blue'], high: ['High', 'amber'], urgent: ['Urgent', 'red']};
+  const pill = (map, v) => { const [label, tone] = map[v] || [v, 'gray']; return `<span class="badge ${tone}">${e(label)}</span>`; };
+  const SOON = 14;   // days: an upcoming deadline is orange
+  function due(k) {
+    if (!k.next_deadline) return {n: null, cls: '', html: '<span class="muted">No deadline</span>'};
+    const n = Math.round((new Date(k.next_deadline + 'T12:00:00') - new Date((state.data.today || today()) + 'T12:00:00')) / 864e5);
+    const note = k.deadline_note ? `<small>${e(k.deadline_note)}</small>` : '';
+    if (k.status === 'completed') return {n, cls: '', html: `${e(dateLabel(k.next_deadline))}${note}`};
+    const when = n < 0 ? `${-n} ${-n === 1 ? 'day' : 'days'} overdue` : n === 0 ? 'Today' : n === 1 ? 'Tomorrow' : `In ${n} days`;
+    const cls = n < 0 ? 'is-overdue' : n <= SOON ? 'is-soon' : '';
+    return {n, cls, html: `<strong class="case-date ${cls}">${e(dateLabel(k.next_deadline))}</strong><small class="case-when ${cls}">${e(when)}</small>${note}`};
+  }
+  const RANK = {urgent: 0, high: 1, medium: 2, low: 3};
+  // overdue first, then the nearest deadline, then the most urgent
+  const sort = list => list.slice().sort((a, b) => {
+    const da = a.next_deadline || '9999', db_ = b.next_deadline || '9999';
+    return da !== db_ ? da.localeCompare(db_) : (RANK[a.priority] ?? 2) - (RANK[b.priority] ?? 2);
+  });
+  return {STATUS, PRIORITY, status: v => pill(STATUS, v), priority: v => pill(PRIORITY, v || 'medium'), due, sort};
+})();
 (() => {
   if (typeof renderPage !== 'function') return;
-  const ui = {id: null, file: null, loading: false};
+  const ui = {id: null, file: null, loading: false, showDone: false};
   const eur = c => money(c || 0);
   const day = v => v ? dateLabel(String(v).slice(0, 10)) : '';
   const mb = (label, attrs, primary = false) => `<button type="button" class="button small${primary ? ' primary' : ''}" ${attrs}>${e(label)}</button>`;
@@ -43,7 +66,7 @@ const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state
     const addItems = [
       staff ? ['upload', 'upload', 'Document'] : null, canPaper ? ['contract', 'file', 'Contract'] : null, staff ? ['note', 'message', 'Internal note'] : null,
       staff && live && ['admin', 'manager', 'property'].includes(role) ? ['repair', 'wrench', 'Maintenance report', `data-action="form" data-kind="repairs" data-preset-contract="${live.id}"`] : null, ['admin', 'manager', 'property'].includes(role) && window.kreinWork ? ['job', 'clipboard', 'Work order', `data-mw="job-new" data-pid="${p.id}"`] : null, staff ? ['label', 'leaf', 'Energy label'] : null,
-      staff ? ['case-new', 'clipboard', 'Case (Huurcommissie)'] : null, canContract ? ['sign', 'edit', 'Contract to sign online'] : null,
+      staff ? ['case-new', 'clipboard', 'Ongoing case'] : null, canContract ? ['sign', 'edit', 'Contract to sign online'] : null,
     ].filter(Boolean);
     const addMenu = addItems.length ? `<div class="pf-add"><button type="button" class="button primary" data-pf-addmenu aria-haspopup="true" aria-expanded="false">${icon('plus')}Add ▾</button>
       <div class="pf-add-menu" role="menu">${addItems.map(([act, ic, label, attrs]) => `<button type="button" role="menuitem" ${attrs || `data-pf="${act}"`}>${icon(ic)}${e(label)}</button>`).join('')}</div></div>` : '';
@@ -153,26 +176,33 @@ const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state
       + (props.length ? `<div class="panel-body"><h3 class="pf-sub">Proposed changes</h3>${props.map(x => `<div class="pf-prop">${badge(...(PS[x.status] || [x.status, 'gray']))} <strong>${eur(x.basic_cents + x.service_cents)}</strong> from ${e(day(x.effective_from))}<small>${e(x.reason || '')}</small></div>`).join('')}</div>` : '')
       + (canRent ? `<div class="panel-body tf-more">${mb('Propose rent increase', `data-action="form" data-kind="rent_proposals" data-preset-contract="${rc.id}"`, true)}</div>` : '')) : '';
 
-    // ongoing cases (Huurcommissie and similar)
-    const CS = {open: ['Open', 'blue'], hearing: ['Hearing', 'amber'], decision: ['Decision', 'green'], closed: ['Closed', 'gray']};
+    // ongoing cases (Lopende zaken): at the top of every tab, right below the home's details
+    const C = window.kreinCases, allCases = f.cases || [];
     const docsOf = k => f.documents.filter(d => d.case_id === k.id);
-    const dl = k => { if (!k.next_deadline || k.status === 'closed') return '<span class="muted">—</span>'; const n = Math.round((new Date(k.next_deadline) - new Date(today())) / 864e5);
-      return `<strong class="${n < 0 ? 'late-text' : ''}">${e(day(k.next_deadline))}</strong>${n < 0 ? ` ${badge('Overdue', 'red')}` : n <= 14 ? ` ${badge(`In ${n} days`, 'amber')}` : ''}${k.deadline_note ? `<small>${e(k.deadline_note)}</small>` : ''}`; };
-    const cases = staff ? panel('Ongoing cases', 'Procedures about this home, such as at the Huurcommissie: what it is about, the status and the next deadline.',
-      table(['Case', 'Started', 'Status', 'Next deadline', 'Documents', ''], (f.cases || []).map(k => [
-        `<strong>${e(k.subject)}</strong><small>${e(k.kind)}${k.tenant_name ? ' · ' + e(k.tenant_name) : ''}</small>${k.note ? `<small class="pf-case-note">${e(k.note)}</small>` : ''}`,
-        e(day(k.started_on)), badge(...(CS[k.status] || [k.status, 'gray'])), dl(k),
-        docsOf(k).length ? docsOf(k).map(d => `<a class="pf-doc-link" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">${e(d.name)}</a>`).join('') : '<span class="muted">—</span>',
-        `<div class="actions">${mb('Edit', `data-pf="case-edit" data-id="${k.id}"`)}${mb('Add document', `data-pf="case-doc" data-id="${k.id}"`)}</div>`]), 'No cases.').replace(/<div class="empty">[\s\S]*$/, () =>
-        empty('No ongoing cases', 'Record a procedure at the Huurcommissie or another dispute about this home, with its deadlines and letters.', `<div class="actions tf-empty-acts">${mb('New case', 'data-pf="case-new"', true)}</div>`))
-      + ((f.cases || []).length ? `<div class="panel-body tf-more">${mb('New case', 'data-pf="case-new"', true)}</div>` : '')) : '';
+    const liveCases = allCases.filter(k => k.status !== 'completed'), doneCases = allCases.filter(k => k.status === 'completed');
+    const caseRow = k => {
+      const due = C.due(k), docs_ = docsOf(k);
+      return `<tr class="pf-case ${due.cls}">
+        <td><strong>${e(k.subject)}</strong>${k.note ? `<small class="pf-case-note">${e(k.note)}</small>` : ''}${k.tenant_name ? `<small>${icon('users')} ${e(k.tenant_name)}</small>` : ''}
+          ${docs_.map(d => `<a class="pf-doc-link" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">${icon('file')} ${e(d.name)}</a>`).join('')}</td>
+        <td>${e(k.kind)}<div class="case-prio">${C.priority(k.priority)}</div></td><td>${C.status(k.status)}</td><td>${due.html}</td>
+        <td>${k.assignee_name ? `<span class="pf-who"><span class="avatar">${e(initials(k.assignee_name))}</span>${e(k.assignee_name)}</span>` : '<span class="muted">Unassigned</span>'}</td>
+        <td><div class="case-acts">${mb('Edit', `data-pf="case-edit" data-id="${k.id}"`)}<button type="button" class="button link small" data-pf="case-doc" data-id="${k.id}">+ Document</button></div></td></tr>`;
+    };
+    const caseTable = list => `<div class="table-wrap"><table class="pf-cases"><thead><tr><th>Case</th><th>Category · priority</th><th>Status</th><th>Deadline</th><th>Assigned to</th><th></th></tr></thead>
+      <tbody>${list.map(caseRow).join('')}</tbody></table></div>`;
+    const overdueN = liveCases.filter(k => C.due(k).cls === 'is-overdue').length;
+    const cases = !staff ? '' : `<section class="panel pf-cases-panel" id="pf-cases"><div class="panel-header"><div><h2>${icon('clipboard')} Ongoing cases</h2>
+        <p>${liveCases.length ? `<span>${liveCases.length} ongoing</span>${overdueN ? ` · <strong class="late-text">${overdueN} past the deadline</strong>` : ''}` : 'Maintenance, Huurcommissie, financial and legal matters of this home, with their deadlines.'}</p></div>
+        <div class="actions">${mb('New case', 'data-pf="case-new"', true)}</div></div>
+      ${liveCases.length ? caseTable(liveCases) : '<p class="pf-cases-none">No ongoing cases for this home.</p>'}
+      ${doneCases.length ? `<div class="panel-body tf-more"><button type="button" class="button link" data-pf-done>${ui.showDone ? 'Hide' : 'Show'} completed cases (${doneCases.length})</button></div>${ui.showDone ? caseTable(doneCases) : ''}` : ''}</section>`;
 
     // ---- the six tabs ----
     const tab = ui.tab || 'overview';
     const cids = new Set(f.contracts.map(c => c.id));
     const repairs = rows('repairs').filter(r => cids.has(r.contract_id)).sort((a, b) => String(b.reported_on).localeCompare(String(a.reported_on)));
     const openRepairs = repairs.filter(r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status));
-    const openCases = (f.cases || []).filter(k => k.status !== 'closed');
     const W = window.kreinWork && ['admin', 'manager', 'property', 'finance'].includes(role) ? window.kreinWork.technical(f, role) : null;
     const TABS = [['overview', 'Overview', 'grid', 0], ['tenants', 'Tenants', 'users', f.tenants.length], ['contracts', 'Contracts', 'file', f.contracts.length],
       ['technical', 'Technical', 'wrench', openRepairs.length + (W ? W.openCount : 0)], ['finance', 'Finances', 'wallet', 0], ['documents', 'Documents', 'folder', f.documents.length]];
@@ -200,10 +230,7 @@ const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state
     const lastR = openRepairs[0];
     const repairCard = go2('technical', 'Open maintenance', 'wrench', openRepairs.length
       ? `${chip(openRepairs.length === 1 ? '1 report' : `${openRepairs.length} reports`, 'amber')}<p><strong>${e(lastR.title)}</strong></p><p>${badge(lastR.status)}</p><p>Deadline: ${e(day(lastR.due_date))}</p>` : `${chip('None', 'gray')}<p>No open maintenance reports.</p>`);
-    const nextCase = openCases.slice().sort((a, b) => String(a.next_deadline || '9').localeCompare(String(b.next_deadline || '9')))[0];
-    const caseCard = staff ? go2('contracts', 'Ongoing cases', 'clipboard', openCases.length
-      ? `${chip(openCases.length === 1 ? '1 case' : `${openCases.length} cases`, 'amber')}<p><strong>${e(nextCase.subject)}</strong></p>${nextCase.next_deadline ? `<p>Next deadline: ${e(day(nextCase.next_deadline))}</p>` : ''}` : `${chip('None', 'gray')}<p>No ongoing procedures.</p>`) : '';
-    const overview = `<div class="pf-grid"><div class="pf-col">${details}</div><div class="pf-col">${tenantCard}${labelCard}</div><div class="pf-col">${contractCard}${repairCard}${caseCard}</div></div>`;
+    const overview = `<div class="pf-grid"><div class="pf-col">${details}</div><div class="pf-col">${tenantCard}${labelCard}</div><div class="pf-col">${contractCard}${repairCard}</div></div>`;
 
     // Technical: maintenance, energy label, utilities and meters, inspections
     const RS = {received: 'blue', 'in progress': 'blue', planned: 'blue', done: 'green', closed: 'gray'};
@@ -235,12 +262,12 @@ const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state
     const body = {
       overview,
       tenants,
-      contracts: `<div class="section-stack">${contracts}${rentPanel}${cases}</div>`,
+      contracts: `<div class="section-stack">${contracts}${rentPanel}</div>`,
       technical: `<div class="section-stack">${W ? W.jobs + W.plans : ''}${maint}${W ? W.history : ''}${energy}${utilities}${inspections}</div>`,
       finance: `<div class="section-stack">${fin}${letters}</div>`,
       documents: docs,
     }[tab] || overview;
-    return head + note + tabs + body;
+    return head + cases + note + tabs + body;
   }
 
   const baseRender = renderPage;
@@ -264,6 +291,7 @@ const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state
 
   document.addEventListener('click', async ev => {
     if (ev.target.closest('[data-pf-back]')) { ev.preventDefault(); state.propertyView = null; ui.id = null; render(); return; }
+    if (ev.target.closest('[data-pf-done]')) { ev.preventDefault(); ui.showDone = !ui.showDone; render(); return; }
     const tabBtn = ev.target.closest('[data-pf-tab]');
     if (tabBtn) { ev.preventDefault(); ui.tab = tabBtn.dataset.pfTab; render(); document.querySelector('.pf-tabs')?.scrollIntoView({block: 'nearest'}); return; }
     const menuBtn = ev.target.closest('[data-pf-addmenu]');
@@ -372,15 +400,18 @@ const moveTargets = () => (state.me?.companies || []).filter(c => c.id !== state
       try { await api(`/api/utility-statements/${el.dataset.id}`, {method: 'DELETE'}); ui.file = null; load(); } catch (err) { toast(err.message); }
     } else if (act === 'case-new' || act === 'case-edit') {
       const k = act === 'case-edit' ? (ui.file.cases || []).find(x => x.id === Number(el.dataset.id)) : null;
-      formModal(k ? 'Edit case' : 'New case', [['subject', 'What is it about?', 'text', {value: k ? k.subject : '', wide: true, placeholder: 'For example: tenant asks for a rent reduction because of defects'}],
-        selectField('kind', 'Type', ['Huurcommissie', 'Court', 'Dispute', 'Other'], {value: k ? k.kind : 'Huurcommissie'}),
-        selectField('status', 'Status', [['open', 'Open'], ['hearing', 'Hearing planned'], ['decision', 'Decision received'], ['closed', 'Closed']], {value: k ? k.status : 'open'}),
-        selectField('contract_id', 'Tenancy (optional)', ui.file.contracts.map(c => [c.id, `${c.tenant_name} · from ${day(c.start_date)}`]), {optional: true, required: false, value: k ? k.contract_id || '' : ((ui.file.contracts.find(c => ['active', 'notice given'].includes(c.status)) || {}).id || '')}),
-        ['started_on', 'Started on', 'date', {value: k ? k.started_on : today()}],
-        ['next_deadline', 'Next deadline (optional)', 'date', {value: k ? k.next_deadline || '' : '', required: false}],
+      const C = window.kreinCases, team = ui.file.case_team || [];
+      formModal(k ? 'Edit case' : 'New case', [['subject', 'Title', 'text', {value: k ? k.subject : '', wide: true, placeholder: 'For example: tenant asks for a rent reduction because of defects'}],
+        ['note', 'Short description', 'textarea', {value: k ? k.note : '', required: false, wide: true, placeholder: 'What is going on, what has been done so far'}],
+        selectField('kind', 'Category', ui.file.case_kinds || ['Maintenance', 'Huurcommissie', 'Financial', 'Legal', 'Contract', 'Complaint', 'Other'], {value: k ? k.kind : 'Maintenance'}),
+        selectField('priority', 'Priority', Object.entries(C.PRIORITY).map(([v, [label]]) => [v, label]), {value: k ? k.priority : 'medium'}),
+        selectField('status', 'Status', Object.entries(C.STATUS).map(([v, [label]]) => [v, label]), {value: k ? k.status : 'open'}),
+        selectField('assignee_id', 'Assigned to', team.map(m => [m.id, m.name]), {optional: true, required: false, value: k ? k.assignee_id || '' : (team.some(m => m.id === state.me.id) ? state.me.id : '')}),
+        ['next_deadline', 'Deadline', 'date', {value: k ? k.next_deadline || '' : '', required: false}],
         ['deadline_note', 'What must be done by then?', 'text', {value: k ? k.deadline_note : '', required: false, placeholder: 'For example: send our response to the Huurcommissie'}],
-        ['note', 'Notes', 'textarea', {value: k ? k.note : '', required: false, wide: true}]],
-        async data => { await api(k ? `/api/property-cases/${k.id}` : `/api/properties/${p.id}/cases`, {method: 'POST', body: data}); ui.file = null; load(); },
+        selectField('contract_id', 'Tenancy (optional)', ui.file.contracts.map(c => [c.id, `${c.tenant_name} · from ${day(c.start_date)}`]), {optional: true, required: false, value: k ? k.contract_id || '' : ((ui.file.contracts.find(c => ['active', 'notice given'].includes(c.status)) || {}).id || '')}),
+        ['started_on', 'Started on', 'date', {value: k ? k.started_on : today()}]],
+        async data => { await api(k ? `/api/property-cases/${k.id}` : `/api/properties/${p.id}/cases`, {method: 'POST', body: data}); ui.file = null; load(); if (window.kreinHomes && window.kreinHomes.reloadCases) window.kreinHomes.reloadCases(); },
         {submit: 'Save', success: 'Case saved.'});
     } else if (act === 'case-doc') {
       formModal('Add a document to this case', [['file', 'Letter, decision or other document (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}]],

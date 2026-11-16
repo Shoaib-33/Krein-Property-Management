@@ -76,7 +76,7 @@
     const total = all.length, contract = n('rented'), nocontract = n('nocontract'), reserved = n('reserved'), rented = contract + nocontract;
     return {total, rented, contract, nocontract, reserved, vacant: total - rented, pct: total ? Math.round(rented / total * 100) : 0};
   }
-  window.kreinHomes = {facts, allFacts, withoutContract, occupancy, openCases: () => openCases, running, comingUp};
+  window.kreinHomes = {facts, allFacts, withoutContract, occupancy, openCases: () => openCases, reloadCases: loadCases, running, comingUp};
 
   const STATUS = {rented: ['Rented', 'green'], nocontract: ['Rented, contract missing', 'amber'], reserved: ['Reserved', 'blue'], vacant: ['Vacant', 'gray']};
   window.kreinHomes.STATUS = STATUS;

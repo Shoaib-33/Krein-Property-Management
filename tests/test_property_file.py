@@ -150,6 +150,38 @@ class PropertyFileTests(unittest.TestCase):
         self.assertEqual(self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'subject': ''}).status_code, 422)
         self.assertEqual(self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'contract_id': 999999}).status_code, 422)
 
+    def test_case_priority_and_team_member(self):
+        with db.connect() as conn:
+            c = dict(conn.execute("SELECT * FROM contracts WHERE company_id=1 AND status='active' ORDER BY id LIMIT 1").fetchone())
+            admin = conn.execute("SELECT id FROM users WHERE email='admin@krein.local'").fetchone()['id']
+            tenant_user = conn.execute("SELECT id FROM users WHERE email='tenant@krein.local'").fetchone()
+        pid = c['property_id']
+        f = self.file(pid)
+        self.assertIn(admin, [m['id'] for m in f['case_team']])          # the team to choose from
+        self.assertIn('Maintenance', f['case_kinds'])
+        body = {'subject': 'Boiler replacement', 'kind': 'Maintenance', 'status': 'in progress', 'priority': 'urgent', 'assignee_id': admin,
+                'next_deadline': '2026-11-20', 'note': 'Old boiler, quote requested'}
+        r = self.manager.post(f'/api/properties/{pid}/cases', json=body)    # no start date: today
+        self.assertEqual(r.status_code, 200, r.text)
+        k = self.file(pid)['cases'][0]
+        self.assertEqual((k['kind'], k['status'], k['priority'], k['assignee_id']), ('Maintenance', 'in progress', 'urgent', admin))
+        self.assertTrue(k['assignee_name'])
+        self.assertTrue(k['started_on'])
+        with db.connect() as conn:   # the team member hears about it
+            self.assertTrue(conn.execute("SELECT 1 FROM notifications WHERE user_id=? AND title='A case was assigned to you'", (admin,)).fetchone())
+        row = self.manager.get('/api/property-cases?company_id=1').json()[0]    # the dashboard list
+        self.assertEqual((row['priority'], row['assignee_id'], row['status']), ('urgent', admin, 'in progress'))
+        self.assertTrue(row['property_address'])
+        # only a team member of this company, unknown values fall back
+        if tenant_user:
+            self.assertEqual(self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'assignee_id': tenant_user['id']}).status_code, 422)
+        r = self.manager.post(f'/api/properties/{pid}/cases', json={**body, 'kind': 'Nonsense', 'priority': 'huge', 'assignee_id': ''})
+        k = next(x for x in self.file(pid)['cases'] if x['id'] == r.json()['id'])
+        self.assertEqual((k['kind'], k['priority'], k['assignee_id']), ('Other', 'medium', None))
+        # completing a case takes it off the dashboard
+        self.assertEqual(self.manager.post(f"/api/property-cases/{r.json()['id']}", json={**body, 'status': 'completed'}).status_code, 200)
+        self.assertEqual(len(self.manager.get('/api/property-cases?company_id=1').json()), 1)
+
 
 if __name__ == '__main__':
     unittest.main()

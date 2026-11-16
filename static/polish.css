@@ -543,3 +543,22 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .pf-sub{font-size:13px;margin:0 0 8px}.pf-prop{padding:6px 0;border-bottom:1px solid var(--line);font-size:13px}.pf-prop small{display:block;color:var(--muted)}
 .pf-case-note{white-space:normal;max-width:340px}.pf-doc-link{display:block;font-size:12px;white-space:normal}
 @media (max-width:800px){.pf-rent{grid-template-columns:1fr}}
+
+/* ongoing cases (Lopende zaken): the home page and the dashboard; overdue red, upcoming orange */
+.pf-cases-panel{margin-bottom:18px}.pf-cases-none{margin:0;padding:4px 20px 18px;color:var(--muted)}
+.pf-cases{min-width:720px}.pf-cases th,.pf-cases td{padding:12px 12px;white-space:normal}.pf-cases td{vertical-align:top}
+.pf-cases .case-prio{margin-top:5px}.pf-cases .badge{white-space:nowrap}.case-acts{display:flex;flex-direction:column;align-items:flex-start;gap:4px}.case-acts .button.link{padding:2px 0;font-size:12px}
+.table-wrap.is-scrollable .pf-cases tr.is-overdue td:last-child{background:#fdf1f0}.table-wrap.is-scrollable .pf-cases tr.is-soon td:last-child{background:#fff7ec}.pf-cases td small{display:block;color:var(--muted);font-size:11.5px;margin-top:2px}
+.pf-cases tr.pf-case td:first-child{border-left:4px solid transparent}
+.pf-cases tr.is-overdue td{background:#fdf1f0}.pf-cases tr.is-overdue td:first-child{border-left-color:#c8372d}
+.pf-cases tr.is-soon td{background:#fff7ec}.pf-cases tr.is-soon td:first-child{border-left-color:#e08a1e}
+.case-date.is-overdue,.pf-cases small.case-when.is-overdue{color:#b42318;font-weight:600}
+.case-date.is-soon,.pf-cases small.case-when.is-soon{color:#b45d09;font-weight:600}
+.soon-text{color:#b45d09}
+.pf-who{display:inline-flex;align-items:center;gap:7px;white-space:nowrap}.pf-who .avatar{width:24px;height:24px;font-size:10px}
+.dash-cases tr[data-dash-go]{cursor:pointer}.dash-cases tr[data-dash-go]:hover td{filter:brightness(.97)}
+.dash-cases tr[data-dash-go]:focus-visible{outline:2px solid var(--brand);outline-offset:-2px}
+.dash-case-tabs{display:flex;gap:6px;flex-wrap:wrap}
+.dash-case-tab{border:1px solid var(--line);background:#fff;border-radius:999px;padding:5px 12px;font-size:12.5px;color:inherit;cursor:pointer}
+.dash-case-tab.active{background:var(--brand);border-color:var(--brand);color:#fff}.dash-case-tab .count{opacity:.75;margin-left:2px}
+#dash-cases{margin:18px 0}
