@@ -7,6 +7,7 @@
   if (typeof render !== 'function' || typeof navGroups === 'undefined') return;
   const SECTIONS = [
     ['dash', 'Dashboard', 'grid', ['overview', 'group']],
+    ['cal', 'Calendar', 'calendar', ['calendar']],
     ['homes', 'Homes', 'building', ['properties']],
     ['tenants', 'Tenants', 'users', ['tenants', 'registrations']],
     ['contracts', 'Contracts', 'file', ['contracts', 'rent', 'documents']],
@@ -19,6 +20,7 @@
   const FALLBACK = {WORKSPACE: 'dash', FINANCE: 'finance', OPERATIONS: 'work', ADMINISTRATION: 'settings'};
   const HELP = {   // [English, Dutch], shown when hovering a section
     dash: ['Key figures, actions that need attention and upcoming deadlines.', 'Kerncijfers, acties die aandacht nodig hebben en aankomende deadlines.'],
+    cal: ['Every deadline and appointment, linked to the home or case.', 'Alle deadlines en afspraken, gekoppeld aan de woning of zaak.'],
     homes: ['All homes: the central file of every home.', 'Alle woningen: het centrale dossier van elke woning.'],
     tenants: ['All tenants and website registrations.', 'Alle huurders en inschrijvingen via de website.'],
     contracts: ['Rental contracts, rents and indexations, documents.', 'Huurcontracten, huurprijzen en indexeringen, documenten.'],

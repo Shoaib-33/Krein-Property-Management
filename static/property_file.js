@@ -99,13 +99,14 @@ window.kreinCases = (() => {
       + (f.contracts.length && (addC || signC) ? `<div class="panel-body tf-more">${addC}${signC}</div>` : ''));
 
     // documents of this home (on the home itself, or on one of its contracts)
-    const forWhat = d => d.property_id ? badge('This home', 'blue') : badge(`Contract · ${(f.contracts.find(c => c.id === d.contract_id) || {}).tenant_name || ''}`, 'gray');
+    const forWhat = d => d.case_id ? badge('Case', 'amber') : d.property_id ? badge('This home', 'blue') : badge(`Contract · ${(f.contracts.find(c => c.id === d.contract_id) || {}).tenant_name || ''}`, 'gray');
     const up = staff ? mb('Upload document', 'data-pf="upload"', true) : '';
-    const docs = panel('Documents', 'Energy label, VvE papers, Huurcommissie letters, contracts and everything else of this home.', table(['Document', 'Category', 'Filed on', 'Added', ''], f.documents.map(d => [
-      `<strong>${e(d.name)}</strong>`, e(d.kind), forWhat(d), `${e(day(d.created_at))}${d.added_by ? `<small>${e(d.added_by)}</small>` : ''}`,
-      `<a class="button small" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">View</a>`]), 'No documents yet.').replace(/<div class="empty">[\s\S]*$/, () =>
-      empty('No documents yet', 'Upload the energy label, VvE papers, letters from the Huurcommissie or other papers of this home.', up ? `<div class="actions tf-empty-acts">${up}</div>` : ''))
-      + (f.documents.length && up ? `<div class="panel-body tf-more">${up}</div>` : ''));
+    const DK = window.kreinDocs;
+    const docs = `<section class="panel docs-panel"><div class="panel-header"><div><h2>Documents</h2><p>Rental agreements, Huurcommissie letters, invoices, maintenance, energy label, VvE and legal papers of this home.</p></div><div class="actions">${up}</div></div>`
+      + (DK ? DK.list(`home-${p.id}`, f.documents, ['Document', 'Category', 'Filed on', 'Added', ''], d => [DK.nameCell(d), DK.catCell(d), forWhat(d),
+          `${e(day(d.created_at))}${d.added_by ? `<small>${e(d.added_by)}</small>` : ''}`, `<div class="actions">${DK.fileBtns(d)}</div>`], 'Upload the energy label, VvE papers, letters from the Huurcommissie or other papers of this home.')
+        : table(['Document', 'Category', 'Filed on', 'Added', ''], f.documents.map(d => [`<strong>${e(d.name)}</strong>`, e(d.kind), forWhat(d), e(day(d.created_at)), `<a class="button small" href="/api/documents/${d.id}/file" target="_blank" rel="noopener">View</a>`]), 'No documents yet.'))
+      + '</section>';
 
     // energy label: the current one, its expiry, the certificate
     const lbl = p.energy_label || 'Unknown', tone = /^A/.test(lbl) ? 'green' : /^[BCD]$/.test(lbl) ? 'amber' : /^[EFG]$/.test(lbl) ? 'red' : 'gray';
@@ -422,9 +423,10 @@ window.kreinCases = (() => {
       const done = () => { ui.file = null; load(); };
       if (act === 'ctype') window.kreinIndex.chooseType(c, done); else window.kreinIndex.propose(c, done);
     } else if (act === 'upload') {
-      formModal('Upload a document for this home', [['file', 'File (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}], selectField('kind', 'Category', ui.file.doc_kinds || ['General'])],
+      formModal('Upload a document for this home', [['file', 'File (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}], selectField('kind', 'Type', ui.file.doc_kinds || ['General'])],
         async (data, fd) => { await api(`/api/properties/${p.id}/documents`, {method: 'POST', body: fd}); ui.file = null; load(); },
-        {intro: 'The document stays with this home, also when the tenant changes. Do not upload identity documents or citizen service numbers.', submit: 'Upload', success: 'Document uploaded.'});
+        {intro: 'The type is suggested from the file name. The document stays with this home, also when the tenant changes. Do not upload identity documents or citizen service numbers.', submit: 'Upload', success: 'Document uploaded.'});
+      if (window.kreinDocs) window.kreinDocs.enhanceForm(ui.file.doc_kinds);
     }
   });
   // another page in the menu closes the open property

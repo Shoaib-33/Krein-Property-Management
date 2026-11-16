@@ -43,6 +43,65 @@
       occ: H().occupancy(homes)};
   }
 
+  // ---- "Needs your attention": five boxes at the very top, each item opens its home, case or page ----
+  const cal = {d: null, key: '', loading: false};
+  async function loadCal() {
+    if (!state.company || !['admin', 'manager', 'property', 'finance'].includes(company().role) || cal.loading) return;
+    const t = todayStr(), key = `${state.company}|${t}`;
+    cal.loading = true;
+    try {
+      const r = await api(`/api/calendar?company_id=${state.company}&start=${addDays(t, -60)}&end=${addDays(t, 14)}`);
+      const changed = JSON.stringify(r.events) !== JSON.stringify(cal.d && cal.d.events) || key !== cal.key;
+      cal.d = r; cal.key = key;
+      if (changed && state.page === 'overview') render();
+    } catch { cal.d = null; }
+    cal.loading = false;
+  }
+  const addDays = (s, n) => { const d = new Date(s + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toLocaleDateString('en-CA'); };
+  const shortDate = d => new Intl.DateTimeFormat((window.kreinLang || document.documentElement.lang) === 'nl' ? 'nl-NL' : 'en-GB', {day: 'numeric', month: 'short'}).format(new Date(d + 'T12:00:00'));
+  const calItems = [];   // the calendar items in the boxes, by number (they open through kreinCalendar)
+
+  function attentionTop() {
+    const role = company().role;
+    if (!['admin', 'manager', 'property', 'finance'].includes(role)) return '';
+    if (!cal.d) setTimeout(loadCal);
+    calItems.length = 0;
+    const t = todayStr(), soon = addDays(t, 14), C = window.kreinCases;
+    const evs = cal.d ? cal.d.events.filter(x => !x.done) : [];
+    const calLine = x => { calItems.push(x); return {date: x.date, text: x.title, sub: x.place || x.note || '', late: x.late, attrs: `data-dash-cal="${calItems.length - 1}"`}; };
+    const propOfContract = id => (rows('contracts').find(c => c.id === id) || {}).property_id;
+    // 1. urgent cases: urgent or high priority, or past the deadline
+    const cases = C ? C.sort(H().openCases().filter(k => k.priority === 'urgent' || k.priority === 'high' || (k.next_deadline && k.next_deadline < t))) : [];
+    // 2. deadlines in the next 14 days (not appointments)
+    const DEAD = ['case', 'repair', 'contract', 'indexation_letter', 'energy_label', 'task', 'invoice'];
+    const deadlines = evs.filter(x => DEAD.includes(x.type) && x.date >= t && x.date <= soon);
+    // 3. tasks past their due date
+    const tasks = rows('tasks').filter(x => x.status !== 'done' && x.due_date < t).sort((a, b) => a.due_date.localeCompare(b.due_date));
+    // 4. tenants waiting for an answer (the mailbox joins this box later)
+    const waiting = [...rows('repairs').filter(r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status) && !r.responded_at)
+      .map(r => ({date: String(r.reported_on || r.created_at || '').slice(0, 10), text: r.title, sub: 'Repair report', kind: 'repair', id: r.id})),
+      ...rows('requests').filter(r => r.status === 'open').map(r => ({date: String(r.created_at || '').slice(0, 10), text: r.subject, sub: r.kind, kind: 'request', id: r.id}))]
+      .sort((a, b) => a.date.localeCompare(b.date));
+    const inbox = allowedPage('portal-inbox') ? 'portal-inbox' : allowedPage('repairs') ? 'repairs' : null;
+    // 5. appointments in the next 14 days
+    const appts = evs.filter(x => ['appointment', 'inspection', 'maintenance'].includes(x.type) && x.date >= t && x.date <= soon);
+
+    const box = (tone, ic, title, n, lines, more, empty_) => `<section class="att-box ${tone}${n ? '' : ' is-calm'}"><header><span class="kcard-icon">${icon(ic)}</span><h3>${e(title)}</h3><span class="att-n">${n}</span></header>
+      ${lines.length ? `<ul>${lines.slice(0, 3).map(l => `<li><button type="button" ${l.attrs}><span class="att-date${l.late ? ' late' : ''}">${e(shortDate(l.date))}</span><span class="att-text"><strong>${e(l.text)}</strong>${l.sub ? `<small>${e(l.sub)}</small>` : ''}</span></button></li>`).join('')}</ul>` : `<p class="att-none">${e(empty_)}</p>`}
+      ${n > 3 && more ? `<button type="button" class="att-more" ${more}>View all ${n} ${icon('arrow')}</button>` : ''}</section>`;
+    const boxes = [
+      box('k-red', 'clipboard', 'Urgent cases', cases.length, cases.map(k => ({date: k.next_deadline || t, late: !!(k.next_deadline && k.next_deadline < t), text: k.subject,
+        sub: [k.property_address || k.property_name, k.priority === 'urgent' ? 'Urgent' : k.priority === 'high' ? 'High priority' : ''].filter(Boolean).join(' · '), attrs: goto({property: k.property_id, cases: 'scroll'})})),
+        goto({cases: 'urgent'}), 'No urgent cases.'),
+      box('k-amber', 'calendar', 'Upcoming deadlines', deadlines.length, deadlines.map(calLine), allowedPage('calendar') ? goto({page: 'calendar'}) : '', cal.d ? 'Nothing due in the next 14 days.' : 'Loading…'),
+      box('k-violet', 'clock', 'Overdue tasks', tasks.length, tasks.map(x => ({date: x.due_date, late: true, text: x.title, sub: x.category || '',
+        attrs: propOfContract(x.contract_id) ? goto({property: propOfContract(x.contract_id)}) : goto({page: 'tasks'})})), goto({page: 'tasks'}), 'No tasks past their date.'),
+      box('k-blue', 'message', 'Messages requiring action', waiting.length, waiting.map(w => ({...w, attrs: inbox ? goto({page: inbox}) : ''})), inbox ? goto({page: inbox}) : '', 'Every tenant has an answer.'),
+      box('k-green', 'wrench', 'Upcoming appointments', appts.length, appts.map(x => ({...calLine(x), sub: [x.time, x.place].filter(Boolean).join(' · ')})), allowedPage('calendar') ? goto({page: 'calendar'}) : '', cal.d ? 'No appointments in the next 14 days.' : 'Loading…'),
+    ];
+    return `<section class="att-top" aria-label="Needs your attention">${boxes.join('')}</section>`;
+  }
+
   // every ongoing case of the portfolio: overdue first, then the nearest deadline; filter on mine or urgent
   const dc = {filter: 'all', all: false};
   function casesPanel() {
@@ -102,9 +161,11 @@
     const upcoming = `<section class="panel"><div class="panel-header"><div><h2>${icon('calendar')} Upcoming deadlines</h2><p>Important actions and dates in the coming period.</p></div></div>
       ${deadlines ? `<div class="dash-list">${deadlines}</div>` : '<p class="dash-ok">No deadlines coming up. Rent indexation, energy labels, maintenance, cases and tasks show here when they need you.</p>'}
       ${allowedPage('tasks') ? `<button type="button" class="button link dash-more" ${goto({page: 'tasks'})}>View all deadlines and tasks ${icon('arrow')}</button>` : ''}</section>`;
-    return cards + casesPanel() + `<div class="dash2">${attention}${upcoming}</div>`;
+    return attentionTop() + cards + casesPanel() + `<div class="dash2">${attention}${upcoming}</div>`;
   }
 
+  const baseRefresh = refresh;
+  refresh = async (...a) => { const r = await baseRefresh(...a); if (state.page === 'overview') loadCal(); else cal.d = null; return r; };
   const baseRender = renderPage;
   renderPage = () => {
     let html = baseRender();
@@ -122,6 +183,8 @@
     if (ev.key === 'Enter' && ev.target.matches && ev.target.matches('tr[data-dash-go]')) ev.target.click();
   });
   document.addEventListener('click', ev => {
+    const c = ev.target.closest('[data-dash-cal]');
+    if (c) { ev.preventDefault(); const x = calItems[Number(c.dataset.dashCal)]; if (x && window.kreinCalendar) window.kreinCalendar.open(x); return; }
     const f = ev.target.closest('[data-dash-cases]');
     if (f) { dc.filter = f.dataset.dashCases; dc.all = false; render(); return; }
     if (ev.target.closest('[data-dash-cases-all]')) { dc.all = !dc.all; render(); return; }
@@ -129,9 +192,13 @@
     if (!el) return;
     ev.preventDefault();
     let go; try { go = JSON.parse(el.dataset.dashGo); } catch { return; }
-    if (go.cases) { dc.filter = go.cases; dc.all = false; render(); document.getElementById('dash-cases')?.scrollIntoView({behavior: 'smooth', block: 'start'}); return; }
+    if (go.cases && !go.property) { dc.filter = go.cases; dc.all = false; render(); document.getElementById('dash-cases')?.scrollIntoView({behavior: 'smooth', block: 'start'}); return; }
     if (go.homes) return H().openWith(go.homes);
-    if (go.property) return showProperty(go.property);
+    if (go.property) {
+      showProperty(go.property);
+      if (go.cases === 'scroll') { let n = 0; const t = setInterval(() => { const x = document.getElementById('pf-cases'); if (x || ++n > 20) { clearInterval(t); x && x.scrollIntoView({behavior: 'smooth', block: 'start'}); } }, 150); }
+      return;
+    }
     if (go.page && allowedPage(go.page)) {
       if (go.tenants) state.tenantPeriodFilter = go.tenants;
       if (go.work && window.kreinWork) window.kreinWork.filter(go.work);

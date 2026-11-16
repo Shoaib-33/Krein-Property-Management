@@ -414,7 +414,8 @@ async def monthly_billing_scheduler():
     while True:
         from .automation import run_all_companies
         from .website import purge_old_registrations
-        steps = [(end_finished_contracts, ()), (run_all_scheduled_invoices, ())] + [(process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ()), (purge_old_registrations, ())]
+        from .agenda import send_deadline_reminders
+        steps = [(end_finished_contracts, ()), (run_all_scheduled_invoices, ())] + [(process_overdue_invoices, ()), (run_all_companies, ()), (purge_expired_sessions, ()), (purge_old_registrations, ()), (send_deadline_reminders, ())]
         for step, args in steps:
             try:
                 await asyncio.to_thread(step, *args)
@@ -585,7 +586,7 @@ def all_data(company_id: int, user=Depends(current_user)):
                 else:
                     result[table] = []
             result['communications'] = []
-            result['documents'] = [dict(r) for r in conn.execute(f'SELECT d.id,d.company_id,d.contract_id,d.name,d.kind,d.mime,d.size,d.sha256,d.created_at,(SELECT COUNT(*) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_count,(SELECT group_concat(s.contract_id) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_contracts FROM documents d WHERE d.company_id=? AND d.contract_id IN ({contract_marks}) AND d.kind NOT IN ("payment proof","supplier invoice","deposit evidence") ORDER BY d.id DESC', (company_id, *contract_ids))] if contract_ids else []
+            result['documents'] = [dict(r) for r in conn.execute(f'SELECT d.id,d.company_id,d.contract_id,d.property_id,d.case_id,d.name,d.kind,d.mime,d.size,d.sha256,d.created_at,(SELECT COUNT(*) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_count,(SELECT group_concat(s.contract_id) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_contracts FROM documents d WHERE d.company_id=? AND d.contract_id IN ({contract_marks}) AND d.kind NOT IN ("payment proof","supplier invoice","deposit evidence") ORDER BY d.id DESC', (company_id, *contract_ids))] if contract_ids else []
         from . import history
         since = history.cutoff()
         result['history_from'] = since
@@ -599,7 +600,7 @@ def all_data(company_id: int, user=Depends(current_user)):
                 FROM service_charge_groups g JOIN service_charge_group_units u ON u.group_id=g.id JOIN properties p ON p.id=u.property_id
                 WHERE g.company_id=? GROUP BY g.id ORDER BY g.id DESC''', (company_id,))]
         if role != 'inspector':
-            result['documents'] = [dict(r) for r in conn.execute('SELECT d.id,d.company_id,d.contract_id,d.name,d.kind,d.mime,d.size,d.sha256,d.created_at,(SELECT COUNT(*) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_count,(SELECT group_concat(s.contract_id) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_contracts FROM documents d WHERE d.company_id=? AND (? IN ("admin","manager","finance") OR d.kind NOT IN ("payment proof","supplier invoice","deposit evidence")) AND ' + history.documents_filter() + ' ORDER BY d.id DESC', (company_id, role, since))]
+            result['documents'] = [dict(r) for r in conn.execute('SELECT d.id,d.company_id,d.contract_id,d.property_id,d.case_id,d.name,d.kind,d.mime,d.size,d.sha256,d.created_at,(SELECT COUNT(*) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_count,(SELECT group_concat(s.contract_id) FROM shared_documents s WHERE s.document_id=d.id AND s.revoked=0) shared_contracts FROM documents d WHERE d.company_id=? AND (? IN ("admin","manager","finance") OR d.kind NOT IN ("payment proof","supplier invoice","deposit evidence")) AND ' + history.documents_filter() + ' ORDER BY d.id DESC', (company_id, role, since))]
         if role in ('admin','manager','finance'):
             result['arrears_cases']=[{**dict(r),'balance_cents':invoice_balance(conn,r['invoice_id'])} for r in conn.execute('SELECT a.*,i.number invoice_number,i.due_date,t.name tenant_name,p.name property_name FROM arrears_cases a JOIN invoices i ON i.id=a.invoice_id JOIN contracts c ON c.id=a.contract_id JOIN tenants t ON t.id=c.tenant_id JOIN properties p ON p.id=c.property_id WHERE a.company_id=? ORDER BY a.updated_at DESC',(company_id,))]
             result['arrears_events']=[dict(r) for r in conn.execute('SELECT e.*,u.name actor_name FROM arrears_events e LEFT JOIN users u ON u.id=e.created_by WHERE e.company_id=? ORDER BY e.id DESC',(company_id,))]
@@ -1231,16 +1232,23 @@ def save_document(conn, company, contract_id, user_id, kind, upload):
 
 
 @app.post('/api/documents')
-async def upload_document(company_id: int = Form(...), kind: str = Form('General'), contract_id: str = Form(''), file: UploadFile = File(...), user=Depends(current_user)):
+async def upload_document(company_id: int = Form(...), kind: str = Form('General'), contract_id: str = Form(''), property_id: str = Form(''), file: UploadFile = File(...), user=Depends(current_user)):
     # Authorize before reading the attachment body into memory.
     with connect() as conn:
         authorize(conn, user, company_id, ('property', 'finance', 'manager', 'landlord'))
         cid = integer({'contract_id': contract_id}, 'contract_id') if contract_id else None
         if cid:
-            linked(conn, 'contracts', cid, company_id)
+            contract = linked(conn, 'contracts', cid, company_id)
+        pid = integer({'property_id': property_id}, 'property_id') if property_id else None
+        if pid:
+            linked(conn, 'properties', pid, company_id)
+            if cid and contract['property_id'] != pid:
+                raise HTTPException(422, 'This tenancy is not for the chosen home.')
     upload = await read_upload(file)
     with transaction() as conn:
         doc_id = save_document(conn, company_id, cid, user['id'], kind[:80], upload)
+        if pid:   # a document of the home itself: it stays with the home when tenants change
+            conn.execute('UPDATE documents SET property_id=? WHERE id=?', (pid, doc_id))
         audit(conn, user['id'], company_id, 'uploaded', 'document', doc_id, {'name': upload[3]})
     return {'id': doc_id}
 
@@ -2233,6 +2241,8 @@ from .ip_allowlist import router as ip_allowlist_router
 app.include_router(ip_allowlist_router)
 from .repair_help import router as repair_help_router
 app.include_router(repair_help_router)
+from .agenda import router as agenda_router
+app.include_router(agenda_router)
 from .company_move import router as company_move_router
 app.include_router(company_move_router)
 

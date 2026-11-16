@@ -130,7 +130,7 @@
       th.addEventListener('click', sort);
       th.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); sort(); } });
     });
-    if (body.rows.length < 6) return;
+    if (body.rows.length < 6 || wrap.closest('[data-no-filter]')) return;   // a list with its own search (documents) needs no second filter
     const bar = document.createElement('div');
     bar.className = 'table-tools';
     bar.innerHTML = `<label class="table-filter">${icon('search')}<input type="search" placeholder="Filter ${body.rows.length} rows…" aria-label="Filter table rows"></label><span class="table-count" aria-live="polite"></span><button type="button" class="button small" data-export>${icon('down')} CSV</button>`;

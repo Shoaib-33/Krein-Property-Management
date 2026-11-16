@@ -645,6 +645,16 @@ V49 = '''
 ALTER TABLE companies ADD COLUMN bill_day INTEGER;
 '''
 
+# V62: the calendar (app/agenda.py): each person's private subscription link (only its hash) and email choice, and the
+# reminders already sent (7, 3 and 1 days before a date), so each goes out once
+V62 = '''
+CREATE TABLE calendar_users (
+ user_id INTEGER NOT NULL REFERENCES users(id), company_id INTEGER NOT NULL REFERENCES companies(id), feed_hash TEXT UNIQUE, feed_created_at TEXT,
+ email_reminders INTEGER NOT NULL DEFAULT 1, PRIMARY KEY(user_id,company_id)
+);
+CREATE TABLE calendar_reminders (key TEXT PRIMARY KEY, created_at TEXT NOT NULL)
+'''
+
 # V61: ongoing cases get a priority and a responsible team member; the statuses become open, in progress, waiting for
 # a response and completed, and the categories cover more than the Huurcommissie (app/property_file.py)
 V61 = '''
@@ -949,6 +959,13 @@ ALTER TABLE tenants ADD COLUMN home_property_id BIGINT REFERENCES properties(id)
 ''',
     59: '''
 ALTER TABLE ip_blocks ADD COLUMN country TEXT NOT NULL DEFAULT ''
+''',
+    62: '''
+CREATE TABLE calendar_users (
+ user_id BIGINT NOT NULL REFERENCES users(id), company_id BIGINT NOT NULL REFERENCES companies(id), feed_hash TEXT UNIQUE, feed_created_at TEXT,
+ email_reminders BIGINT NOT NULL DEFAULT 1, PRIMARY KEY(user_id,company_id)
+);
+CREATE TABLE calendar_reminders (key TEXT PRIMARY KEY, created_at TEXT NOT NULL);
 ''',
     61: '''
 ALTER TABLE property_cases ADD COLUMN priority TEXT NOT NULL DEFAULT 'medium';
@@ -1528,6 +1545,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (61, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=62').fetchone():
+            for statement in V62.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (62, now()))
         conn.commit()
     except Exception:
         conn.rollback()

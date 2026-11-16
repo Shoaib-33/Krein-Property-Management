@@ -15,7 +15,8 @@ STAFF = ('property', 'finance', 'manager')   # and admin
 KINDS = ('Apartment', 'House', 'Room', 'Parking', 'Storage')
 LABELS = ('Unknown', 'A++++', 'A+++', 'A++', 'A+', 'A', 'B', 'C', 'D', 'E', 'F', 'G')
 UTILITIES = ('gas', 'electricity', 'water')
-DOC_KINDS = ('General', 'Contract', 'Energy label', 'Huurcommissie', 'VvE', 'Inspection report', 'Valuation', 'Legal notice')
+DOC_KINDS = ('General', 'Contract', 'Lease draft', 'Huurcommissie', 'supplier invoice', 'Settlement letter', 'Valuation', 'Inspection report', 'Maintenance report',
+             'Quote', 'Energy label', 'Sustainability report', 'VvE', 'Permit', 'Legal notice')   # grouped in categories by static/documents.js
 
 
 def rows(conn, sql, args=()):
@@ -121,6 +122,9 @@ async def upload_property_document(property_id: int, kind: str = Form('General')
         prop = record(conn, 'properties', property_id, user, STAFF)
     upload = await read_upload(file)
     with transaction() as conn:
+        role = authorize(conn, user, prop['company_id'], STAFF)
+        if kind == 'supplier invoice' and role not in ('admin', 'manager', 'finance'):
+            raise HTTPException(403, 'Only the finance team and managers file invoices.')
         doc_id = save_document(conn, prop['company_id'], None, user['id'], kind if kind in DOC_KINDS else 'General', upload)
         conn.execute('UPDATE documents SET property_id=? WHERE id=?', (property_id, doc_id))
         audit(conn, user['id'], prop['company_id'], 'uploaded', 'document', doc_id, {'name': upload[3], 'property_id': property_id})
