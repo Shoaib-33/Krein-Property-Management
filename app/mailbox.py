@@ -232,17 +232,18 @@ def find_home(conn, companies, m):
     if not companies:
         return None, None, None, None, m['message_id'] or None, '', [], None
     refs = m['refs']
+    thread = m['message_id'] or None
     if refs:
         prev = conn.execute(f'SELECT company_id,property_id,contract_id,tenant_id,case_id,thread_key FROM mail_messages '
                             f'WHERE company_id IN ({_marks(companies)}) AND message_id IN ({_marks(refs)}) ORDER BY id DESC LIMIT 1',
                             (*companies, *refs)).fetchone()
+        if prev and prev['property_id']:
+            return (prev['property_id'], prev['contract_id'], prev['tenant_id'], prev['case_id'], prev['thread_key'], 'conversation', [], prev['company_id'])
         if prev:
-            return (prev['property_id'], prev['contract_id'], prev['tenant_id'], prev['case_id'], prev['thread_key'],
-                    'conversation' if prev['property_id'] else '', [], prev['company_id'])
-    thread = m['message_id'] or None
+            thread = prev['thread_key']   # same conversation, but not linked to a home yet: look for the home below
     text = m['subject'] + '\n' + m['body'][:8000]
     tenants = [dict(r) for r in conn.execute(
-        f'SELECT id,company_id,home_property_id FROM tenants WHERE company_id IN ({_marks(companies)}) AND lower(email)=? AND archived_at IS NULL ORDER BY id DESC',
+        f'SELECT id,company_id,home_property_id FROM tenants WHERE company_id IN ({_marks(companies)}) AND lower(trim(email))=? AND archived_at IS NULL ORDER BY id DESC',
         (*companies, m['from_addr']))] if m['from_addr'] else []
     if tenants:
         homes = [dict(r) for r in conn.execute(

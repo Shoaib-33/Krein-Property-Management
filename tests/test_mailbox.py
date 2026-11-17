@@ -226,6 +226,25 @@ class MailboxTests(unittest.TestCase):
             r = conn.execute("SELECT company_id,property_id,contract_id,tenant_id,matched_by FROM mail_messages WHERE message_id='<z1@example.com>'").fetchone()
         self.assertEqual(tuple(r), (2, pid, None, tid, 'tenant'))
 
+    def test_unlinked_conversation_found_later(self):
+        """A conversation of replies that all waited under Unassigned moves as a whole once its tenant is known (no contract, other company)."""
+        f = 'Emma Broggi <Emma.Broggi@example.com>'
+        msgs = {61: raw_email(f, 'Urgent: heating', 'The heating is broken.', '<t1@example.com>'),
+                62: raw_email(f, 'Re: Urgent: heating', 'Still broken.', '<t2@example.com>', '<t1@example.com>'),
+                63: raw_email(f, 'Re: Urgent: heating', 'Please call me.', '<t3@example.com>', '<t2@example.com>')}
+        with mock.patch.object(mailbox, '_connect_imap', return_value=FakeImap(msgs)):
+            mailbox.check(1, use_ai=False)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute("SELECT COUNT(*) FROM mail_messages WHERE property_id IS NULL AND company_id=1").fetchone()[0], 3)
+        with db.transaction() as conn:
+            c = conn.execute("SELECT c.property_id,c.tenant_id FROM contracts c JOIN properties p ON p.id=c.property_id WHERE p.address='Lindengracht 42 A'").fetchone()
+            pid = self.copy_row(conn, 'properties', c['property_id'], company_id=2, address='Foulkeslaan 117', city='Delft', postcode='2625 RC')
+            self.copy_row(conn, 'tenants', c['tenant_id'], company_id=2, email=' emma.broggi@example.com ', name='E. Broggi', home_property_id=pid)
+        self.assertEqual(mailbox.rematch(), 1)
+        with db.connect() as conn:
+            got = {tuple(r) for r in conn.execute("SELECT company_id,property_id,matched_by FROM mail_messages WHERE message_id LIKE '<t%'")}
+        self.assertEqual(got, {(2, pid, 'tenant')})
+
     def test_rematch_finds_a_tenant_added_later(self):
         with mock.patch.object(mailbox, '_connect_imap', return_value=FakeImap({41: raw_email('New <new@example.com>', 'Sleutel', 'Ik ben mijn sleutel kwijt.', '<y1@example.com>')})):
             mailbox.check(1, use_ai=False)
