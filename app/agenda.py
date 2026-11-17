@@ -257,8 +257,9 @@ def _recipients(conn, company_id, item):
     return [r[0] for r in conn.execute(f'SELECT user_id FROM memberships WHERE company_id=? AND role IN ({marks})', (company_id, *TEAM))]
 
 
-def reminders_for_company(conn, company_id, today=None):
-    """Notices for the important dates in the next 7 days; returns {user_id: [lines]} for the email digest."""
+def reminders_for_company(conn, company_id, today=None, collect=None):
+    """Notices for the important dates in the next 7 days; returns {user_id: [lines]} for the email digest.
+    collect (a list) also receives every line once, for the copy to the company's own email address."""
     from .portal_access import notify
     today = today or local_today()
     digest = {}
@@ -281,27 +282,55 @@ def reminders_for_company(conn, company_id, today=None):
         body = f"{x['title']}{' – ' + x['place'] if x['place'] else ''} ({x['date']}{' ' + x['time'] if x['time'] else ''})."
         users = _recipients(conn, company_id, x)
         notify(conn, company_id, users, title, body, 'calendar')
+        if collect is not None:
+            collect.append(f'- {title}: {body}')
         for u in users:
             digest.setdefault(u, []).append(f'- {title}: {body}')
     return digest
 
 
+def company_inbox():
+    """Where the overview of all reminders goes: KREIN_REMINDER_COPY_TO, otherwise the address the software sends from
+    (beheer@pandtbeheer.nl). KREIN_REMINDER_COPY_TO=0 switches the overview off."""
+    from email.utils import parseaddr
+    from .email_delivery import smtp_settings
+    value = os.environ.get('KREIN_REMINDER_COPY_TO', '').strip()
+    if value == '0':
+        return ''
+    if not value:
+        s = smtp_settings()
+        value = s['sender'] if s else ''
+    address = parseaddr(value)[1]
+    return address if '@' in address else ''
+
+
 def send_deadline_reminders():
     """The scheduler's step: every company's reminders, then one email per person with theirs (when email is set up)."""
     from .email_delivery import send_plain, smtp_settings
-    mails = []
+    mails, overview = [], []
     with transaction() as conn:
-        for (company_id, name) in conn.execute('SELECT id,name FROM companies').fetchall():
-            for user_id, lines in reminders_for_company(conn, company_id).items():
+        for (company_id, name) in conn.execute('SELECT id,name FROM companies ORDER BY name').fetchall():
+            every = []
+            for user_id, lines in reminders_for_company(conn, company_id, collect=every).items():
                 pref = _prefs(conn, user_id, company_id)
                 if pref and not pref['email_reminders']:
                     continue
                 who = conn.execute('SELECT email,name FROM users WHERE id=?', (user_id,)).fetchone()
                 if who and who['email']:
                     mails.append((who['email'], name, who['name'], lines))
+            if every:
+                overview.append((name, every))
         conn.execute('DELETE FROM calendar_reminders WHERE created_at<?', ((datetime.now(timezone.utc) - timedelta(days=60)).isoformat(timespec='seconds'),))
-    if not mails or not smtp_settings() or os.environ.get('KREIN_REMINDER_EMAILS', '1') == '0':
+    if not (mails or overview) or not smtp_settings() or os.environ.get('KREIN_REMINDER_EMAILS', '1') == '0':
         return len(mails)
+    inbox = company_inbox()
+    if inbox and overview:   # one overview of every company's dates for the shared company mailbox (for example beheer@pandtbeheer.nl)
+        try:
+            send_plain(inbox, 'Deadlines coming up – all companies',
+                       'Hello,\n\nThese dates are coming up:\n\n' + '\n\n'.join(f'{name}\n' + '\n'.join(lines) for name, lines in overview)
+                       + '\n\nOpen the Calendar in Krein for the details.\n')
+        except Exception:
+            logging.exception('Deadline overview email failed.')
     for email, company, name, lines in mails:
         try:
             send_plain(email, f'Deadlines coming up – {company}',

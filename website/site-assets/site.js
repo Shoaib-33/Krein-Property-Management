@@ -137,12 +137,12 @@
   function serverMessage(text) {
     if (lang === 'en') {
       if (/^Check the field/.test(text || '')) return 'Please check the details you entered and try again.';
-      return text || 'Sending did not work. Please try again or email beheer@pandtbeheer.nl.';
+      return text || 'Sending did not work. Please try again in a moment.';
     }
     if (/Too many/.test(text || '')) return 'Te veel inzendingen vanaf deze verbinding. Probeer het later opnieuw.';
     if (/privacy statement/.test(text || '')) return 'Ga akkoord met de privacyverklaring om door te gaan.';
     if (/^Check the field/.test(text || '')) return 'Controleer de ingevulde gegevens en probeer het opnieuw.';
-    return 'Het versturen is niet gelukt. Probeer het opnieuw of mail naar beheer@pandtbeheer.nl.';
+    return 'Het versturen is niet gelukt. Probeer het zo opnieuw.';
   }
   async function send(form, url, data, box) {
     const error = $('.form-error', form);

@@ -108,6 +108,27 @@ class AgendaTests(unittest.TestCase):
         self.assertTrue(any('Case deadline tomorrow' in line for line in later.get(admin, [])))
         self.assertEqual(agenda.send_deadline_reminders() >= 0, True)   # runs for every company without email set up
 
+    def test_overview_to_the_company_mailbox(self):
+        """Besides each person's own reminders, one overview of every company's dates goes to the company address."""
+        import os
+        from unittest import mock
+        h = self.login('manager@krein.local')
+        self.add_case(h, next_deadline=self.day(2))
+        env = {'KREIN_SMTP_HOST': 'smtp.example.com', 'KREIN_SMTP_FROM': 'beheer@pandtbeheer.nl', 'KREIN_SMTP_USERNAME': 'u',
+               'KREIN_SMTP_PASSWORD': 'p', 'KREIN_PUBLIC_URL': 'https://app.example.com'}
+        sent = []
+        with mock.patch.dict(os.environ, env), mock.patch('app.email_delivery.send_plain', side_effect=lambda to, subject, body, *a, **k: sent.append((to, subject, body))):
+            self.assertEqual(agenda.company_inbox(), 'beheer@pandtbeheer.nl')
+            agenda.send_deadline_reminders()
+        overview = [x for x in sent if x[0] == 'beheer@pandtbeheer.nl']
+        self.assertEqual(len(overview), 1)
+        self.assertEqual(overview[0][1], 'Deadlines coming up – all companies')
+        self.assertIn('Huurcommissie hearing', overview[0][2])
+        self.assertIn('Krein Residential BV', overview[0][2])
+        self.assertTrue(any(x[0] != 'beheer@pandtbeheer.nl' for x in sent))      # the personal reminders still go out
+        with mock.patch.dict(os.environ, {**env, 'KREIN_REMINDER_COPY_TO': '0'}):
+            self.assertEqual(agenda.company_inbox(), '')
+
     def test_email_choice(self):
         h = self.login('manager@krein.local')
         self.assertTrue(self.client.get('/api/calendar?company_id=1', headers=h).json()['email_reminders'])

@@ -25,7 +25,6 @@ from pathlib import Path
 
 SITE = Path(__file__).resolve().parent.parent / 'website'
 NAME = 'Pandt Property Management'
-EMAIL = 'beheer@pandtbeheer.nl'
 _META = re.compile(r'\A\s*<!--(.*?)-->', re.S)
 _FAQ = re.compile(r'<details class="faq-item"[^>]*>\s*<summary[^>]*>(.*?)</summary>\s*<div class="faq-answer">(.*?)</div>\s*</details>', re.S)
 _TAGS = re.compile(r'<[^>]+>')
@@ -72,7 +71,7 @@ def _crumbs(meta, lang):
 
 def _structured(meta, body, trail, lang):
     base, locale = site_url(), LANGS[lang]['locale']
-    org = {'@type': 'Organization', '@id': f'{base}/#organization', 'name': NAME, 'url': f'{base}/', 'email': EMAIL,
+    org = {'@type': 'Organization', '@id': f'{base}/#organization', 'name': NAME, 'url': f'{base}/',
            'logo': f'{base}/site-assets/logo.png', 'areaServed': {'@type': 'Country', 'name': 'NL'}}
     graph = [
         org,
