@@ -214,6 +214,18 @@ class MailboxTests(unittest.TestCase):
         self.assertNotIn(pid, [h['id'] for h in self.client.get('/api/mail/homes').json()['homes']])
         self.assertEqual(self.client.post(f'/api/mail/{x3}/home', json={'property_id': pid}, headers=h).status_code, 403)
 
+    def test_tenant_without_a_contract(self):
+        """A tenant linked to a home by the address on the tenant (no contract registered yet) is found too, in any company."""
+        with db.transaction() as conn:
+            c = conn.execute("SELECT c.property_id,c.tenant_id FROM contracts c JOIN properties p ON p.id=c.property_id WHERE p.address='Lindengracht 42 A'").fetchone()
+            pid = self.copy_row(conn, 'properties', c['property_id'], company_id=2, address='Foulkeslaan 117', city='Delft', postcode='2625 RC')
+            tid = self.copy_row(conn, 'tenants', c['tenant_id'], company_id=2, email='emma.broggi@example.com', name='E. Broggi', home_property_id=pid)
+        with mock.patch.object(mailbox, '_connect_imap', return_value=FakeImap({51: raw_email('Emma Broggi <emma.broggi@example.com>', 'Urgent: heating', 'The heating is broken.', '<z1@example.com>')})):
+            mailbox.check(1, use_ai=False)
+        with db.connect() as conn:
+            r = conn.execute("SELECT company_id,property_id,contract_id,tenant_id,matched_by FROM mail_messages WHERE message_id='<z1@example.com>'").fetchone()
+        self.assertEqual(tuple(r), (2, pid, None, tid, 'tenant'))
+
     def test_rematch_finds_a_tenant_added_later(self):
         with mock.patch.object(mailbox, '_connect_imap', return_value=FakeImap({41: raw_email('New <new@example.com>', 'Sleutel', 'Ik ben mijn sleutel kwijt.', '<y1@example.com>')})):
             mailbox.check(1, use_ai=False)

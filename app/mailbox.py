@@ -242,12 +242,16 @@ def find_home(conn, companies, m):
     thread = m['message_id'] or None
     text = m['subject'] + '\n' + m['body'][:8000]
     tenants = [dict(r) for r in conn.execute(
-        f'SELECT id,company_id FROM tenants WHERE company_id IN ({_marks(companies)}) AND lower(email)=? AND archived_at IS NULL ORDER BY id DESC',
+        f'SELECT id,company_id,home_property_id FROM tenants WHERE company_id IN ({_marks(companies)}) AND lower(email)=? AND archived_at IS NULL ORDER BY id DESC',
         (*companies, m['from_addr']))] if m['from_addr'] else []
     if tenants:
         homes = [dict(r) for r in conn.execute(
             f'SELECT c.id contract_id,c.property_id,c.company_id,cp.tenant_id FROM contract_people cp JOIN contracts c ON c.id=cp.contract_id '
             f'WHERE cp.tenant_id IN ({_marks(tenants)}) AND c.status IN {LIVE_CONTRACT} ORDER BY c.id DESC', [t['id'] for t in tenants])]
+        # a tenant who lives in a home without a registered contract yet (linked by the address on the tenant)
+        homes += [{'contract_id': None, 'property_id': t['home_property_id'], 'company_id': t['company_id'], 'tenant_id': t['id']}
+                  for t in tenants if t['home_property_id'] and not any(h['tenant_id'] == t['id'] for h in homes)
+                  and conn.execute('SELECT 1 FROM properties WHERE id=? AND company_id=?', (t['home_property_id'], t['company_id'])).fetchone()]
         props = {h['property_id'] for h in homes}
         if len(props) > 1:
             ids, _ = match_address(conn, companies, text, among=props)
