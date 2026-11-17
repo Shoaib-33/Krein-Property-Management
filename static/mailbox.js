@@ -147,7 +147,7 @@
     return d.thread.map(t => {
       const out = t.direction === 'out', who = out ? (t.sent_by_name || 'You') : (t.from_name || t.from_addr);
       const files = (t.attachments || []).map(f => `<span class="mail-file">${icon('file')}<span>${e(f.name)} <small>${e(size(f.size || 0))}</small></span>
-        ${f.document_id ? `<a class="button small" href="/api/documents/${f.document_id}/file" target="_blank" rel="noopener">View</a>` : !out ? `<button type="button" class="button small" data-mail-file="${t.id}:${f.n}">Save to documents</button>` : ''}</span>`).join('');
+        ${f.document_id ? `<a class="button small" href="/api/documents/${f.document_id}/file" target="_blank" rel="noopener">View</a>` : !out ? `<a class="button small" href="/api/mail/${t.id}/attachments/${f.n}" target="_blank" rel="noopener">View</a><button type="button" class="button small" data-mail-file="${t.id}:${f.n}">Save to documents</button>` : ''}</span>`).join('');
       return `<article class="mail-msg ${out ? 'is-out' : 'is-in'}${t.id === d.message.id ? ' is-current' : ''}"><header><span class="avatar">${e(ini(who))}</span>
         <div><strong>${e(who)}</strong>${out ? ' <span class="badge green">Sent</span>' : ''}<small><span>${out ? 'To' : 'From'}</span> <span translate="no">${e(out ? t.to_addrs : t.from_addr)}</span> · ${e(full(t.sent_at))}</small></div></header>
         ${bodyHtml(t.body)}${files ? `<div class="mail-files">${files}</div>` : ''}</article>`;

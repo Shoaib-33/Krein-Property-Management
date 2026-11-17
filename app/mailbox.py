@@ -29,13 +29,14 @@ import ssl
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from datetime import date, timedelta
 from email import policy
 from email.message import EmailMessage
 from email.utils import getaddresses, make_msgid, parseaddr, parsedate_to_datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 
 from .clock import local_today
 from .db import audit, connect, now, transaction
@@ -807,20 +808,23 @@ def mail_draft(mail_id: int, data: dict, user=Depends(current_user)):
     return {'body': text[:6000]}
 
 
-@router.post('/api/mail/{mail_id}/attachments/{n}')
-def mail_attachment(mail_id: int, n: int, data: dict, user=Depends(current_user)):
-    """Save an attachment as a document of the home (fetched again from the mailbox; PDF, JPEG, PNG or WebP up to 10 MB)."""
-    from .main import save_document
-    from .property_file import DOC_KINDS
-    with connect() as conn:
-        m = _row(conn, mail_id, user, ('admin', 'manager', 'property', 'finance'))
-        role = authorize(conn, user, m['company_id'], STAFF)
+SIGNATURES = {b'%PDF': ('application/pdf', '.pdf'), b'\xff\xd8\xff': ('image/jpeg', '.jpg'), b'\x89PNG': ('image/png', '.png'),
+              b'GIF8': ('image/gif', '.gif')}
+
+
+def _file_type(content):
+    """The real type of a file from its first bytes (not from its name), or None."""
+    found = next((v for k, v in SIGNATURES.items() if content.startswith(k)), None)
+    if not found and content[:4] == b'RIFF' and content[8:12] == b'WEBP':
+        found = ('image/webp', '.webp')
+    return found
+
+
+def _fetch_attachment(m, n):
+    """Fetch attachment n of an email again from the mailbox (read-only); the software itself keeps only the names."""
     files = {f['n']: f for f in json.loads(m['attachments'] or '[]')}
     if n not in files:
         raise HTTPException(404, 'Attachment not found.')
-    kind = data.get('kind') if data.get('kind') in DOC_KINDS else 'General'
-    if kind == 'supplier invoice' and role not in ('admin', 'manager', 'finance'):
-        raise HTTPException(403, 'Only the finance team and managers file invoices.')
     s = settings()
     if not s or not m['uid']:
         raise HTTPException(409, 'This attachment can no longer be fetched from the mailbox.')
@@ -846,15 +850,48 @@ def mail_attachment(mail_id: int, n: int, data: dict, user=Depends(current_user)
     content = part.get_payload(decode=True) if part is not None else None
     if not content:
         raise HTTPException(404, 'Attachment not found.')
+    return files[n], content
+
+
+@router.get('/api/mail/{mail_id}/attachments/{n}')
+def mail_attachment_view(mail_id: int, n: int, user=Depends(current_user)):
+    """Open an attachment in the browser without saving it. Only PDFs and pictures open in the page; any other file
+    is downloaded, so a file from outside (for example an HTML page) never runs inside the software."""
+    with connect() as conn:
+        m = _row(conn, mail_id, user, ('admin', 'manager', 'property', 'finance'))
+        authorize(conn, user, m['company_id'], STAFF)
+    meta, content = _fetch_attachment(m, n)
+    found = _file_type(content)
+    name = re.sub(r'[\\/\x00-\x1f"]', '_', meta['name'])[:180] or 'attachment'
+    with transaction() as conn:
+        audit(conn, user['id'], m['company_id'], 'viewed attachment', 'mail', mail_id, {'n': n})
+    disposition = 'inline' if found else 'attachment'
+    return Response(content, media_type=found[0] if found else 'application/octet-stream',
+                    headers={'Content-Disposition': f"{disposition}; filename*=UTF-8''{urllib.parse.quote(name)}",
+                             'X-Content-Type-Options': 'nosniff',
+                             'Cache-Control': 'private, no-store'})
+
+
+@router.post('/api/mail/{mail_id}/attachments/{n}')
+def mail_attachment(mail_id: int, n: int, data: dict, user=Depends(current_user)):
+    """Save an attachment as a document of the home (fetched again from the mailbox; PDF, JPEG, PNG or WebP up to 10 MB)."""
+    from .main import save_document
+    from .property_file import DOC_KINDS
+    with connect() as conn:
+        m = _row(conn, mail_id, user, ('admin', 'manager', 'property', 'finance'))
+        role = authorize(conn, user, m['company_id'], STAFF)
+    if n not in {f['n'] for f in json.loads(m['attachments'] or '[]')}:
+        raise HTTPException(404, 'Attachment not found.')
+    kind = data.get('kind') if data.get('kind') in DOC_KINDS else 'General'
+    if kind == 'supplier invoice' and role not in ('admin', 'manager', 'finance'):
+        raise HTTPException(403, 'Only the finance team and managers file invoices.')
+    meta, content = _fetch_attachment(m, n)
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(413, 'The attachment is larger than 10 MB.')
-    signatures = {b'%PDF': ('application/pdf', '.pdf'), b'\xff\xd8\xff': ('image/jpeg', '.jpg'), b'\x89PNG': ('image/png', '.png')}
-    found = next((v for k, v in signatures.items() if content.startswith(k)), None)
-    if not found and content[:4] == b'RIFF' and content[8:12] == b'WEBP':
-        found = ('image/webp', '.webp')
-    if not found:
+    found = _file_type(content)
+    if not found or found[0] == 'image/gif':
         raise HTTPException(415, 'Only PDF, JPEG, PNG and WebP files can be saved as a document.')
-    name = re.sub(r'[\\/\x00-\x1f]', '_', files[n]['name'])[:180]
+    name = re.sub(r'[\\/\x00-\x1f]', '_', meta['name'])[:180]
     with transaction() as conn:
         doc_id = save_document(conn, m['company_id'], m['contract_id'], user['id'], kind, (content, found[0], found[1], name))
         conn.execute('UPDATE documents SET property_id=?,case_id=? WHERE id=?', (m['property_id'], m['case_id'], doc_id))

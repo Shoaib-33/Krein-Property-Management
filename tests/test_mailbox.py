@@ -139,6 +139,35 @@ class MailboxTests(unittest.TestCase):
             r = conn.execute("SELECT property_id,thread_key,matched_by FROM mail_messages WHERE message_id='<a5@example.com>'").fetchone()
         self.assertEqual((r['property_id'], r['thread_key'], r['matched_by']), (self.home('Lindengracht 42 A'), '<a1@example.com>', 'conversation'))
 
+    def test_view_attachment_without_saving(self):
+        m = EmailMessage()
+        m['From'] = 'Emma <emma@example.com>'; m['To'] = 'beheer@pandtbeheer.nl'; m['Subject'] = 'Foto lekkage'; m['Message-ID'] = '<v1@example.com>'
+        m.set_content('Zie de foto.')
+        photo = b'\xff\xd8\xff\xe0' + b'0' * 200
+        m.add_attachment(photo, maintype='image', subtype='jpeg', filename='lek.jpg')
+        m.add_attachment(b'<script>alert(1)</script>', maintype='text', subtype='html', filename='page.html')
+        fake = FakeImap({21: m.as_bytes()})
+        with mock.patch.object(mailbox, '_connect_imap', return_value=fake):
+            mailbox.check(1)
+        with db.connect() as conn:
+            mail_id = conn.execute("SELECT id FROM mail_messages WHERE message_id='<v1@example.com>'").fetchone()[0]
+        self.login()
+        with mock.patch.object(mailbox, '_connect_imap', return_value=fake):
+            r = self.client.get(f'/api/mail/{mail_id}/attachments/0')
+            self.assertEqual(r.status_code, 200, r.text)
+            self.assertEqual((r.headers['content-type'], r.content), ('image/jpeg', photo))
+            self.assertTrue(r.headers['content-disposition'].startswith('inline'))
+            r = self.client.get(f'/api/mail/{mail_id}/attachments/1')       # an HTML file is downloaded, never shown in the software
+            self.assertEqual(r.headers['content-type'], 'application/octet-stream')
+            self.assertTrue(r.headers['content-disposition'].startswith('attachment'))
+            self.assertEqual(self.client.get(f'/api/mail/{mail_id}/attachments/5').status_code, 404)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute('SELECT COUNT(*) FROM documents WHERE name=?', ('lek.jpg',)).fetchone()[0], 0)   # nothing saved
+        self.client.post('/api/logout', headers={'X-CSRF-Token': ''})
+        self.client.cookies.clear()
+        self.login('tenant@krein.local')
+        self.assertIn(self.client.get(f'/api/mail/{mail_id}/attachments/0').status_code, (403, 404))
+
     def test_screens_case_task_and_reply(self):
         h = self.login()
         a = mailbox.store(1, mailbox.parse(raw_email('Emma <emma@example.com>', 'Lekkage badkamer', 'Er lekt water in de badkamer.', '<b1@example.com>')), use_ai=False)
