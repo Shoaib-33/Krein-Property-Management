@@ -86,6 +86,36 @@ def mailbox_company(conn):
     return row[0] if row and row[0] is not None else None
 
 
+def served(conn):
+    """The companies whose email arrives in this mailbox: every company in the system, the mailbox company first.
+    An email is stored under the company of the home it is about; emails that are not linked yet stay with the mailbox company."""
+    main = mailbox_company(conn)
+    ids = [r[0] for r in conn.execute('SELECT id FROM companies ORDER BY id')]
+    return ([main] if main in ids else []) + [i for i in ids if i != main]
+
+
+def _marks(items):
+    return ','.join('?' for _ in items)
+
+
+def _company_of(conn, property_id):
+    row = conn.execute('SELECT company_id FROM properties WHERE id=?', (property_id,)).fetchone()
+    return row[0] if row else None
+
+
+def staff_companies(conn, user):
+    """The served companies in which this user works with the mailbox."""
+    out = []
+    for cid in served(conn):
+        try:
+            authorize(conn, user, cid, STAFF)
+            out.append(cid)
+        except HTTPException:
+            pass
+    conn.scope = None
+    return out
+
+
 # ---------------------------------------------------------------- reading an email
 
 def _text_of_html(markup):
@@ -158,15 +188,16 @@ def _split(address):
     return (m.group(1), m.group(2), (m.group(3) or '')) if m else (None, None, '')
 
 
-def match_address(conn, company_id, text, among=None):
-    """The homes whose street and house number (or postcode and house number) are in the text, best first.
-    Returns (property_ids_with_the_best_score, score)."""
+def match_address(conn, companies, text, among=None):
+    """The homes (of one company id, or of a list of companies) whose street and house number (or postcode and house
+    number) are in the text, best first. Returns (property_ids_with_the_best_score, score)."""
+    companies = [companies] if isinstance(companies, int) else list(companies)
     t = ' ' + _norm(text) + ' '
-    if len(t) < 6:
+    if len(t) < 6 or not companies:
         return [], 0
     compact = re.sub(r'\s+', '', str(text or '').lower())
     scores = {}
-    for p in conn.execute('SELECT id,address,postcode FROM properties WHERE company_id=?', (company_id,)):
+    for p in conn.execute(f'SELECT id,address,postcode FROM properties WHERE company_id IN ({_marks(companies)})', companies):
         if among is not None and p['id'] not in among:
             continue
         street, number, extra = _split(p['address'])
@@ -193,35 +224,47 @@ def match_address(conn, company_id, text, among=None):
     return [pid for pid, s in scores.items() if s == best], best
 
 
-def find_home(conn, company_id, m):
-    """(property_id, contract_id, tenant_id, case_id, thread_key, how, candidates) for a parsed email."""
+def find_home(conn, companies, m):
+    """(property_id, contract_id, tenant_id, case_id, thread_key, how, candidates, company_id) for a parsed email.
+    It looks in every company of the list (one id also works): the home decides the company the email belongs to.
+    company_id is None when nothing was found (the email then stays with the mailbox company)."""
+    companies = [companies] if isinstance(companies, int) else list(companies)
+    if not companies:
+        return None, None, None, None, m['message_id'] or None, '', [], None
     refs = m['refs']
     if refs:
-        marks = ','.join('?' for _ in refs)
-        prev = conn.execute(f'SELECT property_id,contract_id,tenant_id,case_id,thread_key FROM mail_messages WHERE company_id=? AND message_id IN ({marks}) ORDER BY id DESC LIMIT 1',
-                            (company_id, *refs)).fetchone()
+        prev = conn.execute(f'SELECT company_id,property_id,contract_id,tenant_id,case_id,thread_key FROM mail_messages '
+                            f'WHERE company_id IN ({_marks(companies)}) AND message_id IN ({_marks(refs)}) ORDER BY id DESC LIMIT 1',
+                            (*companies, *refs)).fetchone()
         if prev:
-            return prev['property_id'], prev['contract_id'], prev['tenant_id'], prev['case_id'], prev['thread_key'], 'conversation' if prev['property_id'] else '', []
+            return (prev['property_id'], prev['contract_id'], prev['tenant_id'], prev['case_id'], prev['thread_key'],
+                    'conversation' if prev['property_id'] else '', [], prev['company_id'])
     thread = m['message_id'] or None
     text = m['subject'] + '\n' + m['body'][:8000]
-    tenant = conn.execute('SELECT id FROM tenants WHERE company_id=? AND lower(email)=? AND archived_at IS NULL ORDER BY id DESC LIMIT 1',
-                          (company_id, m['from_addr'])).fetchone() if m['from_addr'] else None
-    if tenant:
-        homes = [dict(r) for r in conn.execute(f'SELECT c.id contract_id,c.property_id FROM contract_people cp JOIN contracts c ON c.id=cp.contract_id '
-                                               f'WHERE cp.tenant_id=? AND c.company_id=? AND c.status IN {LIVE_CONTRACT} ORDER BY c.id DESC', (tenant['id'], company_id))]
+    tenants = [dict(r) for r in conn.execute(
+        f'SELECT id,company_id FROM tenants WHERE company_id IN ({_marks(companies)}) AND lower(email)=? AND archived_at IS NULL ORDER BY id DESC',
+        (*companies, m['from_addr']))] if m['from_addr'] else []
+    if tenants:
+        homes = [dict(r) for r in conn.execute(
+            f'SELECT c.id contract_id,c.property_id,c.company_id,cp.tenant_id FROM contract_people cp JOIN contracts c ON c.id=cp.contract_id '
+            f'WHERE cp.tenant_id IN ({_marks(tenants)}) AND c.status IN {LIVE_CONTRACT} ORDER BY c.id DESC', [t['id'] for t in tenants])]
         props = {h['property_id'] for h in homes}
-        if len(props) == 1:
-            return homes[0]['property_id'], homes[0]['contract_id'], tenant['id'], None, thread, 'tenant', []
         if len(props) > 1:
-            ids, _ = match_address(conn, company_id, text, among=props)
-            if len(ids) == 1:
-                h = next(h for h in homes if h['property_id'] == ids[0])
-                return h['property_id'], h['contract_id'], tenant['id'], None, thread, 'tenant', []
-            return None, None, tenant['id'], None, thread, '', sorted(props)
-    ids, _ = match_address(conn, company_id, text)
+            ids, _ = match_address(conn, companies, text, among=props)
+            homes = [h for h in homes if len(ids) == 1 and h['property_id'] == ids[0]] or homes
+            props = {h['property_id'] for h in homes}
+        if len(props) == 1:
+            h = homes[0]
+            return h['property_id'], h['contract_id'], h['tenant_id'], None, thread, 'tenant', [], h['company_id']
+    here = next((t['id'] for t in tenants if t['company_id'] == companies[0]), None)   # unlinked emails stay with the mailbox company
+    if tenants and len(props) > 1:
+        return None, None, here, None, thread, '', sorted(props), None
+    ids, _ = match_address(conn, companies, text)
     if len(ids) == 1:
-        return ids[0], _live_contract(conn, ids[0]), tenant['id'] if tenant else None, None, thread, 'address', []
-    return None, None, tenant['id'] if tenant else None, None, thread, '', ids[:5]
+        company = _company_of(conn, ids[0])
+        tenant = next((t['id'] for t in tenants if t['company_id'] == company), None)
+        return ids[0], _live_contract(conn, ids[0]), tenant, None, thread, 'address', [], company
+    return None, None, here, None, thread, '', ids[:5], None
 
 
 def _live_contract(conn, property_id):
@@ -334,9 +377,10 @@ def clean_ai(reply):
 def store(company_id, m, uid=None, uidvalidity=None, use_ai=True):
     """Save one parsed incoming email (once), linked to its home when that is clear. Returns the new id or None."""
     with connect() as conn:
-        if m['message_id'] and conn.execute('SELECT 1 FROM mail_messages WHERE company_id=? AND message_id=?', (company_id, m['message_id'])).fetchone():
+        if m['message_id'] and conn.execute('SELECT 1 FROM mail_messages WHERE message_id=?', (m['message_id'],)).fetchone():
             return None
-        pid, contract_id, tenant_id, case_id, thread, how, candidates = find_home(conn, company_id, m)
+        companies = [company_id] + [c for c in served(conn) if c != company_id]
+        pid, contract_id, tenant_id, case_id, thread, how, candidates, owner = find_home(conn, companies, m)
         context = ''
         if pid:
             p = conn.execute('SELECT address,city FROM properties WHERE id=?', (pid,)).fetchone()
@@ -348,12 +392,16 @@ def store(company_id, m, uid=None, uidvalidity=None, use_ai=True):
         reading = ai_read(m, context)
     reading = reading or _rules(m)
     with transaction() as conn:
-        if m['message_id'] and conn.execute('SELECT 1 FROM mail_messages WHERE company_id=? AND message_id=?', (company_id, m['message_id'])).fetchone():
+        if m['message_id'] and conn.execute('SELECT 1 FROM mail_messages WHERE message_id=?', (m['message_id'],)).fetchone():
             return None
         if not pid and reading.get('address'):
-            ids, _ = match_address(conn, company_id, reading['address'], among=set(candidates) if candidates else None)
+            ids, _ = match_address(conn, companies, reading['address'], among=set(candidates) if candidates else None)
             if len(ids) == 1:
-                pid, contract_id, how, candidates = ids[0], contract_id or _live_contract(conn, ids[0]), 'ai', []
+                pid, how, candidates, owner = ids[0], 'ai', [], _company_of(conn, ids[0])
+                contract_id = _live_contract(conn, pid)
+                if tenant_id and not conn.execute('SELECT 1 FROM tenants WHERE id=? AND company_id=?', (tenant_id, owner)).fetchone():
+                    tenant_id = None
+        company_id = owner or company_id   # the company of the home (or of the earlier email in the conversation)
         if pid and contract_id and not conn.execute('SELECT 1 FROM contracts WHERE id=? AND property_id=?', (contract_id, pid)).fetchone():
             contract_id = _live_contract(conn, pid)
         status = 'new' if reading.get('needs_action', True) else 'done'
@@ -441,6 +489,10 @@ def check(company_id=None, use_ai=True):
             msg = 'The mailbox login was refused. Check the username and password.' if isinstance(err, imaplib.IMAP4.error) else f'The mailbox could not be read ({type(err).__name__}).'
             _save_state(company_id, None, None, msg)
             raise RuntimeError(msg) from err
+        try:
+            rematch()
+        except Exception as err:   # never stops the mailbox
+            log.warning('Mailbox re-match failed: %s', type(err).__name__)
         return _announce(company_id, new_ids)
     finally:
         _lock.release()
@@ -458,26 +510,72 @@ def _save_state(company_id, validity, last_uid, error):
 
 
 def _announce(company_id, ids):
+    """Tell the team of each company about its new emails (an email is stored under the company of its home)."""
     out = {'new': 0, 'unassigned': 0, 'urgent': 0}
     if not ids:
         return out
     with transaction() as conn:
-        marks = ','.join('?' for _ in ids)
-        rows = [dict(r) for r in conn.execute(f"SELECT m.id,m.subject,m.urgent,m.property_id,m.status,p.address FROM mail_messages m LEFT JOIN properties p ON p.id=m.property_id WHERE m.id IN ({marks})", ids)]
+        rows = [dict(r) for r in conn.execute(f"SELECT m.id,m.company_id,m.subject,m.urgent,m.property_id,m.status,p.address FROM mail_messages m "
+                                              f"LEFT JOIN properties p ON p.id=m.property_id WHERE m.id IN ({_marks(ids)})", ids)]
         rows = [r for r in rows if r['status'] == 'new']
         if not rows:
             return out
         out = {'new': len(rows), 'unassigned': sum(1 for r in rows if not r['property_id']), 'urgent': sum(1 for r in rows if r['urgent'])}
         from .portal_access import notify
-        team = [r[0] for r in conn.execute(f"SELECT m.user_id FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=? AND u.active=1 AND m.role IN {TEAM}", (company_id,))]
-        for r in rows:
-            if r['urgent']:
-                notify(conn, company_id, team, 'Urgent email', f"{r['address'] or 'Unassigned'}: {r['subject']}", 'mailbox')
-        normal = out['new'] - out['urgent']
-        if normal:
-            extra = f" ({out['unassigned']} unassigned)" if out['unassigned'] else ''
-            notify(conn, company_id, team, 'New emails', f"{normal} new {'email' if normal == 1 else 'emails'} in the mailbox{extra}.", 'mailbox')
+        for cid in sorted({r['company_id'] for r in rows}):
+            mine = [r for r in rows if r['company_id'] == cid]
+            team = [r[0] for r in conn.execute(f"SELECT m.user_id FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.company_id=? AND u.active=1 AND m.role IN {TEAM}", (cid,))]
+            for r in mine:
+                if r['urgent']:
+                    notify(conn, cid, team, 'Urgent email', f"{r['address'] or 'Unassigned'}: {r['subject']}", 'mailbox')
+            normal = sum(1 for r in mine if not r['urgent'])
+            if normal:
+                waiting = sum(1 for r in mine if not r['property_id'])
+                extra = f" ({waiting} unassigned)" if waiting else ''
+                notify(conn, cid, team, 'New emails', f"{normal} new {'email' if normal == 1 else 'emails'} in the mailbox{extra}.", 'mailbox')
     return out
+
+
+def _clash(conn, from_company, thread_key, to_company):
+    """True when an email of this conversation is already stored under the other company (the move would duplicate it)."""
+    return to_company != from_company and conn.execute(
+        'SELECT 1 FROM mail_messages a JOIN mail_messages b ON b.message_id=a.message_id WHERE a.company_id=? AND a.thread_key=? AND b.company_id=? LIMIT 1',
+        (from_company, thread_key, to_company)).fetchone() is not None
+
+
+def _move_thread(conn, from_company, thread_key, to_company, pid, contract_id, tenant_id, case_id, how):
+    """Link a whole conversation to a home; when the home is in another company, the conversation moves to that company."""
+    if to_company != from_company:
+        conn.execute('UPDATE mail_messages SET company_id=?,property_id=?,contract_id=?,tenant_id=?,case_id=?,matched_by=? WHERE company_id=? AND thread_key=?',
+                     (to_company, pid, contract_id, tenant_id, case_id, how, from_company, thread_key))
+    else:
+        conn.execute('UPDATE mail_messages SET property_id=?,contract_id=?,tenant_id=COALESCE(tenant_id,?),case_id=?,matched_by=? WHERE company_id=? AND thread_key=?',
+                     (pid, contract_id, tenant_id, case_id, how, from_company, thread_key))
+
+
+def rematch(limit=300):
+    """Emails that wait under Unassigned are tried again (without the AI): a tenant or home that was added later, or that
+    is in another company, is found now. Emails the team took off a home on purpose are left alone."""
+    linked = 0
+    with transaction() as conn:
+        companies = served(conn)
+        if not companies:
+            return 0
+        rows = conn.execute("SELECT id,company_id,message_id,refs,thread_key,subject,body,from_addr FROM mail_messages "
+                            "WHERE direction='in' AND status='new' AND property_id IS NULL AND matched_by<>'unlinked' ORDER BY id DESC LIMIT ?", (limit,)).fetchall()
+        seen = set()
+        for r in rows:
+            if (r['company_id'], r['thread_key']) in seen:
+                continue
+            seen.add((r['company_id'], r['thread_key']))
+            m = {'refs': [x for x in (r['refs'] or '').split() if x], 'message_id': r['message_id'], 'subject': r['subject'] or '',
+                 'body': r['body'] or '', 'from_addr': r['from_addr'] or ''}
+            pid, contract_id, tenant_id, case_id, _, how, _, owner = find_home(conn, [r['company_id']] + [c for c in companies if c != r['company_id']], m)
+            if not pid or not owner or _clash(conn, r['company_id'], r['thread_key'], owner):
+                continue
+            _move_thread(conn, r['company_id'], r['thread_key'], owner, pid, contract_id, tenant_id, case_id if owner == r['company_id'] or how == 'conversation' else None, how)
+            linked += 1
+    return linked
 
 
 def check_all():
@@ -535,10 +633,12 @@ def mail_list(company_id: int, box: str = 'action', q: str = '', property_id: in
         counts = {k: conn.execute(f"SELECT COUNT(*) FROM mail_messages m WHERE m.company_id=? AND m.direction='in' AND {cond}", (company_id,)).fetchone()[0]
                   for k, cond in (('action', "m.status='new' AND m.property_id IS NOT NULL"), ('unassigned', "m.status='new' AND m.property_id IS NULL"),
                                   ('urgent', "m.status='new' AND m.urgent=1"))}
-        st = conn.execute('SELECT checked_at,error FROM mail_state WHERE company_id=?', (company_id,)).fetchone()
+        st = conn.execute('SELECT checked_at,error FROM mail_state WHERE company_id=?', (mailbox_company(conn),)).fetchone()
         s = settings()
-        here = bool(s) and mailbox_company(conn) == company_id
-    return {'messages': rows, 'counts': counts, 'connected': here, 'address': s['address'] if here else '',
+        here = bool(s) and company_id in served(conn)
+        main = mailbox_company(conn)
+        main_name = conn.execute('SELECT name FROM companies WHERE id=?', (main,)).fetchone() if main and main != company_id else None
+    return {'messages': rows, 'counts': counts, 'connected': here, 'address': s['address'] if here else '', 'unassigned_at': main_name[0] if main_name else '',
             'checked_at': st['checked_at'] if st and here else None, 'error': st['error'] if st and here else None, 'minutes': minutes(),
             'ai': bool(os.environ.get('OPENROUTER_API_KEY', '').strip())}
 
@@ -550,6 +650,17 @@ def mail_counts(company_id: int, user=Depends(current_user)):
         authorize(conn, user, company_id, STAFF)
         r = conn.execute("SELECT COUNT(*) n,SUM(CASE WHEN property_id IS NULL THEN 1 ELSE 0 END) u,SUM(urgent) g FROM mail_messages WHERE company_id=? AND direction='in' AND status='new'", (company_id,)).fetchone()
     return {'new': r['n'] or 0, 'unassigned': r['u'] or 0, 'urgent': r['g'] or 0}
+
+
+@router.get('/api/mail/homes')
+def mail_homes(user=Depends(current_user)):
+    """The homes an email can be linked to: those of every company in which this user works with the mailbox."""
+    with connect() as conn:
+        mine = staff_companies(conn, user)
+        rows = [dict(r) for r in conn.execute(
+            f'SELECT p.id,p.address,p.name,p.city,p.company_id,c.name company FROM properties p JOIN companies c ON c.id=p.company_id '
+            f'WHERE p.company_id IN ({_marks(mine)}) ORDER BY c.name,p.address', mine)] if mine else []
+    return {'homes': rows}
 
 
 @router.get('/api/mail/{mail_id}')
@@ -571,7 +682,9 @@ def mail_detail(mail_id: int, user=Depends(current_user)):
         case = dict(conn.execute('SELECT id,subject,kind,status,priority,next_deadline FROM property_cases WHERE id=?', (m['case_id'],)).fetchone()) if m['case_id'] else None
         meta = json.loads(m['ai'] or '{}')
         cand = meta.get('candidates') or []
-        candidates = [dict(r) for r in conn.execute(f"SELECT id,address,city FROM properties WHERE id IN ({','.join('?' for _ in cand)})", cand)] if cand and not m['property_id'] else []
+        mine = staff_companies(conn, user) if cand and not m['property_id'] else []
+        candidates = [dict(r) for r in conn.execute(f"SELECT p.id,p.address,p.city,p.company_id,c.name company FROM properties p JOIN companies c ON c.id=p.company_id "
+                                                    f"WHERE p.id IN ({_marks(cand)}) AND p.company_id IN ({_marks(mine)})", (*cand, *mine))] if mine else []
     m.pop('ai', None)
     m['attachments'] = json.loads(m['attachments'] or '[]')
     return {'message': m, 'thread': thread, 'property': prop, 'tenant': dict(tenant) if tenant else None, 'case': case, 'cases': cases, 'contracts': contracts,
@@ -584,20 +697,29 @@ def _thread_update(conn, m, sets, args):
 
 @router.post('/api/mail/{mail_id}/home')
 def mail_home(mail_id: int, data: dict, user=Depends(current_user)):
-    """Link the conversation to a home (and tenancy), or take it off (it goes back to Unassigned)."""
+    """Link the conversation to a home (and tenancy), or take it off (it goes back to Unassigned). The home may be in
+    another company: the conversation then moves to that company, for people who work in both."""
     with transaction() as conn:
         m = _row(conn, mail_id, user)
         pid = data.get('property_id')
         if pid in (None, '', 0, '0'):
-            _thread_update(conn, m, 'property_id=NULL,contract_id=NULL,case_id=NULL,matched_by=?', ('',))
+            main = mailbox_company(conn)
+            back = main if main and main != m['company_id'] and main in staff_companies(conn, user) and not _clash(conn, m['company_id'], m['thread_key'], main) else m['company_id']
+            _move_thread(conn, m['company_id'], m['thread_key'], back, None, None, m['tenant_id'] if back == m['company_id'] else None, None, 'unlinked')
             audit(conn, user['id'], m['company_id'], 'unlinked', 'mail', mail_id, {})
-            return {'ok': True}
+            return {'ok': True, 'company_id': back}
         try:
             pid = int(pid)
         except (TypeError, ValueError):
             raise HTTPException(422, 'Choose a home.')
-        if not conn.execute('SELECT 1 FROM properties WHERE id=? AND company_id=?', (pid, m['company_id'])).fetchone():
-            raise HTTPException(422, 'Choose a home of this company.')
+        target = _company_of(conn, pid)
+        if not target or target not in served(conn):
+            raise HTTPException(422, 'Choose a home.')
+        if target != m['company_id']:
+            if target not in staff_companies(conn, user):
+                raise HTTPException(403, 'You do not have access to the company of this home.')
+            if _clash(conn, m['company_id'], m['thread_key'], target):
+                raise HTTPException(409, 'This conversation is already stored with that company.')
         cid = data.get('contract_id')
         try:
             cid = int(cid) if cid else None
@@ -608,9 +730,10 @@ def mail_home(mail_id: int, data: dict, user=Depends(current_user)):
         cid = cid or _live_contract(conn, pid)
         tenant = conn.execute('SELECT tenant_id FROM contracts WHERE id=?', (cid,)).fetchone() if cid else None
         keep_case = m['case_id'] if m['property_id'] == pid else None
-        _thread_update(conn, m, 'property_id=?,contract_id=?,tenant_id=COALESCE(tenant_id,?),case_id=?,matched_by=?', (pid, cid, tenant[0] if tenant else None, keep_case, 'team'))
-        audit(conn, user['id'], m['company_id'], 'linked', 'mail', mail_id, {'property_id': pid})
-    return {'ok': True}
+        _move_thread(conn, m['company_id'], m['thread_key'], target, pid, cid, tenant[0] if tenant else None, keep_case, 'team')
+        audit(conn, user['id'], target, 'linked', 'mail', mail_id, {'property_id': pid, 'from_company': m['company_id']} if target != m['company_id'] else {'property_id': pid})
+        name = conn.execute('SELECT name FROM companies WHERE id=?', (target,)).fetchone()[0]
+    return {'ok': True, 'company_id': target, 'company': name, 'moved': target != m['company_id']}
 
 
 @router.post('/api/mail/{mail_id}')
@@ -912,9 +1035,10 @@ def mail_check(data: dict, user=Depends(current_user)):
         raise HTTPException(422, 'Choose a company.')
     with connect() as conn:
         authorize(conn, user, company_id, STAFF)
-        if not settings() or mailbox_company(conn) != company_id:
+        if not settings() or company_id not in served(conn):
             raise HTTPException(409, 'The mailbox is not connected for this company.')
+        main = mailbox_company(conn)
     try:
-        return check(company_id)
+        return check(main)
     except RuntimeError as err:
         raise HTTPException(502, str(err))

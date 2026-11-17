@@ -21,7 +21,7 @@
     conversation: 'Same conversation as an earlier email', team: 'Linked by the team'};
   const nl = () => (window.kreinLang || document.documentElement.lang) === 'nl';
   const ini = s => String(s || '?').replace(/[<>"]/g, '').split(/[\s@.]+/).filter(Boolean).slice(0, 2).map(x => x[0].toUpperCase()).join('') || '?';
-  const ui = {box: 'action', q: '', cat: '', list: null, info: null, key: '', loading: false, error: '', sel: null, d: null, reply: '', sending: false, drafting: false, checking: false, homeEdit: false};
+  const ui = {box: 'action', q: '', cat: '', list: null, info: null, key: '', loading: false, error: '', sel: null, d: null, reply: '', sending: false, drafting: false, checking: false, homeEdit: false, homes: null, homesLoading: false};
   try { const saved = JSON.parse(sessionStorage.getItem('krein_mail') || '{}'); if (saved.box) ui.box = saved.box; } catch { /* storage unavailable */ }
   if (!BOXES.some(b => b[0] === ui.box)) ui.box = 'action';
   const remember = () => { try { sessionStorage.setItem('krein_mail', JSON.stringify({box: ui.box})); } catch { /* storage unavailable */ } };
@@ -79,7 +79,8 @@
         <p>When the login of the company mailbox is added to the server settings, new emails show here by themselves, linked to the right home.</p></div></div>`;
     }
     const last = i.checked_at ? `<span>Last check: ${e(when(i.checked_at))}</span>` : '<span>Not checked yet</span>';
-    return `<p class="mail-status">${icon('check')}<span>Connected to <strong translate="no">${e(i.address)}</strong></span><span>Checked every ${i.minutes} minutes</span>${last}${i.ai ? '<span>AI summaries on</span>' : ''}</p>
+    const elsewhere = i.unassigned_at ? `<span>${e(nl() ? `Niet gekoppelde e-mails staan bij ${i.unassigned_at}` : `Emails not linked yet are under ${i.unassigned_at}`)}</span>` : '';
+    return `<p class="mail-status">${icon('check')}<span>Connected to <strong translate="no">${e(i.address)}</strong></span><span>Checked every ${i.minutes} minutes</span>${last}${i.ai ? '<span>AI summaries on</span>' : ''}${elsewhere}</p>
       ${i.error ? `<div class="notice warning">${icon('info')}<span>${e(i.error)}</span></div>` : ''}`;
   }
 
@@ -114,11 +115,19 @@
         <div class="mail-link-item"><span class="mail-label">Case</span>${k ? `<button type="button" class="link-button" data-mail="case-open">${icon('clipboard')} ${e(k.subject)}</button><small>${window.kreinCases ? window.kreinCases.status(k.status) : e(k.status)}</small>` : '<span class="muted">No case yet</span>'}</div>
         <button type="button" class="button small" data-mail="home-edit">Change</button></div>`;
     }
-    const opts = rows('properties').slice().sort((a, b) => String(a.address || a.name).localeCompare(String(b.address || b.name)));
+    if (ui.homes === null) loadHomes();
+    const homes = ui.homes || rows('properties').map(x => ({...x, company_id: state.company}));
+    const byName = (a, b) => String(a.address || a.name).localeCompare(String(b.address || b.name));
+    const option = x => `<option value="${x.id}" ${p && p.id === x.id ? 'selected' : ''}>${e(x.address || x.name)}${x.city ? ', ' + e(x.city) : ''}</option>`;
+    const groups = [...new Set(homes.map(x => x.company_id))].sort((a, b) => (b === state.company) - (a === state.company));
+    const opts = groups.length > 1
+      ? groups.map(g => { const list = homes.filter(x => x.company_id === g).sort(byName); return `<optgroup label="${e(list[0].company || '')}">${list.map(option).join('')}</optgroup>`; }).join('')
+      : homes.slice().sort(byName).map(option).join('');
+    const where = c => c.company_id && c.company_id !== state.company && c.company ? ` <small>· ${e(c.company)}</small>` : '';
     return `<div class="mail-link is-missing"><div><strong>${p ? 'Link this email to another home' : 'Which home is this email about?'}</strong>
         <p>${p ? 'The whole conversation moves to the home you choose.' : 'The software could not tell for sure. Choose the home; the rest of the conversation follows.'}</p>
-        ${d.candidates.length ? `<div class="mail-cands"><span class="mail-label">Possibly</span>${d.candidates.map(c => `<button type="button" class="button small" data-mail-home="${c.id}">${icon('home')} ${e(c.address)}</button>`).join('')}</div>` : ''}
-        <div class="mail-pick"><select data-mail-home-select aria-label="Home"><option value="">Choose a home…</option>${opts.map(x => `<option value="${x.id}" ${p && p.id === x.id ? 'selected' : ''}>${e(x.address || x.name)}${x.city ? ', ' + e(x.city) : ''}</option>`).join('')}</select>
+        ${d.candidates.length ? `<div class="mail-cands"><span class="mail-label">Possibly</span>${d.candidates.map(c => `<button type="button" class="button small" data-mail-home="${c.id}">${icon('home')} ${e(c.address)}${where(c)}</button>`).join('')}</div>` : ''}
+        <div class="mail-pick"><select data-mail-home-select aria-label="Home"><option value="">Choose a home…</option>${opts}</select>
           <button type="button" class="button primary small" data-mail="home-save">Link</button>
           ${p ? '<button type="button" class="button small" data-mail="home-cancel">Cancel</button><button type="button" class="button link small" data-mail="home-remove">Unlink</button>' : ''}</div></div></div>`;
   }
@@ -263,11 +272,27 @@
   const baseRefresh = refresh;
   refresh = async (...a) => {
     const r = await baseRefresh(...a);
+    ui.homes = null;
     if (state.page === 'mailbox') { load(true); if (ui.sel) open(ui.sel, true); }
     else if (state.page === 'overview') loadDash();
     Object.keys(homeMail).forEach(k => { homeMail[k].at = 0; });
     return r;
   };
+
+  async function loadHomes() {
+    if (ui.homesLoading) return;
+    ui.homesLoading = true;
+    try { ui.homes = (await api('/api/mail/homes')).homes; } catch { ui.homes = false; }
+    ui.homesLoading = false;
+    if (state.page === 'mailbox' && ui.homes) render();
+  }
+  async function linkHome(id, pid) {
+    const r = await post(`/api/mail/${id}/home`, {property_id: pid});
+    if (!r) return;
+    toast(r.moved ? (nl() ? `Gekoppeld aan de woning. De e-mail staat nu bij ${r.company}.` : `Linked to the home. The email is now under ${r.company}.`) : 'Linked to the home.');
+    ui.homeEdit = false; open(id, true); load(true);
+    if (typeof window.kreinMenuRefresh === 'function') window.kreinMenuRefresh();
+  }
 
   async function post(url, body, okMsg) {
     try { const r = await api(url, {method: 'POST', body}); if (okMsg) toast(okMsg); return r; }
@@ -280,7 +305,7 @@
     const bx = ev.target.closest('[data-mail-box]');
     if (bx) { ui.box = bx.dataset.mailBox; ui.cat = ''; remember(); ui.list = null; render(); load(true); return; }
     const hm = ev.target.closest('[data-mail-home]');
-    if (hm && ui.d) { if (await post(`/api/mail/${ui.d.message.id}/home`, {property_id: Number(hm.dataset.mailHome)}, 'Linked to the home.')) { ui.homeEdit = false; open(ui.sel, true); load(true); } return; }
+    if (hm && ui.d) { linkHome(ui.d.message.id, Number(hm.dataset.mailHome)); return; }
     const all = ev.target.closest('[data-mail-home-all]');
     if (all) { const pid = Number(all.dataset.mailHomeAll); homeMail[pid].all = true; document.getElementById('pf-mail').outerHTML = panel(pid); return; }
     const tk = ev.target.closest('[data-mail-task]');
@@ -315,7 +340,7 @@
     else if (act === 'home-save') {
       const v = Number(document.querySelector('[data-mail-home-select]')?.value || 0);
       if (!v) { toast('Choose a home.'); return; }
-      if (await post(`/api/mail/${id}/home`, {property_id: v}, 'Linked to the home.')) { ui.homeEdit = false; open(id, true); load(true); }
+      linkHome(id, v);
     } else if (act === 'home-remove') {
       if (!confirm('Unlink this conversation from the home? It goes back to Unassigned.')) return;
       if (await post(`/api/mail/${id}/home`, {property_id: null}, 'Unlinked.')) { ui.homeEdit = false; open(id, true); load(true); }

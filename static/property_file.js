@@ -269,7 +269,7 @@ window.kreinCases = (() => {
       documents: docs,
     }[tab] || overview;
     const mail = staff && window.kreinMail ? window.kreinMail.panel(p.id) : '';   // the emails about this home (static/mailbox.js)
-    return head + cases + mail + note + tabs + body;
+    return head + cases + note + mail + tabs + body;
   }
 
   const baseRender = renderPage;

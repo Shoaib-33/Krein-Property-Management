@@ -168,6 +168,63 @@ class MailboxTests(unittest.TestCase):
         self.login('tenant@krein.local')
         self.assertIn(self.client.get(f'/api/mail/{mail_id}/attachments/0').status_code, (403, 404))
 
+    def copy_row(self, conn, table, row_id, **changes):
+        row = dict(conn.execute(f'SELECT * FROM {table} WHERE id=?', (row_id,)).fetchone())
+        row.pop('id')
+        row.update(changes)
+        cols = ','.join(row)
+        return conn.execute(f"INSERT INTO {table}({cols}) VALUES({','.join('?' for _ in row)})", list(row.values())).lastrowid
+
+    def test_homes_of_every_company(self):
+        """The mailbox serves every company: an email is stored under the company of its home."""
+        with db.transaction() as conn:
+            c = conn.execute("SELECT c.id,c.property_id,c.tenant_id FROM contracts c JOIN properties p ON p.id=c.property_id WHERE p.address='Lindengracht 42 A'").fetchone()
+            pid = self.copy_row(conn, 'properties', c['property_id'], company_id=2, address='Foulkeslaan 117', city='Delft', postcode='2625 PA')
+            tid = self.copy_row(conn, 'tenants', c['tenant_id'], company_id=2, email='nina@example.com', name='Nina')
+            cid = self.copy_row(conn, 'contracts', c['id'], company_id=2, property_id=pid, tenant_id=tid)
+            other = self.copy_row(conn, 'properties', c['property_id'], company_id=2, address='Mekelweg 9', city='Delft', postcode='2628 CD')
+        msgs = {31: raw_email('Nina <nina@example.com>', 'Verwarming', 'De verwarming is kapot.', '<x1@example.com>'),
+                32: raw_email('Iemand <iemand@example.net>', 'Vraag', 'Over Mekelweg 9 in Delft: wanneer komt de schilder?', '<x2@example.com>'),
+                33: raw_email('Onbekend <later@example.net>', 'Lekkage', 'Het lekt bij mij.', '<x3@example.com>')}
+        with mock.patch.object(mailbox, '_connect_imap', return_value=FakeImap(msgs)):
+            mailbox.check(1, use_ai=False)
+        with db.connect() as conn:
+            rows = {r['message_id']: dict(r) for r in conn.execute('SELECT * FROM mail_messages')}
+        self.assertEqual((rows['<x1@example.com>']['company_id'], rows['<x1@example.com>']['property_id'], rows['<x1@example.com>']['tenant_id']), (2, pid, tid))
+        self.assertEqual((rows['<x2@example.com>']['company_id'], rows['<x2@example.com>']['property_id']), (2, other))
+        self.assertEqual((rows['<x3@example.com>']['company_id'], rows['<x3@example.com>']['property_id']), (1, None))   # not clear: stays with the mailbox company
+        # the team links the unclear email to a home of the other company: the conversation moves there
+        h = self.login('admin@krein.local')
+        x3 = rows['<x3@example.com>']['id']
+        homes = self.client.get('/api/mail/homes').json()['homes']
+        self.assertIn(pid, [h['id'] for h in homes])
+        r = self.client.post(f'/api/mail/{x3}/home', json={'property_id': pid}, headers=h)
+        self.assertEqual((r.status_code, r.json()['moved'], r.json()['company_id']), (200, True, 2), r.text)
+        with db.connect() as conn:
+            self.assertEqual(tuple(conn.execute('SELECT company_id,property_id,matched_by FROM mail_messages WHERE id=?', (x3,)).fetchone()), (2, pid, 'team'))
+        self.assertIn(x3, [m['id'] for m in self.client.get('/api/mail?company_id=2&box=all').json()['messages']])
+        # unlinking sends it back to the mailbox company, and the automatic re-check leaves it alone
+        self.client.post(f'/api/mail/{x3}/home', json={'property_id': None}, headers=h)
+        mailbox.rematch()
+        with db.connect() as conn:
+            self.assertEqual(tuple(conn.execute('SELECT company_id,property_id,matched_by FROM mail_messages WHERE id=?', (x3,)).fetchone()), (1, None, 'unlinked'))
+        # a manager of the first company only cannot move an email into a company he has no access to
+        self.client.cookies.clear()
+        h = self.login('manager@krein.local')
+        self.assertNotIn(pid, [h['id'] for h in self.client.get('/api/mail/homes').json()['homes']])
+        self.assertEqual(self.client.post(f'/api/mail/{x3}/home', json={'property_id': pid}, headers=h).status_code, 403)
+
+    def test_rematch_finds_a_tenant_added_later(self):
+        with mock.patch.object(mailbox, '_connect_imap', return_value=FakeImap({41: raw_email('New <new@example.com>', 'Sleutel', 'Ik ben mijn sleutel kwijt.', '<y1@example.com>')})):
+            mailbox.check(1, use_ai=False)
+        with db.transaction() as conn:
+            c = conn.execute("SELECT c.tenant_id FROM contracts c JOIN properties p ON p.id=c.property_id WHERE p.address='Lindengracht 42 A'").fetchone()
+            conn.execute("UPDATE tenants SET email='new@example.com' WHERE id=?", (c['tenant_id'],))
+        self.assertEqual(mailbox.rematch(), 1)
+        with db.connect() as conn:
+            r = conn.execute("SELECT property_id,matched_by FROM mail_messages WHERE message_id='<y1@example.com>'").fetchone()
+        self.assertEqual((r['property_id'], r['matched_by']), (self.home('Lindengracht 42 A'), 'tenant'))
+
     def test_screens_case_task_and_reply(self):
         h = self.login()
         a = mailbox.store(1, mailbox.parse(raw_email('Emma <emma@example.com>', 'Lekkage badkamer', 'Er lekt water in de badkamer.', '<b1@example.com>')), use_ai=False)
@@ -221,8 +278,9 @@ class MailboxTests(unittest.TestCase):
             conn.execute("INSERT INTO memberships(user_id,company_id,role) VALUES(?,?,'manager')", (uid, other))
         h = self.login()
         r = self.client.get(f'/api/mail?company_id={other}', headers=h).json()
-        self.assertEqual((r['messages'], r['connected']), ([], False))
-        self.assertEqual(self.client.post('/api/mailbox/check', headers=h, json={'company_id': other}).status_code, 409)
+        self.assertEqual((r['messages'], r['connected']), ([], True))     # the mailbox serves every company
+        with mock.patch.object(mailbox, '_connect_imap', return_value=FakeImap({})):
+            self.assertEqual(self.client.post('/api/mailbox/check', headers=h, json={'company_id': other}).status_code, 200)
         # an email stays when its home is deleted; it goes back to Unassigned
         from app.developer import delete_records
         with db.transaction() as conn:
