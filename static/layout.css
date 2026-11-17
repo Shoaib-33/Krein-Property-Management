@@ -74,6 +74,28 @@ button.kcard:hover{box-shadow:0 6px 18px #0d352a17;transform:translateY(-1px)}
 .issue.red{background:#fbe7e3;color:#c2412d}.issue.amber{background:#fcf1de;color:#a86a0c}.issue.blue{background:#e8f0fa;color:#3a6fae}.issue.gray{background:#eef2f0;color:#5d6d66}.issue.green{background:#e2f3ec;color:#1f7a5f}
 .hl-row-click{cursor:pointer}
 .hl-empty{padding:30px}
+/* complexes and shared houses (static/buildings.js): the building row, its homes indented under it */
+.hl-bld{cursor:pointer;background:#f4f8f6}
+.hl-bld td{border-top:2px solid var(--line)}
+.hl-bld-name{display:flex;align-items:center;gap:8px}
+.hl-bld-name .icon{width:17px;height:17px;color:var(--brand);flex:none}
+.hl-bld-name strong{display:inline}
+.hl-caret{flex:none;width:26px;height:26px;border:1px solid var(--line);border-radius:7px;background:#fff;color:var(--ink-2);font-size:13px;line-height:1;cursor:pointer;display:grid;place-items:center}
+.hl-caret:hover{border-color:var(--brand);color:var(--brand)}
+.hl-bld + .hl-unit td,.hl-unit td{background:#fbfdfc}
+.hl-unit td.hl-addr{padding-left:52px;position:relative}
+.hl-unit td.hl-addr::before{content:"";position:absolute;left:30px;top:0;bottom:0;border-left:2px solid #cfe0d7}
+.pf-partof{display:flex;align-items:center;gap:6px;margin:6px 0 0;font-size:14px}
+.pf-partof .icon{width:16px;height:16px;color:var(--brand)}
+.pf-partof .button.link{padding:0;min-height:0;font-weight:700}
+.bld-search{margin:4px 0 10px}
+.bld-picks{max-height:52vh;overflow:auto;border:1px solid var(--line);border-radius:12px}
+.bld-pick{display:flex;gap:12px;align-items:flex-start;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer}
+.bld-pick:last-child{border-bottom:0}
+.bld-pick[hidden]{display:none}
+.bld-pick input{margin-top:3px;width:18px;height:18px;flex:none}
+.bld-pick strong{display:block}
+.bld-pick small{display:block}
 
 /* ---------- home page: header, tabs, overview cards ---------- */
 .pf-status{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:4px 12px;font-size:13px;font-weight:750}

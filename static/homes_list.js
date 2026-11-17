@@ -68,6 +68,8 @@
     return {p, live, next, tenant, rent, status, label, labelState, exp, repairs, cases, owner, missing, issues, open, anyMissing: Object.values(missing).some(Boolean)};
   }
   const allFacts = () => rows('properties').map(facts);
+  /** The line a home is known by: its address, or its name when that is the address plus more (a room: "Oude Delft 10 K1"). */
+  const title = p => { const a = String(p.address || '').trim(), n = String(p.name || '').trim(); return n && a && n.length > a.length && n.toLowerCase().startsWith(a.toLowerCase()) ? n : a || n; };
   /** The one occupancy rule, used on Homes, the dashboard and All companies (app/team.py counts the same way):
       rented = a contract runs today, or a tenant lives here without a registered contract ("contract missing");
       vacant = every other home, of which "reserved" have a contract that starts later. */
@@ -76,7 +78,7 @@
     const total = all.length, contract = n('rented'), nocontract = n('nocontract'), reserved = n('reserved'), rented = contract + nocontract;
     return {total, rented, contract, nocontract, reserved, vacant: total - rented, pct: total ? Math.round(rented / total * 100) : 0};
   }
-  window.kreinHomes = {facts, allFacts, withoutContract, occupancy, openCases: () => openCases, reloadCases: loadCases, running, comingUp};
+  window.kreinHomes = {facts, allFacts, withoutContract, occupancy, openCases: () => openCases, reloadCases: loadCases, running, comingUp, title};
 
   const STATUS = {rented: ['Rented', 'green'], nocontract: ['Rented, contract missing', 'amber'], reserved: ['Reserved', 'blue'], vacant: ['Vacant', 'gray']};
   window.kreinHomes.STATUS = STATUS;
@@ -105,41 +107,78 @@
       <div class="hl-view" role="group" aria-label="View"><button type="button" data-hl-view="list" class="${f.view === 'list' ? 'active' : ''}">${icon('menu')}List</button><button type="button" data-hl-view="tiles" class="${f.view === 'tiles' ? 'active' : ''}">${icon('grid')}Tiles</button></div></div>`;
 
     const q = f.q.toLowerCase().trim();
-    const list = all.filter(x => (!q || `${x.p.name} ${x.p.address} ${x.p.postcode} ${x.p.city} ${x.tenant ? x.tenant.name : ''} ${x.p.bag_id || ''}`.toLowerCase().includes(q))
+    const blds = new Map(rows('buildings').map(b => [b.id, b]));
+    const bOf = x => (x.p.building_id && blds.get(x.p.building_id)) || null;
+    const list = all.filter(x => (!q || `${x.p.name} ${x.p.address} ${x.p.postcode} ${x.p.city} ${x.tenant ? x.tenant.name : ''} ${x.p.bag_id || ''} ${bOf(x) ? bOf(x).name : ''}`.toLowerCase().includes(q))
       && (!f.city || String(x.p.city || '').trim() === f.city) && (!f.owner || x.owner === f.owner)
       && (!f.status || x.status === f.status || (f.status === 'notvacant' && ['rented', 'nocontract'].includes(x.status)) || (f.status === 'empty' && ['reserved', 'vacant'].includes(x.status)))
       && (!f.missing || (f.missing === 'any' ? x.anyMissing : f.missing === 'labelexp' ? ['expired', 'expiring'].includes(x.labelState) : f.missing === 'open' ? x.open : x.missing[f.missing])));
     const key = {address: x => `${x.p.address} ${x.p.name}`.toLowerCase(), tenant: x => (x.tenant ? x.tenant.name : '~').toLowerCase(), rent: x => x.rent ?? -1, label: x => x.label || 'Z', issues: x => -x.issues.filter(i => i[1] !== 'green').length};
     const k = key[f.sort] || key.address;
     list.sort((a, b) => { const va = k(a), vb = k(b); return (va < vb ? -1 : va > vb ? 1 : 0) * f.dir; });
-    const size = 25, pages = Math.max(1, Math.ceil(list.length / size));
+    const entries = [], groups = new Map();
+    for (const x of list) {
+      const b = bOf(x);
+      if (!b) { entries.push({x}); continue; }
+      if (!groups.has(b.id)) { const g = {b, units: []}; groups.set(b.id, g); entries.push(g); }
+      groups.get(b.id).units.push(x);
+    }
+    const size = 25, pages = Math.max(1, Math.ceil(entries.length / size));
     f.page = Math.min(Math.max(1, f.page), pages);
-    const shown = list.slice((f.page - 1) * size, f.page * size);
+    const shownEntries = entries.slice((f.page - 1) * size, f.page * size);
     const filtered = q || f.city || f.owner || f.status || f.missing;
+    const opened = f.open || (f.open = {});
+    const isOpen = b => filtered || opened[b.id];
 
     const th = (id, label) => `<th${id ? ` class="sortable" data-hl-sort="${id}" tabindex="0" aria-sort="${f.sort === id ? (f.dir > 0 ? 'ascending' : 'descending') : 'none'}"` : ''}>${e(label)}${id && f.sort === id ? `<span aria-hidden="true">${f.dir > 0 ? ' ▲' : ' ▼'}</span>` : ''}</th>`;
     const tenantCellH = x => x.tenant ? `<span class="hl-tenant"><span class="hl-ini">${e(initials(x.tenant.name))}</span><span>${e(x.tenant.name)}${x.status === 'nocontract' ? '<small>no contract yet</small>' : ''}</span></span>`
       : `<span class="hl-tenant"><span class="hl-ini none">—</span><span class="muted">${x.status === 'reserved' ? e(`From ${dateLabel(x.next.start_date)}: ${tenantFor(x.next.id).name}`) : 'No tenant'}</span></span>`;
-    const rows_ = shown.map(x => `<tr class="hl-row-click" data-hl-open="${x.p.id}">
-        <td class="hl-addr"><strong>${e(x.p.address || x.p.name)}</strong><small>${e([x.p.postcode, x.p.city].filter(Boolean).join(' '))}${x.p.name && !x.p.name.toLowerCase().includes(String(x.p.address || '').toLowerCase()) ? ' · ' + e(x.p.name) : ''}</small></td>
+    const homeRow = (x, unit) => `<tr class="hl-row-click${unit ? ' hl-unit' : ''}" data-hl-open="${x.p.id}">
+        <td class="hl-addr"><strong>${e(title(x.p))}</strong><small>${e([x.p.postcode, x.p.city].filter(Boolean).join(' '))}${x.p.name && !x.p.name.toLowerCase().includes(String(x.p.address || '').toLowerCase()) ? ' · ' + e(x.p.name) : ''}</small></td>
         <td>${tenantCellH(x)}</td>
         <td class="hl-rent">${x.rent != null ? `<span class="amount">${money(x.rent)}</span> <small>/ month</small>` : '<span class="muted">—</span>'}</td>
         <td><span class="lbl ${labelClass(x.label)}">${e(x.label || '—')}</span></td>
         <td class="hl-issues">${x.issues.map(([t, tone]) => `<span class="issue ${tone}">${e(t)}</span>`).join('')}</td>
-        <td>${actionBtn('Open', 'property-detail', x.p.id, 'small')}</td></tr>`).join('');
+        <td>${actionBtn('Open', 'property-detail', x.p.id, 'small')}</td></tr>`;
+    const KB = window.kreinBuildings;
+    const groupIssues = s => {
+      const list_ = [s.vacant ? [`${s.vacant} vacant`, 'gray'] : null, s.nocontract ? [`${s.nocontract} without contract`, 'red'] : null, s.open ? [`${s.open} with open issues`, 'blue'] : null].filter(Boolean);
+      return (list_.length ? list_ : [['No open issues', 'green']]).map(([txt, tone]) => `<span class="issue ${tone}">${e(txt)}</span>`).join('');
+    };
+    const groupRow = g => {
+      const s = KB.summary(g.b), on = isOpen(g.b);
+      return `<tr class="hl-bld${on ? ' is-open' : ''}" data-hl-bld="${g.b.id}">
+        <td class="hl-addr"><span class="hl-bld-name"><button type="button" class="hl-caret" data-hl-bld-toggle="${g.b.id}" aria-expanded="${on ? 'true' : 'false'}" aria-label="${e(on ? 'Fold in' : 'Fold out')}">${on ? '▾' : '▸'}</button>${icon('building')}<strong>${e(g.b.name)}</strong></span>
+          <small><span>${e(g.b.kind === 'Shared house' ? 'Shared house' : 'Complex')}</span> · <span>${e(`${s.n} ${KB.unitWord(g.b, s.n)}`)}</span>${KB.where(g.b) ? ' · <span>' + e(KB.where(g.b)) + '</span>' : ''}</small></td>
+        <td><span class="muted">${e(`${s.rented} of ${s.n} rented`)}</span></td>
+        <td class="hl-rent">${s.rent ? `<span class="amount">${money(s.rent)}</span> <small>/ month</small>` : '<span class="muted">—</span>'}</td><td></td>
+        <td class="hl-issues">${groupIssues(s)}</td>
+        <td><button type="button" class="button small" data-bld-open="${g.b.id}">Open</button></td></tr>`
+        + (on ? g.units.map(x => homeRow(x, true)).join('') : '');
+    };
+    const rows_ = shownEntries.map(en => en.b ? groupRow(en) : homeRow(en.x, false)).join('');
     const tableHtml = `<div class="table-wrap hl-table" data-enh="1"><table><thead><tr>${th('address', 'Address')}${th('tenant', 'Tenant')}${th('rent', 'Rent')}${th('label', 'Energy label')}${th('issues', 'Open issues')}<th></th></tr></thead><tbody>${rows_}</tbody></table></div>`;
-    const tiles = `<div class="property-grid">${shown.map((x, i) => `<article class="property-card"><div class="property-art tone-${i % 3}">${houseArt(i)}${badge(STATUS[x.status][0], STATUS[x.status][1])}</div><div class="property-content"><h3>${e(x.p.address || x.p.name)}</h3><p>${e([x.p.postcode, x.p.city].filter(Boolean).join(' '))}</p>
+    const bTile = (g, i) => {
+      const s = KB.summary(g.b);
+      return `<article class="property-card hl-bld-tile"><div class="property-art tone-${i % 3}">${houseArt(i)}${badge(g.b.kind === 'Shared house' ? 'Shared house' : 'Complex', 'blue')}</div><div class="property-content"><h3>${e(g.b.name)}</h3><p>${e(KB.where(g.b))}</p>
+        <div class="property-specs"><span>${icon('building')} ${e(`${s.n} ${KB.unitWord(g.b, s.n)}`)}</span><span>${icon('users')} ${e(`${s.rented} of ${s.n} rented`)}</span></div>
+        <div>${groupIssues(s)}</div>
+        <div class="property-bottom"><div><strong>${s.rent ? money(s.rent) : '—'}</strong> ${s.rent ? '<small>/ month</small>' : ''}</div><button type="button" class="button" data-bld-open="${g.b.id}">Open</button></div></div></article>`;
+    };
+    const homeTile = (x, i) => `<article class="property-card"><div class="property-art tone-${i % 3}">${houseArt(i)}${badge(STATUS[x.status][0], STATUS[x.status][1])}</div><div class="property-content"><h3>${e(title(x.p))}</h3><p>${e([x.p.postcode, x.p.city].filter(Boolean).join(' '))}</p>
         <div class="property-specs"><span>${icon('users')} ${e(x.tenant ? x.tenant.name : 'No tenant')}</span><span>${icon('leaf')} Label ${e(x.label || '—')}</span></div>
         <div>${x.issues.map(([t, tone]) => `<span class="issue ${tone}">${e(t)}</span>`).join('')}</div>
-        <div class="property-bottom"><div><strong>${x.rent != null ? money(x.rent) : '—'}</strong> ${x.rent != null ? '<small>/ month</small>' : ''}</div>${actionBtn('Open', 'property-detail', x.p.id)}</div></div></article>`).join('')}</div>`;
-    const pager = pages > 1 ? `<div class="pager hl-pager"><span class="result-count">${(f.page - 1) * size + 1}–${Math.min(f.page * size, list.length)} of ${list.length} homes</span><div class="actions">
+        <div class="property-bottom"><div><strong>${x.rent != null ? money(x.rent) : '—'}</strong> ${x.rent != null ? '<small>/ month</small>' : ''}</div>${actionBtn('Open', 'property-detail', x.p.id)}</div></div></article>`;
+    const tiles = `<div class="property-grid">${shownEntries.map((en, i) => en.b ? bTile(en, i) : homeTile(en.x, i)).join('')}</div>`;
+    const pager = pages > 1 ? `<div class="pager hl-pager"><span class="result-count">${list.length} of ${total} homes</span><div class="actions">
         <button type="button" class="button small" data-hl-page="${f.page - 1}" ${f.page <= 1 ? 'disabled' : ''}>‹ Previous</button><span class="result-count">Page ${f.page} of ${pages}</span>
         <button type="button" class="button small" data-hl-page="${f.page + 1}" ${f.page >= pages ? 'disabled' : ''}>Next ›</button></div></div>`
       : `<div class="pager hl-pager"><span class="result-count">${list.length} of ${total} homes</span></div>`;
     const body = !total ? empty('No homes yet', 'Add your first home to start your portfolio.', can ? button('Add home', 'form', 'data-kind="properties"', 'primary') : '')
       : !list.length ? `<section class="panel hl-empty">${empty('No homes found', filtered ? 'No home matches these filters. Change or clear the filters.' : 'There are no homes in this list.', filtered ? '<button type="button" class="button small" data-hl-clear>Clear filters</button>' : '')}</section>`
       : (f.view === 'tiles' ? tiles : `<section class="panel">${tableHtml}</section>`) + pager;
-    return heading('Homes', 'Overview of all homes in your portfolio.', can ? button('Add home', 'form', 'data-kind="properties"', 'primary') : '', 'HOMES') + cards + filters + body;
+    const addB = can && KB ? '<button type="button" class="button" data-bld="new">Add complex or shared house</button>' : '';
+    return heading('Homes', 'Overview of all homes in your portfolio.', can ? addB + button('Add home', 'form', 'data-kind="properties"', 'primary') : '', 'HOMES') + cards + filters + body;
   }
 
   window.kreinHomes.page = page;   // app.js propertiesPage() shows this list, so #properties never opens the old card view
@@ -174,6 +213,8 @@
     if (t.closest('[data-hl-clear]')) { Object.assign(f, {q: '', city: '', owner: '', status: '', missing: '', page: 1}); render(); return; }
     const c = t.closest('[data-hl-card]');
     if (c) { const k = c.dataset.hlCard; Object.assign(f, {status: k === 'rented' ? 'notvacant' : k === 'vacant' ? 'empty' : '', missing: k === 'missing' ? 'any' : k === 'open' ? 'open' : '', page: 1}); render(); return; }
+    const bRow = t.closest('[data-hl-bld]');
+    if (bRow && !t.closest('[data-bld-open]') && (t.closest('[data-hl-bld-toggle]') || !t.closest('button,a'))) { const id = bRow.dataset.hlBld; f.open = f.open || {}; f.open[id] = !f.open[id]; render(); return; }
     const row = t.closest('[data-hl-open]');
     if (row && !t.closest('button,a')) showProperty(Number(row.dataset.hlOpen));
   });

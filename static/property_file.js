@@ -70,8 +70,11 @@ window.kreinCases = (() => {
     ].filter(Boolean);
     const addMenu = addItems.length ? `<div class="pf-add"><button type="button" class="button primary" data-pf-addmenu aria-haspopup="true" aria-expanded="false">${icon('plus')}Add ▾</button>
       <div class="pf-add-menu" role="menu">${addItems.map(([act, ic, label, attrs]) => `<button type="button" role="menuitem" ${attrs || `data-pf="${act}"`}>${icon(ic)}${e(label)}</button>`).join('')}</div></div>` : '';
-    const head = `<div class="tf-back"><button type="button" class="button small" data-pf-back>← All homes</button></div><div class="page-heading tf-head"><div><div class="eyebrow">HOME</div><h1>${e(p.address || p.name)}</h1>
-      <p class="subtitle">${e([p.postcode, p.city].filter(Boolean).join(' '))}${p.name && !p.name.toLowerCase().includes(String(p.address || '').toLowerCase()) ? ' · ' + e(p.name) : ''}</p>
+    const bld = p.building_id ? byId('buildings', p.building_id) : {};
+    const fromBld = state.buildingView && bld.id === state.buildingView;
+    const partOf = bld.id ? `<p class="pf-partof">${icon('building')} <span>${e(bld.kind === 'Shared house' ? 'Room in shared house' : 'Part of complex')}</span> <button type="button" class="button link small" data-bld-open="${bld.id}">${e(bld.name)}</button></p>` : '';
+    const head = `<div class="tf-back"><button type="button" class="button small" data-pf-back>${fromBld ? `← ${e(bld.name)}` : '← All homes'}</button></div><div class="page-heading tf-head"><div><div class="eyebrow">HOME</div><h1>${e(window.kreinHomes ? window.kreinHomes.title(p) : p.address || p.name)}</h1>
+      <p class="subtitle">${e([p.postcode, p.city].filter(Boolean).join(' '))}${p.name && !p.name.toLowerCase().includes(String(p.address || '').toLowerCase()) ? ' · ' + e(p.name) : ''}</p>${partOf}
       <div class="pf-specs"><span>${icon('building')} ${e(p.kind)}</span><span>${icon('area')} ${e(p.area)} m²</span><span>${icon('home')} ${e(p.rooms)} ${Number(p.rooms) === 1 ? 'room' : 'rooms'}</span><span>${icon('leaf')} Label ${e(p.energy_label === 'Unknown' ? '—' : p.energy_label)}</span>${stat}</div></div>
       <div class="actions">${staff ? mb('Edit', 'data-pf="edit"') : ''}${addMenu}</div></div>`;
 
@@ -214,10 +217,10 @@ window.kreinCases = (() => {
     const chip = (t, tone) => `<span class="pf-chip ${tone}">${e(t)}</span>`;
     const go2 = (t, title, ic, body) => `<button type="button" class="pf-card" data-pf-tab="${t}"><div class="pf-card-head"><span class="kcard-icon">${icon(ic)}</span><h3>${e(title)}</h3></div><span class="kcard-go">${icon('arrow')}</span>${body}</button>`;
     const kv = [['Address', p.address], ['City', [p.city, p.postcode].filter(Boolean).join(', ')], ['Type', p.kind], ['Floor area', `${p.area} m²`], ['Rooms', p.rooms],
-      ['Status', stat], ['Owner', hf ? hf.owner : ''], ...(p.bag_id ? [['BAG', p.bag_id]] : [])];
+      ['Status', stat], ['Owner', hf ? hf.owner : ''], ...(bld.id ? [['Complex / house', bld.name]] : []), ...(p.bag_id ? [['BAG', p.bag_id]] : [])];
     const delBtn = state.me.developer ? actionBtn('Delete permanently', 'property-delete-permanent', p.id, 'small danger') : ['admin', 'manager', 'property'].includes(role) ? actionBtn('Delete home', 'property-delete', p.id, 'small danger') : '';
     const details = `<div class="pf-card"><div class="pf-card-head"><span class="kcard-icon">${icon('building')}</span><h3>Home details</h3></div><table class="pf-kv"><tbody>${kv.map(([k, v]) => `<tr><td>${e(k)}</td><td>${k === 'Status' ? v : e(v ?? '')}</td></tr>`).join('')}</tbody></table>
-      ${staff ? `<div class="actions pf-card-acts">${mb('Edit details', 'data-pf="edit"')}${moveTargets().length && role === 'admin' ? mb('Move to another company', 'data-pf="move"') : ''}${delBtn}</div>` : ''}</div>`;
+      ${staff ? `<div class="actions pf-card-acts">${mb('Edit details', 'data-pf="edit"')}${window.kreinBuildings && ['admin', 'manager', 'property'].includes(role) ? mb(bld.id ? 'Change complex or house' : 'Put in a complex or shared house', `data-bld="home" data-pid="${p.id}"`) : ''}${moveTargets().length && role === 'admin' ? mb('Move to another company', 'data-pf="move"') : ''}${delBtn}</div>` : ''}</div>`;
     const tenantCard = go2('tenants', 'Tenant', 'users', resident ? `<p class="big">${e(resident.name)}</p>${resident.email ? `<p class="line">${icon('message')}${e(resident.email)}</p>` : ''}${resident.phone ? `<p class="line">${icon('info')}${e(resident.phone)}</p>` : ''}`
       : '<p class="muted">No tenant. This home is vacant.</p>');
     const lblCls = window.kreinHomes ? window.kreinHomes.labelClass(p.energy_label === 'Unknown' ? '' : p.energy_label) : 'n';
@@ -292,7 +295,12 @@ window.kreinCases = (() => {
   };
 
   document.addEventListener('click', async ev => {
-    if (ev.target.closest('[data-pf-back]')) { ev.preventDefault(); state.propertyView = null; ui.id = null; render(); return; }
+    if (ev.target.closest('[data-pf-back]')) {
+      ev.preventDefault();
+      const b = state.buildingView && byId('properties', state.propertyView).building_id === state.buildingView;
+      if (!b) state.buildingView = null;
+      state.propertyView = null; ui.id = null; render(); return;
+    }
     if (ev.target.closest('[data-pf-done]')) { ev.preventDefault(); ui.showDone = !ui.showDone; render(); return; }
     const tabBtn = ev.target.closest('[data-pf-tab]');
     if (tabBtn) { ev.preventDefault(); ui.tab = tabBtn.dataset.pfTab; render(); document.querySelector('.pf-tabs')?.scrollIntoView({block: 'nearest'}); return; }

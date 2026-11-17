@@ -109,6 +109,8 @@ def filter_payload(conn, result, scope):
     keep_scalar = ('role', 'today', 'invoice_window')
     out = {k: result[k] for k in keep_scalar if k in result}
     out['properties'] = [r for r in result.get('properties', []) if r['id'] in P]
+    mine = {r.get('building_id') for r in out['properties']}   # only the complexes and houses his own homes are in
+    out['buildings'] = [r for r in result.get('buildings', []) if r['id'] in mine]
     out['tenants'] = [r for r in result.get('tenants', []) if r['id'] in T]
     out['contracts'] = [r for r in result.get('contracts', []) if r['id'] in C]
     for key in ('repairs', 'inspections'):

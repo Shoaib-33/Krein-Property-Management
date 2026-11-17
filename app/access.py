@@ -31,7 +31,7 @@ OPS = ('admin', 'manager', 'property', 'landlord')
 # key, label, group, roles it applies to, staff menu pages / portal tabs, API paths (regular expressions, matched from the start)
 FEATURES = [
     # ---- workspace
-    ('properties', 'Properties', 'Workspace', ALL, ['properties'], [r'/api/records/properties', r'/api/properties']),
+    ('properties', 'Properties', 'Workspace', ALL, ['properties'], [r'/api/records/properties', r'/api/properties', r'/api/buildings']),
     ('tenants', 'Tenants', 'Workspace', ALL, ['tenants'], [r'/api/records/tenants', r'/api/tenants/\d+/(archive|restore|partner|bank-accounts|export)']),
     ('contracts', 'Contracts & signing', 'Workspace', ALL, ['contracts'], [r'/api/records/contracts', r'/api/contracts/', r'/api/lease-offers']),
     ('registrations', 'Website registrations', 'Workspace', ('admin', 'manager', 'property'), ['registrations'], [r'/api/registrations']),

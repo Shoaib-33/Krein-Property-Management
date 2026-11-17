@@ -3,7 +3,7 @@
 Every company is its own box: tenants, contracts, invoices, payments and owners never cross. So only a home without that
 history can move: no contracts or contract offers, no costs, settlements or cases, no work orders, and no tenant who lives there
 without a contract. Such a home brings along its own descriptive records (documents of the home itself, gas/water/electricity
-details, planned maintenance, valuations); its owner link is cleared, because owners belong to one company. A home with
+details, planned maintenance, valuations); its owner link and its complex or shared house are cleared, because those belong to one company. A home with
 history stays where it is: the administrator adds it in the other company instead.
 """
 from fastapi import APIRouter, Depends, HTTPException
@@ -59,7 +59,7 @@ def move_home(property_id: int, data: dict, user=Depends(current_user)):
             raise HTTPException(409, 'This home cannot move: it already has ' + ', '.join(found) + ' in this company. '
                                 'Contracts, invoices and money stay with the company they belong to.')
         names = dict(conn.execute('SELECT id,name FROM companies WHERE id IN (?,?)', (source, target)).fetchall())
-        conn.execute('UPDATE properties SET company_id=?,portfolio_id=NULL WHERE id=?', (target, property_id))
+        conn.execute('UPDATE properties SET company_id=?,portfolio_id=NULL,building_id=NULL WHERE id=?', (target, property_id))
         conn.execute('UPDATE documents SET company_id=? WHERE property_id=? AND contract_id IS NULL', (target, property_id))
         for table in CARRIED:
             conn.execute(f'UPDATE {table} SET company_id=? WHERE property_id=?', (target, property_id))

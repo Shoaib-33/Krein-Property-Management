@@ -609,6 +609,8 @@ def all_data(company_id: int, user=Depends(current_user)):
                 result[table] = [dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? AND {history.recent(table)} ORDER BY id DESC', (company_id, since))]
             else:
                 result[table] = [dict(r) for r in conn.execute(f'SELECT * FROM {table} WHERE company_id=? ORDER BY id DESC', (company_id,))]
+        if role != 'inspector':   # complexes and shared houses (app/buildings.py)
+            result['buildings'] = [dict(r) for r in conn.execute('SELECT * FROM buildings WHERE company_id=? ORDER BY name', (company_id,))]
         if role in ('admin', 'manager', 'finance'):
             result['service_charge_groups'] = [dict(r) for r in conn.execute('''SELECT g.*, GROUP_CONCAT(p.id || ':' || p.name || ':' || printf('%.4f',u.share_percent), '|') AS units
                 FROM service_charge_groups g JOIN service_charge_group_units u ON u.group_id=g.id JOIN properties p ON p.id=u.property_id
@@ -748,6 +750,11 @@ def create_record(kind: str, data: dict, user=Depends(current_user)):
                     raise ValueError()
             except (ValueError, TypeError):
                 raise HTTPException(422, 'Enter a valid area and room count.')
+            if data.get('building_id') not in (None, '', 0, '0'):   # a new apartment or room in a complex or shared house (app/buildings.py)
+                b = conn.execute('SELECT company_id FROM buildings WHERE id=?', (integer(data, 'building_id'),)).fetchone()
+                if not b or b['company_id'] != company_id:
+                    raise HTTPException(422, 'That complex or house belongs to another company.')
+                values['building_id'] = integer(data, 'building_id')
         elif kind == 'tenants':
             values.update({'name': text_field(data, 'name', maximum=120), 'email': text_field(data, 'email', maximum=254), 'phone': str(data.get('phone', ''))[:50], 'language': choice(data, 'language', ('nl','en'), 'nl')})
             from .tenant_address import clean as postal_address
@@ -2259,6 +2266,8 @@ from .agenda import router as agenda_router
 app.include_router(agenda_router)
 from .company_move import router as company_move_router
 app.include_router(company_move_router)
+from .buildings import router as buildings_router
+app.include_router(buildings_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')
