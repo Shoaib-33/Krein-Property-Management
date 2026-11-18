@@ -98,12 +98,12 @@ GUIDE = {
         (('task', 'todo', 'compliance'), 'Tasks and compliance deadlines are under Operations > Tasks & compliance.', 'tasks'),
     ],
     'tenant': [
-        (('pay', 'rent', 'invoice', 'bill', 'receipt', 'proof'), 'Open Rent & payments to see your bills. Pay as agreed, then press Submit proof and attach your receipt. Your manager checks it before the balance changes.', 'payments'),
-        (('repair', 'broken', 'leak', 'fix', 'maintenance', 'heating'), 'Open Help & requests > Repairs and press Report a repair. Choose the urgency, describe the problem and add a photo if you can.', 'repairs'),
-        (('message', 'chat', 'contact', 'manager', 'question'), 'Open Help & requests > Messages to chat with your property manager. Replies appear there.', 'messages'),
-        (('complaint', 'request', 'move out', 'terminate', 'notice', 'payment plan'), 'Formal requests, complaints, payment plans and move-out notices are under Help & requests > Requests & complaints.', 'requests'),
-        (('document', 'contract', 'agreement', 'statement'), 'Your contract and statements are under Documents.', 'documents'),
-        (('password',), 'Use Change password at the bottom of the left menu.', 'home'),
+        (('pay', 'rent$', 'invoice', 'bill', 'receipt', 'proof', 'betaal', 'betaling', 'huur$', 'factuur', 'rekening', 'bewijs', 'achterstand'), 'Open Rent & payments to see your bills. Pay as agreed, then press Submit proof and attach your receipt. Your manager checks it before the balance changes.', 'payments'),
+        (('repair', 'broken', 'leak', 'fix', 'maintenance', 'heating', 'repar', 'kapot', 'lek', 'onderhoud', 'verwarming', 'storing'), 'Open Help & requests > Repairs and press Report a repair. Choose the urgency, describe the problem and add a photo if you can.', 'repairs'),
+        (('message', 'chat', 'contact', 'manager', 'question', 'bericht', 'beheerder', 'vraag'), 'Open Help & requests > Messages to chat with your property manager. Replies appear there.', 'messages'),
+        (('complaint', 'request', 'move out', 'terminate', 'notice', 'payment plan', 'klacht', 'verzoek', 'opzeg', 'verhuiz', 'betalingsregeling'), 'Formal requests, complaints, payment plans and move-out notices are under Help & requests > Requests & complaints.', 'requests'),
+        (('document', 'contract', 'agreement', 'statement', 'overeenkomst', 'afrekening', 'huurcontract'), 'Your contract and statements are under Documents.', 'documents'),
+        (('password', 'wachtwoord'), 'Use Change password at the bottom of the left menu.', 'home'),
     ],
     'owner': [
         (('statement', 'payout', 'income'), 'Monthly statements and payouts are under Statements.', 'statements'),
@@ -189,6 +189,12 @@ def throttle(user_id: int):
     return True
 
 
+def keyword_in(word, low):
+    """A guide keyword at the start of a word ("pay" finds "payment"); one ending in $ only as a whole word ("huur", not "huurcontract")."""
+    whole = word.endswith('$')
+    return re.search(r'\b' + re.escape(word.rstrip('$')) + (r'\b' if whole else ''), low) is not None
+
+
 def local_answer(who: str, text: str):
     low = text.lower().strip()
     if re.fullmatch(r"(hi+|hello+|hey+|hallo+|goedemorgen|goedemiddag|goedenavond|good (morning|afternoon|evening))\W*", low):
@@ -196,7 +202,7 @@ def local_answer(who: str, text: str):
     if re.search(r"\b(thanks|thank you|thx|bedankt|dank je|dankjewel|dankuwel)\b", low):
         return THANKS, []
     for words, answer, page in GUIDE[who]:
-        if any(w in low for w in words):
+        if any(keyword_in(w, low) for w in words):
             return answer, ([{'label': 'Take me there', 'page': page}] if page and page in PAGES[who] else [])
     return ('I am not sure about that one. Try asking where something is, for example "' + SUGGESTIONS[who][0] + '"', [])
 
@@ -386,8 +392,9 @@ def info(request: Request, user=Depends(current_user)):
     ai = ai_configured(who)
     return {'greeting': GREETING[who], 'suggestions': SUGGESTIONS[who], 'ai': ai,
             'photos': ai and who == 'tenant',
-            'privacy_note': ('Answers come from an AI service (OpenRouter or Google). Do not type personal details such as names, addresses or bank numbers'
-                             + (', and send photos of the problem only, without people or papers in them.' if who == 'tenant' else '.')) if ai else ''}
+            # the tenant sees only what to leave out; the staff note also names the AI service
+            'privacy_note': ('Do not type personal details such as names, addresses or bank numbers, and send photos of the problem only, without people or papers in them.'
+                             if who == 'tenant' else 'Answers come from an AI service (OpenRouter or Google). Do not type personal details such as names, addresses or bank numbers.') if ai else ''}
 
 
 @router.post('/api/assistant/chat')
@@ -438,7 +445,11 @@ def chat(request: Request, data: dict, user=Depends(current_user)):
         return {'reply': ('Ik kon de foto nu niet bekijken. Beschrijf het probleem in een paar woorden, of meld het met de foto.' if lang == 'nl'
                           else 'I could not look at the photo just now. Describe the problem in a few words, or report it with the photo.'),
                 'actions': report, 'source': 'guide', 'ai_unavailable': True}
-    if who == 'tenant':   # no AI: the steps of the best-matching knowledge-base section
+    # no AI: a question about the portal itself (paying, messages, documents, requests, password) gets the portal answer;
+    # anything else gets the steps of the best-matching repair knowledge-base section
+    hits = {page for words, _, page in GUIDE['tenant'] if any(keyword_in(w, message.lower()) for w in words)} if who == 'tenant' else set()
+    portal_q = bool(hits) and 'repairs' not in hits
+    if who == 'tenant' and not portal_q:
         steps = repair_help.local_reply(message, lang)
         if steps:
             return {'reply': steps, 'actions': report, 'source': 'guide', 'ai_unavailable': ai_configured(who)}

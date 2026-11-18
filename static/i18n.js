@@ -121,7 +121,7 @@
       node.data = lead + shown + trail; done.set(node, node.data); original.set(node, {en: core, shown: node.data});
     }
   }
-  const ATTRS = ['placeholder', 'title', 'aria-label', 'alt'];
+  const ATTRS = ['placeholder', 'title', 'aria-label', 'alt', 'data-label'];
   function translateAttrs(el) {
     for (const a of ATTRS) {
       const v = el.getAttribute(a);

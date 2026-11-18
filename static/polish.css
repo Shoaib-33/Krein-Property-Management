@@ -467,6 +467,8 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
   .portal-shell .table-wrap td::before{content:attr(data-label);color:var(--muted);font-size:12px;text-align:left;flex-shrink:0}
   .portal-shell .table-wrap td[data-label=""]::before{display:none}
   .portal-shell .table-wrap td[data-label=""]{justify-content:flex-end}
+  /* the tenant's home screen: the amount due is in the block at the top and "Rent & payments" lists the invoices */
+  .portal-shell .th-home-inv{display:none}
 }
 
 /* tenant file: the rented home opens the property */
