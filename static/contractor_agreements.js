@@ -34,7 +34,7 @@
     const intro = (companySigned ? 'Your stored signature is put on the agreement when it is sent.' : '<strong>Your signature is not set up yet</strong> (Settings > Your signature on contracts). The agreement goes out without it and you sign when you approve.')
       + ' The contractor then fills in KvK, btw, IBAN and insurance details and signs.';
     formModal('Send service agreement', [
-      selectField('contractor_id', 'Contractor', withLogin.map(c => [c.id, `${c.name} · ${c.trade}`]), {wide: true}),
+      selectField('contractor_id', 'Contractor', withLogin.map(c => [c.id, `${c.name} · ${tradeText(c.trade)}`]), {wide: true}),
       ['start_date', 'Starts on', 'date', {value: today()}], ['end_date', 'Ends on (leave empty if open-ended)', 'date', {required: false}],
       ['hourly_rate', 'Hourly rate (€, excl. VAT)', 'number', {value: '60', step: '0.01'}], ['callout_fee', 'Call-out fee (€, excl. VAT)', 'number', {value: '35', step: '0.01', required: false}],
       ['emergency_percent', 'Emergency surcharge outside office hours (%)', 'number', {value: '50'}], ['quote_threshold', 'Quote required above (€, excl. VAT)', 'number', {value: '750'}],

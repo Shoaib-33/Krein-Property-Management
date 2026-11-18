@@ -179,3 +179,9 @@ button.pf-card:hover{box-shadow:0 6px 18px #0d352a17}
 
 /* developer: one login, several companies (static/access.js) */
 .dv-company-list{display:grid;gap:4px;margin:4px 0 14px}
+/* trades of a supplier: a tick per trade */
+.field .field-label{font-size:13px;font-weight:700;color:var(--ink-2)}
+.check-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.field .check-grid label{display:flex;gap:8px;align-items:center;font-weight:500;font-size:12px;color:var(--ink);padding:8px 10px;border:1px solid var(--line);border-radius:7px;cursor:pointer;background:#fff}
+.field .check-grid label:has(input:checked){border-color:var(--green);background:#eef6f1}
+.field .check-grid input{width:15px;min-height:15px;margin:0;flex-shrink:0}

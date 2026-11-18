@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from .clock import local_today
 from .db import audit, connect, now, transaction
 from .security import authorize, current_user, linked, record
+from .trades import TRADES, trade
 
 router = APIRouter()
 OPS = ('manager', 'property')                 # and admin: work orders and plans
@@ -108,7 +109,7 @@ def overview(company_id: int, user=Depends(current_user)):
         costs = rows(conn, '''SELECT k.*,p.name property_name,p.address,u.name approved_by_name FROM property_costs k JOIN properties p ON p.id=k.property_id
                               LEFT JOIN users u ON u.id=k.approved_by WHERE k.company_id=? ORDER BY k.incurred_on DESC,k.id DESC''', (company_id,))
     return {'jobs': jobs, 'plans': plans, 'costs': costs, 'can_approve': role in APPROVE + ('admin',), 'can_edit': role in OPS + ('admin',),
-            'categories': CATEGORIES, 'cost_categories': COST_CATEGORIES}
+            'categories': CATEGORIES, 'cost_categories': COST_CATEGORIES, 'trades': TRADES}
 
 
 # ---- recurring maintenance -------------------------------------------------------------------------------------------
@@ -118,7 +119,7 @@ def _plan_values(conn, company_id, data):
     if not interval or not 1 <= interval <= 120:
         raise HTTPException(422, 'Enter how often, in months (1 to 120).')
     return {'title': _text(data, 'title', 'name of the maintenance'), 'category': data.get('category') if data.get('category') in CATEGORIES else 'General',
-            'interval_months': interval, 'next_due': _date(data.get('next_due'), 'next date'), 'contractor_id': _contractor(conn, company_id, data.get('contractor_id')),
+            'trade': trade(data), 'interval_months': interval, 'next_due': _date(data.get('next_due'), 'next date'), 'contractor_id': _contractor(conn, company_id, data.get('contractor_id')),
             'note': str(data.get('note') or '').strip()[:1000]}
 
 
@@ -127,8 +128,8 @@ def add_plan(property_id: int, data: dict, user=Depends(current_user)):
     with transaction() as conn:
         prop = record(conn, 'properties', property_id, user, OPS)
         v = _plan_values(conn, prop['company_id'], data)
-        pid = conn.execute('INSERT INTO maintenance_plans(company_id,property_id,title,category,interval_months,next_due,contractor_id,note,active,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,1,?,?)',
-                           (prop['company_id'], property_id, v['title'], v['category'], v['interval_months'], v['next_due'], v['contractor_id'], v['note'], user['id'], now())).lastrowid
+        pid = conn.execute('INSERT INTO maintenance_plans(company_id,property_id,title,category,trade,interval_months,next_due,contractor_id,note,active,created_by,created_at) VALUES(?,?,?,?,?,?,?,?,?,1,?,?)',
+                           (prop['company_id'], property_id, v['title'], v['category'], v['trade'], v['interval_months'], v['next_due'], v['contractor_id'], v['note'], user['id'], now())).lastrowid
         audit(conn, user['id'], prop['company_id'], 'created', 'maintenance_plan', pid, v)
     return {'id': pid}
 
@@ -139,8 +140,8 @@ def edit_plan(plan_id: int, data: dict, user=Depends(current_user)):
         plan = record(conn, 'maintenance_plans', plan_id, user, OPS)
         v = _plan_values(conn, plan['company_id'], data)
         active = 0 if str(data.get('active', '1')) in ('0', 'false', 'False') else 1
-        conn.execute('UPDATE maintenance_plans SET title=?,category=?,interval_months=?,next_due=?,contractor_id=?,note=?,active=? WHERE id=?',
-                     (v['title'], v['category'], v['interval_months'], v['next_due'], v['contractor_id'], v['note'], active, plan_id))
+        conn.execute('UPDATE maintenance_plans SET title=?,category=?,trade=?,interval_months=?,next_due=?,contractor_id=?,note=?,active=? WHERE id=?',
+                     (v['title'], v['category'], v['trade'], v['interval_months'], v['next_due'], v['contractor_id'], v['note'], active, plan_id))
         audit(conn, user['id'], plan['company_id'], 'updated', 'maintenance_plan', plan_id, {**v, 'active': active})
     return {'ok': True}
 
@@ -151,7 +152,7 @@ def _job_values(conn, company_id, data):
     status = data.get('status') if data.get('status') in ('open', 'planned') else None
     scheduled = _date(data.get('scheduled_for'), 'planned date', required=False)
     return {'title': _text(data, 'title', 'work to be done'), 'category': data.get('category') if data.get('category') in CATEGORIES else 'General',
-            'description': str(data.get('description') or '').strip()[:3000], 'contractor_id': _contractor(conn, company_id, data.get('contractor_id')),
+            'trade': trade(data), 'description': str(data.get('description') or '').strip()[:3000], 'contractor_id': _contractor(conn, company_id, data.get('contractor_id')),
             'scheduled_for': scheduled, 'status': status or ('planned' if scheduled else 'open'),
             'quote_cents': _cents(data.get('quote'), 'quote')}
 
@@ -173,9 +174,9 @@ def add_job(property_id: int, data: dict, user=Depends(current_user)):
         repair_id = _int(data.get('repair_id'))
         if repair_id and not conn.execute('SELECT 1 FROM repairs r JOIN contracts c ON c.id=r.contract_id WHERE r.id=? AND c.property_id=?', (repair_id, property_id)).fetchone():
             raise HTTPException(422, 'That repair report is not of this home.')
-        jid = conn.execute('''INSERT INTO maintenance_jobs(company_id,property_id,plan_id,repair_id,title,category,description,contractor_id,scheduled_for,status,quote_cents,created_by,created_at)
-                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)''',
-                           (prop['company_id'], property_id, plan_id, repair_id, v['title'], v['category'], v['description'], v['contractor_id'], v['scheduled_for'],
+        jid = conn.execute('''INSERT INTO maintenance_jobs(company_id,property_id,plan_id,repair_id,title,category,trade,description,contractor_id,scheduled_for,status,quote_cents,created_by,created_at)
+                              VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)''',
+                           (prop['company_id'], property_id, plan_id, repair_id, v['title'], v['category'], v['trade'], v['description'], v['contractor_id'], v['scheduled_for'],
                             v['status'], v['quote_cents'], user['id'], now())).lastrowid
         audit(conn, user['id'], prop['company_id'], 'created', 'maintenance_job', jid, v)
     return {'id': jid}
@@ -192,8 +193,8 @@ def edit_job(job_id: int, data: dict, user=Depends(current_user)):
             audit(conn, user['id'], job['company_id'], 'cancelled', 'maintenance_job', job_id, {})
             return {'ok': True}
         v = _job_values(conn, job['company_id'], data)
-        conn.execute('UPDATE maintenance_jobs SET title=?,category=?,description=?,contractor_id=?,scheduled_for=?,status=?,quote_cents=?,updated_at=? WHERE id=?',
-                     (v['title'], v['category'], v['description'], v['contractor_id'], v['scheduled_for'], v['status'], v['quote_cents'], now(), job_id))
+        conn.execute('UPDATE maintenance_jobs SET title=?,category=?,trade=?,description=?,contractor_id=?,scheduled_for=?,status=?,quote_cents=?,updated_at=? WHERE id=?',
+                     (v['title'], v['category'], v['trade'], v['description'], v['contractor_id'], v['scheduled_for'], v['status'], v['quote_cents'], now(), job_id))
         audit(conn, user['id'], job['company_id'], 'updated', 'maintenance_job', job_id, {'old': job, 'new': v})
     return {'ok': True}
 
@@ -358,7 +359,7 @@ def edit_contractor(contractor_id: int, data: dict, user=Depends(current_user)):
         email = _text(data, 'email', 'email', 254)
         if '@' not in email:
             raise HTTPException(422, 'Enter a valid email.')
-        values = {'name': _text(data, 'name', 'name', 120), 'email': email, 'phone': _text(data, 'phone', 'phone', 50, False), 'trade': _text(data, 'trade', 'trade', 120),
+        values = {'name': _text(data, 'name', 'name', 120), 'email': email, 'phone': _text(data, 'phone', 'phone', 50, False), 'trade': _text(data, 'trade', 'trade', 400),
                   'contact_person': _text(data, 'contact_person', 'contact person', 120, False), 'address': _text(data, 'address', 'address', 300, False),
                   'kvk': _text(data, 'kvk', 'KvK number', 20, False), 'vat_number': _text(data, 'vat_number', 'VAT number', 30, False),
                   'iban': _text(data, 'iban', 'IBAN', 40, False).replace(' ', '').upper(), 'hourly_rate_cents': _cents(data.get('hourly_rate'), 'hourly rate'),

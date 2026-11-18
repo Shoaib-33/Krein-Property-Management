@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 
 from .clock import local_today
-from . import db, sla
+from . import db, sla, trades
 from .db import audit, connect, now, transaction
 from .security import authorize, current_user, linked, record
 from .portal_access import contractor_job, notify, notify_staff, notify_tenant, share_document
@@ -276,7 +276,7 @@ def add_contractor(data:dict,user=Depends(current_user)):
         email=text_field(data,'email',maximum=254)
         if '@' not in email:
             raise HTTPException(422,'Enter a valid email.')
-        cid=insert(conn,'contractors',{'company_id':company_id,'name':text_field(data,'name',maximum=120),'email':email,'phone':str(data.get('phone',''))[:50],'trade':text_field(data,'trade',maximum=120),'agreement_document_id':doc_id,'created_at':now()})
+        cid=insert(conn,'contractors',{'company_id':company_id,'name':text_field(data,'name',maximum=120),'email':email,'phone':str(data.get('phone',''))[:50],'trade':text_field(data,'trade',maximum=400),'agreement_document_id':doc_id,'created_at':now()})
         audit(conn,user['id'],company_id,'created','contractor',cid,{})
     return {'id':cid}
 
@@ -337,7 +337,7 @@ def create_work_order(data:dict,user=Depends(current_user)):
         if busy:
             raise HTTPException(409,f'{busy["name"]} is already assigned to this repair. Cancel that work order first if you want another contractor.')
         scheduled=appointment(data)
-        wid=insert(conn,'work_orders',{'company_id':r['company_id'],'repair_id':r['id'],'contractor_id':c['id'],'scope':text_field(data,'scope'),'scheduled_for':scheduled,'created_by':user['id'],'created_at':now()})
+        wid=insert(conn,'work_orders',{'company_id':r['company_id'],'repair_id':r['id'],'contractor_id':c['id'],'trade':trades.trade(data),'scope':text_field(data,'scope'),'scheduled_for':scheduled,'created_by':user['id'],'created_at':now()})
         conn.execute('UPDATE repairs SET status="planned",assigned_to=? WHERE id=?',(c['name'],r['id']))
         sla.mark_responded(conn,r['id'])
         ids=[x[0] for x in conn.execute('SELECT user_id FROM contractor_accounts WHERE contractor_id=? AND enabled=1',(c['id'],))]

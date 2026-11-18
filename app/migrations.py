@@ -659,6 +659,14 @@ ALTER TABLE properties ADD COLUMN building_id INTEGER REFERENCES buildings(id);
 CREATE INDEX properties_building ON properties(building_id)
 '''
 
+# V65: who performs the work (app/trades.py): the trade a work order or recurring maintenance needs (electrician,
+# plumber, ...), so the supplier list can be narrowed to the companies of that trade
+V65 = '''
+ALTER TABLE maintenance_jobs ADD COLUMN trade TEXT NOT NULL DEFAULT '';
+ALTER TABLE maintenance_plans ADD COLUMN trade TEXT NOT NULL DEFAULT '';
+ALTER TABLE work_orders ADD COLUMN trade TEXT NOT NULL DEFAULT ''
+'''
+
 V63 = '''
 CREATE TABLE mail_messages (
  id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), uid INTEGER, uidvalidity TEXT, message_id TEXT NOT NULL, in_reply_to TEXT NOT NULL DEFAULT '',
@@ -998,6 +1006,11 @@ CREATE TABLE buildings (
 CREATE INDEX buildings_company ON buildings(company_id);
 ALTER TABLE properties ADD COLUMN building_id BIGINT REFERENCES buildings(id);
 CREATE INDEX properties_building ON properties(building_id);
+''',
+    65: '''
+ALTER TABLE maintenance_jobs ADD COLUMN trade TEXT NOT NULL DEFAULT '';
+ALTER TABLE maintenance_plans ADD COLUMN trade TEXT NOT NULL DEFAULT '';
+ALTER TABLE work_orders ADD COLUMN trade TEXT NOT NULL DEFAULT '';
 ''',
     63: '''
 CREATE TABLE mail_messages (
@@ -1614,6 +1627,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (64, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=65').fetchone():
+            for statement in V65.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (65, now()))
         conn.commit()
     except Exception:
         conn.rollback()

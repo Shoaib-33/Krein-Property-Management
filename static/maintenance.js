@@ -43,7 +43,7 @@
   const openRepair = r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status) && r.review !== 'declined';
   const homeOf = r => byId('properties', byId('contracts', r.contract_id).property_id);
   const homeName = p => p ? (p.address || p.name || '') : '';
-  const contractorOptions = () => [['', 'No supplier yet'], ...rows('contractors').filter(c => c.active !== 0).map(c => [c.id, `${c.name}${c.trade ? ' · ' + c.trade : ''}`])];
+  const contractorOptions = () => [['', 'No supplier yet'], ...rows('contractors').filter(c => c.active !== 0).map(c => [c.id, `${c.name}${c.trade ? ' · ' + tradeText(c.trade) : ''}`])];
   const defaultPayer = () => 'owner';   // the owner pays unless the manager chooses otherwise when approving
   const every = n => Number(n) === 12 ? 'Every year' : Number(n) === 24 ? 'Every 2 years' : Number(n) % 12 === 0 ? `Every ${Number(n) / 12} years` : Number(n) === 1 ? 'Every month' : `Every ${n} months`;
   const vatPart = c => c.vat_rate ? Math.round(c.amount_cents - c.amount_cents / (1 + c.vat_rate / 100)) : 0;
@@ -68,7 +68,7 @@
       ${card('Maintenance due', w.due.length, w.overdue ? `${w.overdue} overdue` : 'In the next 60 days', 'calendar', w.overdue ? 'k-red' : 'k-green', 'plan')}
       ${card('Costs to approve', w.costs.length, 'Decide who pays', 'wallet', 'k-amber', 'cost')}</div>`;
     const items = [
-      ...w.jobs.map(j => ({type: 'job', label: 'Work order', home: j.address || j.property_name, pid: j.property_id, title: j.title, sub: j.category, who: j.contractor_name || '', date: j.scheduled_for || '', status: jobBadge(j.status),
+      ...w.jobs.map(j => ({type: 'job', label: 'Work order', home: j.address || j.property_name, pid: j.property_id, title: j.title, sub: [j.category, j.trade && tradeText(j.trade)].filter(Boolean).join(' · '), who: j.contractor_name || '', date: j.scheduled_for || '', status: jobBadge(j.status),
         act: mb('Open', `data-mw="job" data-id="${j.id}"`)})),
       ...w.repairs.map(r => { const wo = rows('work_orders').find(x => x.repair_id === r.id && !['completed', 'closed', 'cancelled', 'declined'].includes(x.status)); const p = homeOf(r);
         return {type: 'repair', label: 'Tenant report', home: homeName(p), pid: p.id, title: r.title, sub: `${r.category} · ${r.urgency === 'Routine' ? 'Normal' : r.urgency}`, who: wo ? byId('contractors', wo.contractor_id).name || '' : r.assigned_to || '', date: r.due_date || '',
@@ -157,6 +157,7 @@
     ...(pid ? [] : [selectField('property_id', 'Home', rows('properties').map(p => [p.id, p.address ? `${p.address}, ${p.city}` : p.name]), {wide: true})]),
     ['title', 'What needs to be done?', 'text', {value: j ? j.title : '', wide: true, placeholder: 'For example: replace the kitchen tap'}],
     selectField('category', 'Category', data.categories.length ? data.categories : ['General'], {value: j ? j.category : 'General'}),
+    selectField('trade', 'Who does the work?', tradeOptions(), {value: j ? (j.trade ?? CATEGORY_TRADE[j.category] ?? '') : '', required: false}),
     selectField('contractor_id', 'Supplier', contractorOptions(), {value: j ? j.contractor_id || '' : '', required: false}),
     ['scheduled_for', 'Planned date (optional)', 'date', {value: j ? j.scheduled_for || '' : '', required: false}],
     ['quote', 'Quote, including VAT (€, optional)', 'number', {value: j && j.quote_cents != null ? (j.quote_cents / 100).toFixed(2) : '', required: false}],
@@ -169,7 +170,7 @@
   }
   function jobDetail(j) {
     const done = j.status === 'done';
-    const kv = [['Home', j.address || j.property_name], ['Category', j.category], ['Supplier', j.contractor_name ? `${j.contractor_name}${j.contractor_phone ? ' · ' + j.contractor_phone : ''}` : '—'],
+    const kv = [['Home', j.address || j.property_name], ['Category', j.category], ['Who does the work?', j.trade ? tradeText(j.trade) : '—'], ['Supplier', j.contractor_name ? `${j.contractor_name}${j.contractor_phone ? ' · ' + j.contractor_phone : ''}` : '—'],
       ['Planned', day(j.scheduled_for)], ['Quote', j.quote_cents != null ? eur(j.quote_cents) : '—'], ...(done ? [['Done on', day(j.completed_on)], ['Final cost', j.final_cents != null ? eur(j.final_cents) : '—'], ['Note', j.completion_note || '—']] : [])];
     const edit = canEdit() && openJob(j);
     modal(j.title, `<div class="mw-detail">${jobBadge(j.status)}${j.plan_id ? ' <span class="mw-tag">Recurring</span>' : ''}<table class="pf-kv"><tbody>${kv.map(([k, v]) => `<tr><td>${e(k)}</td><td>${e(v)}</td></tr>`).join('')}</tbody></table>
@@ -194,6 +195,7 @@
   const planFields = (p) => [
     ['title', 'Maintenance', 'text', {value: p ? p.title : '', wide: true, placeholder: 'For example: boiler service, smoke detector check, fire extinguisher check'}],
     selectField('category', 'Category', data.categories.length ? data.categories : ['General'], {value: p ? p.category : 'Boiler / heating'}),
+    selectField('trade', 'Who does the work?', tradeOptions(), {value: p ? p.trade || '' : 'Heating engineer', required: false}),
     selectField('interval_months', 'How often?', [['3', 'Every 3 months'], ['6', 'Every 6 months'], ['12', 'Every year'], ['24', 'Every 2 years'], ['36', 'Every 3 years'], ['60', 'Every 5 years']].concat(p && ![3, 6, 12, 24, 36, 60].includes(p.interval_months) ? [[String(p.interval_months), every(p.interval_months)]] : []), {value: p ? String(p.interval_months) : '12'}),
     ['next_due', 'Next date', 'date', {value: p ? p.next_due : todayS()}],
     selectField('contractor_id', 'Usual supplier', contractorOptions(), {value: p ? p.contractor_id || '' : '', required: false}),
@@ -222,7 +224,7 @@
   function suppliers() {
     const list = rows('contractors');
     return panel('Supplier directory', 'Contact details, KvK, VAT number, IBAN and rate of each supplier. Tenant contact data is shared only within an assigned work order.', table(['Supplier', 'Contact', 'Details', 'Agreement', 'Portal', ''], list.map(c => [
-      `<strong>${e(c.name)}</strong><small>${e(c.trade || '')}${c.active === 0 ? ' · inactive' : ''}</small>`,
+      `<strong>${e(c.name)}</strong><small>${e(tradeText(c.trade))}${c.active === 0 ? ' · inactive' : ''}</small>`,
       `${c.contact_person ? `${e(c.contact_person)}<br>` : ''}<small>${e(c.email || '')}${c.phone ? ' · ' + e(c.phone) : ''}</small>`,
       `<small>${[c.kvk ? 'KvK ' + c.kvk : '', c.vat_number ? 'VAT ' + c.vat_number : '', c.iban ? 'IBAN ' + c.iban : '', c.hourly_rate_cents != null ? `${eur(c.hourly_rate_cents)} / hour` : ''].filter(Boolean).map(e).join('<br>') || '—'}</small>`,
       c.agreement_document_id ? `<a href="/api/documents/${c.agreement_document_id}/file">Agreement ${icon('down')}</a>` : badge('Agreement required', 'red'),
@@ -230,14 +232,14 @@
       canEdit() ? mb('Edit', `data-mw="supplier" data-id="${c.id}"`) : '']), 'No suppliers yet.'));
   }
   function editSupplier(c) {
-    formModal(`Supplier: ${c.name}`, [['name', 'Company name', 'text', {value: c.name}], ['trade', 'Trade / service', 'text', {value: c.trade || ''}],
+    formModal(`Supplier: ${c.name}`, [['name', 'Company name', 'text', {value: c.name}], ...tradeFields(c.trade),
       ['contact_person', 'Contact person', 'text', {value: c.contact_person || '', required: false}], ['email', 'Email', 'email', {value: c.email || ''}],
       ['phone', 'Phone', 'tel', {value: c.phone || '', required: false}], ['address', 'Address', 'text', {value: c.address || '', required: false, wide: true}],
       ['kvk', 'KvK number', 'text', {value: c.kvk || '', required: false}], ['vat_number', 'VAT number', 'text', {value: c.vat_number || '', required: false}],
       ['iban', 'IBAN', 'text', {value: c.iban || '', required: false}], ['hourly_rate', 'Hourly rate, excluding VAT (€, optional)', 'number', {value: c.hourly_rate_cents != null ? (c.hourly_rate_cents / 100).toFixed(2) : '', required: false}],
       selectField('active', 'Status', [['1', 'Active'], ['0', 'Inactive (not shown when choosing a supplier)']], {value: c.active === 0 ? '0' : '1', wide: true}),
       ['notes', 'Notes (optional)', 'textarea', {value: c.notes || '', required: false, wide: true}]],
-    async v => { await api(`/api/contractors/${c.id}/details`, {method: 'POST', body: v}); }, {submit: 'Save', success: 'Supplier saved.'});
+    async v => { await api(`/api/contractors/${c.id}/details`, {method: 'POST', body: joinTrades(v)}); }, {submit: 'Save', success: 'Supplier saved.'});
   }
 
   const baseRender = renderPage;
@@ -272,11 +274,11 @@
         formModal('Add recurring maintenance', [selectField('preset', 'Choose from the standard list', PRESETS.map((x, i) => [String(i), x[0]]), {value: '0', wide: true, required: false}), ...planFields(null)],
           async v => { delete v.preset; await api(`/api/properties/${el.dataset.pid}/maintenance-plans`, {method: 'POST', body: v}); },
           {intro: 'When the date comes near, it shows under Open work and on the dashboard. Finishing its work order moves the date on.', submit: 'Save', success: 'Recurring maintenance saved.'});
-        const pick = document.getElementById('f-preset'), fill = () => { const x = PRESETS[Number(pick.value)]; if (!x || !x[1]) return; document.getElementById('f-title').value = x[1]; document.getElementById('f-category').value = x[2]; document.getElementById('f-interval_months').value = String(x[3]); };
+        const pick = document.getElementById('f-preset'), fill = () => { const x = PRESETS[Number(pick.value)]; if (!x || !x[1]) return; document.getElementById('f-title').value = x[1]; document.getElementById('f-category').value = x[2]; document.getElementById('f-category').dispatchEvent(new Event('change')); document.getElementById('f-interval_months').value = String(x[3]); };
         if (pick) { pick.addEventListener('change', fill); fill(); }
       }
       else if (act === 'plan-edit') { const p = find('plans', id); formModal('Edit recurring maintenance', planFields(p), async v => { await api(`/api/maintenance-plans/${p.id}`, {method: 'POST', body: v}); }, {submit: 'Save', success: 'Saved.'}); }
-      else if (act === 'plan-job') { const p = find('plans', id); newJob(p.property_id, {title: p.title, category: p.category, contractor_id: p.contractor_id || '', scheduled_for: p.next_due, plan_id: p.id}); }
+      else if (act === 'plan-job') { const p = find('plans', id); newJob(p.property_id, {title: p.title, category: p.category, trade: p.trade || '', contractor_id: p.contractor_id || '', scheduled_for: p.next_due, plan_id: p.id}); }
       else if (act === 'cost-new') newCost(Number(el.dataset.pid));
       else if (act === 'cost-review') reviewCost(find('costs', id));
       else if (act === 'cost-delete') { if (!confirm('Delete this cost?')) return; await api(`/api/property-costs/${id}`, {method: 'DELETE'}); toast('Cost deleted.'); await refresh(); }
