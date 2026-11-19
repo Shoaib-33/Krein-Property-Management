@@ -50,7 +50,7 @@ class CompletenessTests(unittest.TestCase):
         rented = next(h for h in o['homes'] if not h['vacant'])
         pid = rented['id']
         self.assertIn('insurance', rented['missing'])
-        self.assertEqual(rented['total'], 12)
+        self.assertEqual(rented['total'], 13)
         r = self.manager.post(f'/api/properties/{pid}/documents', data={'kind': 'Insurance policy'}, files={'file': ('polis.pdf', PDF, 'application/pdf')})
         self.assertEqual(r.status_code, 200, r.text)
         self.assertEqual(self.home(pid)['items']['insurance'], 'ok')
@@ -72,7 +72,7 @@ class CompletenessTests(unittest.TestCase):
         self.assertTrue(h['vacant'])
         for key in ('vve', 'division_deed', 'contract_doc', 'tenant_contact', 'tenant_iban'):
             self.assertEqual(h['items'][key], 'na', key)
-        self.assertEqual(h['total'], 7)
+        self.assertEqual(h['total'], 8)
         self.assertIn('area', h['missing'])
         self.assertIn('energy_label', h['missing'])
 

@@ -98,8 +98,9 @@ def edit_company(company_id:int,data:dict,user=Depends(current_user)):
     with transaction() as conn:
         authorize(conn,user,company_id,('admin',))
         old=dict(conn.execute('SELECT * FROM companies WHERE id=?',(company_id,)).fetchone())
-        values={'name':text_field(data,'name',maximum=120),'address':text_field(data,'address',maximum=500),'kvk':str(data.get('kvk',''))[:50],'payment_instructions':text_field(data,'payment_instructions',maximum=2000)}
-        conn.execute('UPDATE companies SET name=?,address=?,kvk=?,payment_instructions=? WHERE id=?',(*values.values(),company_id))
+        values={'name':text_field(data,'name',maximum=120),'address':text_field(data,'address',maximum=500),'kvk':str(data.get('kvk',''))[:50],'payment_instructions':text_field(data,'payment_instructions',maximum=2000),
+                'office_hours':' '.join(str(data.get('office_hours') or old.get('office_hours') or '').split())[:200],'emergency_phone':' '.join(str(data.get('emergency_phone',old.get('emergency_phone','')) or '').split())[:40]}
+        conn.execute('UPDATE companies SET name=?,address=?,kvk=?,payment_instructions=?,office_hours=?,emergency_phone=? WHERE id=?',(*values.values(),company_id))
         audit(conn,user['id'],company_id,'updated','company',company_id,{'old':old,'new':values})
     return {'ok':True}
 

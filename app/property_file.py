@@ -73,7 +73,13 @@ def property_file(property_id: int, user=Depends(current_user)):
             # rent and indexation: the rent history of each contract of this home, and proposed increases
             rent['history'] = rows(conn, f'SELECT r.contract_id,r.effective_from,r.basic_cents,r.service_cents FROM rent_versions r WHERE r.contract_id IN ({marks}) ORDER BY r.contract_id,r.effective_from', cids)
             rent['proposals'] = rows(conn, f'SELECT id,contract_id,effective_from,basic_cents,service_cents,reason,status,created_at FROM rent_proposals WHERE contract_id IN ({marks}) ORDER BY effective_from DESC,id DESC', cids)
+        responsibilities, keys = [], []
+        if staff:
+            from .keys import keys_of
+            from .responsibilities import lines
+            responsibilities, keys = lines(conn, prop), keys_of(conn, property_id)
     return {'property': prop, 'contracts': contracts, 'tenants': tenants, 'documents': documents, 'staff': staff, 'doc_kinds': DOC_KINDS,
+            'responsibilities': responsibilities, 'keys': keys,
             'utilities': utilities, 'settlements': settlements, 'statements': statements, 'service_cents': service_cents, 'cases': cases, 'rent': rent,
             'case_team': team, 'case_kinds': CASE_KINDS}
 

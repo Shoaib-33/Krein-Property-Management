@@ -43,6 +43,7 @@ window.kreinCases = (() => {
   }
   const open = id => { state.page = 'properties'; state.propertyView = Number(id); ui.id = Number(id); ui.file = null; ui.tab = 'overview'; render(); scrollTo(0, 0); load(); };
   showProperty = open;   // the old pop-up becomes this page
+  window.kreinPropertyFile = () => ui.file;   // the open home's data, for responsibilities.js and keys.js
 
   function page() {
     const back = `<div class="tf-back"><button type="button" class="button small" data-pf-back>← All properties</button></div>`;
@@ -209,7 +210,8 @@ window.kreinCases = (() => {
     const openRepairs = repairs.filter(r => !['done', 'closed', 'cancelled', 'declined'].includes(r.status));
     const W = window.kreinWork && ['admin', 'manager', 'property', 'finance'].includes(role) ? window.kreinWork.technical(f, role) : null;
     const TABS = [['overview', 'Overview', 'grid', 0], ['tenants', 'Tenants', 'users', f.tenants.length], ['contracts', 'Contracts', 'file', f.contracts.length],
-      ['technical', 'Technical', 'wrench', openRepairs.length + (W ? W.openCount : 0)], ['finance', 'Finances', 'wallet', 0], ['documents', 'Documents', 'folder', f.documents.length]];
+      ['technical', 'Technical', 'wrench', openRepairs.length + (W ? W.openCount : 0)], ...(staff && window.kreinResp ? [['responsible', 'Responsibilities', 'shield', (f.responsibilities || []).length]] : []),
+      ['finance', 'Finances', 'wallet', 0], ['documents', 'Documents', 'folder', f.documents.length]];
     const tabs = `<div class="pf-tabs" role="tablist">${TABS.map(([k, label, ic, n]) => `<button type="button" role="tab" class="pf-tab${tab === k ? ' active' : ''}" aria-selected="${tab === k}" data-pf-tab="${k}">${icon(ic)}${e(label)}${n ? `<span class="count">${n}</span>` : ''}</button>`).join('')}</div>`;
 
     // Overview: the main facts of the home, and what is going on
@@ -267,9 +269,10 @@ window.kreinCases = (() => {
       overview,
       tenants,
       contracts: `<div class="section-stack">${contracts}${rentPanel}</div>`,
-      technical: `<div class="section-stack">${W ? W.jobs + W.plans : ''}${maint}${W ? W.history : ''}${energy}${utilities}${inspections}</div>`,
+      technical: `<div class="section-stack">${staff && window.kreinKeys ? window.kreinKeys.panel(f, role) : ''}${W ? W.jobs + W.plans : ''}${maint}${W ? W.history : ''}${energy}${utilities}${inspections}</div>`,
       finance: `<div class="section-stack">${fin}${letters}</div>`,
       documents: docs,
+      responsible: staff && window.kreinResp ? window.kreinResp.tab(f, role) : '',
     }[tab] || overview;
     const mail = staff && window.kreinMail ? window.kreinMail.panel(p.id) : '';   // the emails about this home (static/mailbox.js)
     const complete = staff && window.kreinComplete ? window.kreinComplete.panel(p.id) : '';   // what this home still lacks (static/completeness.js)

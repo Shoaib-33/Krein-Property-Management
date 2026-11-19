@@ -729,3 +729,15 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
   .mail-head h2{font-size:18px}
   .mail-date{flex-wrap:wrap}.mail-date .button{margin-left:auto}
 }
+/* tenant portal: Help & FAQ and the emergency card (static/portal_help.js) */
+.portal-shell .ph-sos{border-color:#f0d3cd;background:#fff8f6;margin:18px 0}.portal-shell .ph-sos .panel-header p{line-height:1.7}.portal-shell .ph-sos a{font-weight:700}
+.portal-shell .ph-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-bottom:18px;align-items:start}
+.portal-shell .ph-panel{margin-bottom:18px}.portal-shell .ph-grid .ph-panel{margin-bottom:0}
+.portal-shell .ph-item{border-top:1px solid var(--line);padding:0}.portal-shell .ph-item:first-child{border-top:0}
+.portal-shell .ph-item summary{cursor:pointer;padding:12px 0;font-weight:650;font-size:13px;list-style-position:outside}
+.portal-shell .ph-item p,.portal-shell .ph-item ol{margin:0 0 14px;font-size:13px;line-height:1.65}.portal-shell .ph-item ol{padding-left:20px}.portal-shell .ph-item li{margin-bottom:6px}
+.portal-shell .ph-urgent summary::marker{color:#c0533f}
+.portal-shell .ph-who{display:grid;grid-template-columns:1fr 1fr;gap:22px}.portal-shell .ph-who h3{margin:0 0 8px}
+.portal-shell .ph-list{margin:0;padding-left:18px;font-size:13px;line-height:1.65}.portal-shell .ph-list li{margin-bottom:5px}
+@media(max-width:900px){.portal-shell .ph-grid,.portal-shell .ph-who{grid-template-columns:1fr}}
+@media(max-width:650px){.portal-shell .ph-sos .panel-header{flex-direction:column;align-items:flex-start}}

@@ -204,7 +204,7 @@ def tenant_data(user=Depends(current_user)):
         accounts=[dict(r) for r in conn.execute('SELECT t.*,a.user_id FROM portal_accounts a JOIN tenants t ON t.id=a.tenant_id WHERE a.user_id=? AND a.enabled=1',(user['id'],))]
         if not accounts:
             raise HTTPException(403,'Tenant access is not enabled for this account.')
-        contracts=[dict(r) for r in conn.execute('SELECT c.*,p.name property_name,p.address,p.city,p.postcode,p.area,p.rooms,p.energy_label,co.name company_name,co.payment_instructions FROM contracts c JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE EXISTS (SELECT 1 FROM contract_people cp JOIN portal_accounts a ON a.tenant_id=cp.tenant_id WHERE cp.contract_id=c.id AND a.company_id=c.company_id AND a.user_id=? AND a.enabled=1) ORDER BY c.start_date DESC',(user['id'],))]
+        contracts=[dict(r) for r in conn.execute('SELECT c.*,p.name property_name,p.address,p.city,p.postcode,p.area,p.rooms,p.energy_label,co.name company_name,co.payment_instructions,co.office_hours,co.emergency_phone FROM contracts c JOIN properties p ON p.id=c.property_id JOIN companies co ON co.id=c.company_id WHERE EXISTS (SELECT 1 FROM contract_people cp JOIN portal_accounts a ON a.tenant_id=cp.tenant_id WHERE cp.contract_id=c.id AND a.company_id=c.company_id AND a.user_id=? AND a.enabled=1) ORDER BY c.start_date DESC',(user['id'],))]
         ids=[c['id'] for c in contracts]
         company_ids=sorted({a['company_id'] for a in accounts})
         from .main import video_limit

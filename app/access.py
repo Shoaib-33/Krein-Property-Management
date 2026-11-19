@@ -31,7 +31,7 @@ OPS = ('admin', 'manager', 'property', 'landlord')
 # key, label, group, roles it applies to, staff menu pages / portal tabs, API paths (regular expressions, matched from the start)
 FEATURES = [
     # ---- workspace
-    ('properties', 'Properties', 'Workspace', ALL, ['properties'], [r'/api/records/properties', r'/api/properties', r'/api/buildings', r'/api/completeness']),
+    ('properties', 'Properties', 'Workspace', ALL, ['properties'], [r'/api/records/properties', r'/api/properties', r'/api/buildings', r'/api/completeness', r'/api/responsibilities', r'/api/property-keys', r'/api/map']),
     ('tenants', 'Tenants', 'Workspace', ALL, ['tenants'], [r'/api/records/tenants', r'/api/tenants/\d+/(archive|restore|partner|bank-accounts|export)']),
     ('contracts', 'Contracts & signing', 'Workspace', ALL, ['contracts'], [r'/api/records/contracts', r'/api/contracts/', r'/api/lease-offers']),
     ('registrations', 'Website registrations', 'Workspace', ('admin', 'manager', 'property'), ['registrations'], [r'/api/registrations']),
@@ -48,7 +48,7 @@ FEATURES = [
     ('statements', 'Owner statements', 'Finance', ('admin', 'manager', 'finance'), ['statements'], [r'/api/owner-statements', r'/api/owner-expenses']),
     # ---- operations
     ('repairs', 'Maintenance & repairs', 'Operations', ('admin', 'manager', 'property', 'inspector', 'landlord'), ['repairs'], [r'/api/records/repairs', r'/api/repairs/', r'/api/work-orders']),
-    ('maintenance', 'Open work, planned maintenance & costs of a home', 'Operations', ('admin', 'manager', 'property', 'finance'), ['open-work'], [r'/api/maintenance', r'/api/properties/\d+/(maintenance-plans|maintenance-jobs|costs)', r'/api/property-costs', r'/api/contractors/\d+/details']),
+    ('maintenance', 'Open work, planned maintenance & costs of a home', 'Operations', ('admin', 'manager', 'property', 'finance'), ['open-work'], [r'/api/maintenance', r'/api/properties/\d+/(maintenance-plans|maintenance-jobs|costs)', r'/api/property-costs', r'/api/contractors/\d+/(details|area)']),
     ('inspections', 'Inspections', 'Operations', ('admin', 'manager', 'property', 'inspector', 'landlord'), ['inspections'], [r'/api/records/inspections', r'/api/inspections']),
     ('communications', 'Communications log', 'Operations', ('admin', 'manager', 'finance', 'property', 'landlord'), ['communications'], [r'/api/records/communications']),
     ('inbox', 'Tenant inbox (messages & requests)', 'Operations', ('admin', 'manager', 'landlord'), ['portal-inbox'], [r'/api/portal/messages', r'/api/inbox', r'/api/tickets', r'/api/requests/']),

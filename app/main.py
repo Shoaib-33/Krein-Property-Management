@@ -136,7 +136,7 @@ async def security_headers(request, call_next):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'same-origin'   # never sent to other sites; the landlord address uses it to pick its own session for file downloads
-    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: https://service.pdok.nl; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
     response.headers['Cache-Control'] = 'no-store'
     if os.environ.get('KREIN_SECURE_COOKIES') == '1':   # served over HTTPS: tell browsers to keep using it
         response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
@@ -2270,6 +2270,12 @@ from .buildings import router as buildings_router
 app.include_router(buildings_router)
 from .completeness import router as completeness_router
 app.include_router(completeness_router)
+from .responsibilities import router as responsibilities_router
+app.include_router(responsibilities_router)
+from .keys import router as keys_router
+app.include_router(keys_router)
+from .geo import router as geo_router
+app.include_router(geo_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')

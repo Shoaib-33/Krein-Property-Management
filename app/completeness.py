@@ -20,6 +20,7 @@ CHECKS = (
     ('energy_label', 'Energy label', 'Home'),
     ('energy_doc', 'Energy label certificate', 'Documents'),
     ('owner', 'Owner (portfolio)', 'Home'),
+    ('spare_key', 'Spare key at the office', 'Home'),
     ('insurance', 'Insurance policy', 'Documents'),
     ('transfer_deed', 'Transfer deed', 'Documents'),
     ('vve', 'VvE documents', 'Documents'),
@@ -59,6 +60,7 @@ def _homes(conn, company_id, property_id=None):
                              (SELECT COUNT(*) FROM tenant_bank_accounts b WHERE b.tenant_id=t.id) ibans
                              FROM contract_people cp JOIN tenants t ON t.id=cp.tenant_id WHERE t.company_id=? AND t.archived_at IS NULL''', (company_id,)):
         people.setdefault(r['contract_id'], []).append(dict(r))
+    with_keys = {r[0] for r in conn.execute('SELECT DISTINCT property_id FROM property_keys WHERE company_id=?', (company_id,))}
     skips = {(r['property_id'], r['check_key']): dict(r) for r in conn.execute(
         'SELECT s.property_id,s.check_key,s.reason,s.created_at,u.name by_name FROM completeness_skips s LEFT JOIN users u ON u.id=s.created_by WHERE s.company_id=?', (company_id,))}
     out = []
@@ -72,6 +74,7 @@ def _homes(conn, company_id, property_id=None):
             'energy_label': p['energy_label'] not in ('', 'Unknown'),
             'energy_doc': bool(p['energy_label_doc_id']) or 'Energy label' in have,
             'owner': bool(p['portfolio_id']),
+            'spare_key': p['id'] in with_keys,
         }
         for key in ('insurance', 'transfer_deed', 'vve', 'division_deed'):
             state[key] = DOC_OF[key] in have

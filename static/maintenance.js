@@ -166,7 +166,7 @@
   function newJob(pid, preset = {}) {
     formModal('New work order', jobFields(preset.title ? preset : null, pid),
       async v => { await api(`/api/properties/${pid || v.property_id}/maintenance-jobs`, {method: 'POST', body: {...v, plan_id: preset.plan_id || null}}); },
-      {intro: 'A work order can be made for every home, also when nobody rents it.', submit: 'Create work order', success: 'Work order created.'});
+      {home: pid, intro: 'A work order can be made for every home, also when nobody rents it.', submit: 'Create work order', success: 'Work order created.'});
   }
   function jobDetail(j) {
     const done = j.status === 'done';
@@ -224,7 +224,7 @@
   function suppliers() {
     const list = rows('contractors');
     return panel('Supplier directory', 'Contact details, KvK, VAT number, IBAN and rate of each supplier. Tenant contact data is shared only within an assigned work order.', table(['Supplier', 'Contact', 'Details', 'Agreement', 'Portal', ''], list.map(c => [
-      `<strong>${e(c.name)}</strong><small>${e(tradeText(c.trade))}${c.active === 0 ? ' · inactive' : ''}</small>`,
+      `<strong>${e(c.name)}</strong><small>${e(tradeText(c.trade))}${c.active === 0 ? ' · inactive' : ''}</small>${c.area_place ? `<small>${icon('home')} <span>${e(c.area_place)}</span> + ${e(c.radius_km)} km</small>` : ''}`,
       `${c.contact_person ? `${e(c.contact_person)}<br>` : ''}<small>${e(c.email || '')}${c.phone ? ' · ' + e(c.phone) : ''}</small>`,
       `<small>${[c.kvk ? 'KvK ' + c.kvk : '', c.vat_number ? 'VAT ' + c.vat_number : '', c.iban ? 'IBAN ' + c.iban : '', c.hourly_rate_cents != null ? `${eur(c.hourly_rate_cents)} / hour` : ''].filter(Boolean).map(e).join('<br>') || '—'}</small>`,
       c.agreement_document_id ? `<a href="/api/documents/${c.agreement_document_id}/file">Agreement ${icon('down')}</a>` : badge('Agreement required', 'red'),
@@ -237,9 +237,13 @@
       ['phone', 'Phone', 'tel', {value: c.phone || '', required: false}], ['address', 'Address', 'text', {value: c.address || '', required: false, wide: true}],
       ['kvk', 'KvK number', 'text', {value: c.kvk || '', required: false}], ['vat_number', 'VAT number', 'text', {value: c.vat_number || '', required: false}],
       ['iban', 'IBAN', 'text', {value: c.iban || '', required: false}], ['hourly_rate', 'Hourly rate, excluding VAT (€, optional)', 'number', {value: c.hourly_rate_cents != null ? (c.hourly_rate_cents / 100).toFixed(2) : '', required: false}],
+      ['area_place', 'Work area: city or postcode (optional)', 'text', {value: c.area_place || '', required: false, placeholder: 'For example: Delft or 2611'}],
+      ['radius_km', 'Radius around it (km)', 'number', {value: c.radius_km != null ? c.radius_km : 25, step: '1', min: 1, required: false}],
       selectField('active', 'Status', [['1', 'Active'], ['0', 'Inactive (not shown when choosing a supplier)']], {value: c.active === 0 ? '0' : '1', wide: true}),
       ['notes', 'Notes (optional)', 'textarea', {value: c.notes || '', required: false, wide: true}]],
-    async v => { await api(`/api/contractors/${c.id}/details`, {method: 'POST', body: joinTrades(v)}); }, {submit: 'Save', success: 'Supplier saved.'});
+    async v => { const area = {place: v.area_place, radius_km: v.radius_km}; delete v.area_place; delete v.radius_km;
+      await api(`/api/contractors/${c.id}/details`, {method: 'POST', body: joinTrades(v)});
+      if ((area.place || '') !== (c.area_place || '') || Number(area.radius_km || 0) !== Number(c.radius_km || 0)) await api(`/api/contractors/${c.id}/area`, {method: 'POST', body: area}); }, {submit: 'Save', success: 'Supplier saved.'});
   }
 
   const baseRender = renderPage;
@@ -267,7 +271,7 @@
       else if (act === 'job-new') newJob(el.dataset.pid ? Number(el.dataset.pid) : null);
       else if (act === 'job') { const j = find('jobs', id); if (j) jobDetail(j); }
       else if (act === 'job-edit') { const j = find('jobs', id); formModal('Edit work order', [...jobFields(j, j.property_id), selectField('status', 'Status', [['open', 'To do'], ['planned', 'Planned']], {value: j.status})],
-        async v => { await api(`/api/maintenance-jobs/${j.id}`, {method: 'POST', body: v}); }, {submit: 'Save', success: 'Work order saved.'}); }
+        async v => { await api(`/api/maintenance-jobs/${j.id}`, {method: 'POST', body: v}); }, {home: j.property_id, submit: 'Save', success: 'Work order saved.'}); }
       else if (act === 'job-done') finishJob(find('jobs', id));
       else if (act === 'job-cancel') { if (!confirm('Cancel this work order?')) return; await api(`/api/maintenance-jobs/${id}`, {method: 'POST', body: {status: 'cancelled'}}); closeModal(); toast('Work order cancelled.'); await refresh(); }
       else if (act === 'plan-new') {
