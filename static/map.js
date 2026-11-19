@@ -81,7 +81,7 @@
     }
     for (const h of data.homes.filter(x => x.lat != null)) {
       pts.push([h.lat, h.lng]);
-      L.circleMarker([h.lat, h.lng], {radius: 8, weight: 2, color: '#fff', fillColor: h.occupied ? '#2f8a63' : '#8a968f', fillOpacity: 1})
+      L.circleMarker([h.lat, h.lng], {radius: 8, weight: 2, color: '#fff', fillColor: status(h).rented ? '#2f8a63' : '#8a968f', fillOpacity: 1})
         .bindPopup(() => popup(h), {minWidth: 220}).addTo(map);
     }
     map.on('popupopen', ev => { if (window.kreinTranslate) kreinTranslate(ev.popup.getElement()); });
@@ -89,11 +89,18 @@
     else if (pts.length) map.fitBounds(pts, {padding: [40, 40], maxZoom: 15});
     else map.setView([52.15, 5.3], 7);
   }
+  /** Rented or vacant by the same rule as the Homes page (window.kreinHomes): a tenant living here without a registered
+      contract also counts as rented. Falls back to the server's contract check if the Homes code is not loaded. */
+  function status(h) {
+    const p = window.kreinHomes && byId('properties', h.id);
+    const s = p && p.id ? kreinHomes.facts(p).status : (h.occupied ? 'rented' : 'vacant');
+    return {rented: s === 'rented' || s === 'nocontract', text: ((window.kreinHomes && kreinHomes.STATUS) || {})[s]?.[0] || (h.occupied ? 'Rented' : 'Vacant')};
+  }
   function popup(h) {
     const near = (data.contractors || []).filter(c => c.active !== 0 && covers(c, h) && (ui.trade === 'all' || tradesOf(c.trade).includes(ui.trade)));
     const who = near.length ? `<ul class="map-near">${near.map(c => `<li><strong>${e(c.name)}</strong><small>${e(tradeText(c.trade))}${c.phone ? ' · ' + e(c.phone) : ''}</small></li>`).join('')}</ul>`
       : `<p class="map-none">${e(tr(ui.trade === 'all' ? 'No contractor covers this home yet.' : 'No contractor of this trade covers this home.'))}</p>`;
-    return `<div class="map-pop"><strong>${e(h.address || h.name)}</strong><small>${e([h.postcode, h.city].filter(Boolean).join(' '))} · ${e(tr(h.occupied ? 'Rented' : 'Vacant'))}</small>
+    return `<div class="map-pop"><strong>${e(h.address || h.name)}</strong><small>${e([h.postcode, h.city].filter(Boolean).join(' '))} · ${e(tr(status(h).text))}</small>
       <h4>${e(tr('Contractors for this home'))}</h4>${who}<button type="button" class="button small primary" data-map-home="${h.id}">${e(tr('Open home'))}</button></div>`;
   }
 
