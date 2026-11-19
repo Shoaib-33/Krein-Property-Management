@@ -9,6 +9,12 @@
   const ui = {trade: 'all', view: null, contractors: true};
   let data = null, dataAt = 0, busy = false, locating = null, map = null, leaflet = null;
   const tr = s => window.kreinT ? kreinT(s) : s;
+  // a colour and a symbol per trade (the CSS classes mt-0 … mt-18 in layout.css use the same colours; 18 is 'other')
+  const LOOK = {"Electrician": [0, "⚡"], "Plumber": [1, "🔧"], "Carpenter": [2, "🪚"], "Heating engineer": [3, "🔥"], "Painter": [4, "🖌️"], "Roofer": [5, "🏠"], "Glazier": [6, "🪟"], "Locksmith": [7, "🔑"], "Tiler": [8, "🔲"], "Plasterer": [9, "🪣"], "Bricklayer": [10, "🧱"], "Ventilation engineer": [11, "🌀"], "Fire safety": [12, "🧯"], "Gardener": [13, "🌳"], "Cleaner": [14, "🧹"], "Pest control": [15, "🐀"], "Handyman": [16, "🛠️"], "Removals": [17, "🚚"]};
+  const COLOURS = ["#e0a100", "#1f78b4", "#8c5a2b", "#e4572e", "#c2185b", "#b03a2e", "#17a2b8", "#6d4c9f", "#00897b", "#9e9d24", "#a0522d", "#4fa3d1", "#d32f2f", "#388e3c", "#7b8fa1", "#5d4037", "#455a64", "#ef6c00", "#3d6fa6"];
+  const OTHER = [18, '👷'];
+  /** The look of a contractor: the chosen trade when the map is filtered on one, else its first known trade. */
+  const lookOf = c => { const ts = tradesOf(c.trade); const t = ui.trade !== 'all' && ts.includes(ui.trade) ? ui.trade : ts[0]; return t ? {trade: t, i: LOOK[t][0], sym: LOOK[t][1]} : {trade: '', i: OTHER[0], sym: OTHER[1]}; };
 
   // Leaflet is loaded the first time the map opens
   function loadLeaflet() {
@@ -57,11 +63,13 @@
     const bar = `<div class="hl-filters map-filters"><label class="map-check"><input type="checkbox" data-map-contractors ${ui.contractors ? 'checked' : ''}> <span>Show contractor work areas</span></label>
       <select data-map-trade aria-label="Trade">${opts.map(([v, l]) => `<option value="${e(v)}"${ui.trade === v ? ' selected' : ''}>${e(l)}</option>`).join('')}</select>
       <span class="map-legend"><span class="map-dot rented"></span><span>Rented</span><span class="map-dot vacant"></span><span>Vacant</span><span class="map-ring"></span><span>Work area</span></span></div>`;
+    const looks = [...new Map(shownContractors().map(c => { const l = lookOf(c); return [l.i, l]; })).values()].sort((a, b) => a.i - b.i);
+    const legend = looks.length ? `<div class="map-trades">${looks.map(l => `<span class="map-trade-chip mt-${l.i}"><span class="map-trade-sym">${l.sym}</span>${e(l.trade || 'Other trade')}</span>`).join('')}</div>` : '';
     const status = `<p class="map-status">${placed.length} / ${data.homes.length} <span>homes on the map</span>${data.pending || locating ? ` · <span data-map-progress>${e(tr('Looking up addresses…'))}</span>` : ''}${withArea ? '' : ` · <span>No contractor has a work area yet: set it under Contractors → Edit.</span>`}</p>`;
     const notFound = missing.length ? panel('Addresses not found', 'These homes could not be placed on the map. Check the street, house number, postcode and city.',
       table(['Home', 'Address', ''], missing.map(h => [`<strong>${e(h.name)}</strong>`, e([h.address, h.postcode, h.city].filter(Boolean).join(', ')), `<button type="button" class="button small" data-map-home="${h.id}">Open</button>`]))) : '';
     setTimeout(draw);
-    return back + head + `<section class="panel map-panel">${bar}${status}<div id="krein-map" class="krein-map" role="application" aria-label="Map of the homes"></div>
+    return back + head + `<section class="panel map-panel">${bar}${legend}${status}<div id="krein-map" class="krein-map" role="application" aria-label="Map of the homes"></div>
       <p class="map-credit">Map: PDOK / Kadaster. Only the address of each home is looked up, never tenant details.</p></section>` + notFound;
   }
 
@@ -76,8 +84,10 @@
     L.tileLayer(TILES, {maxZoom: 19, attribution: 'Kaartgegevens &copy; Kadaster'}).addTo(map);
     const pts = [];
     for (const c of shownContractors()) {
-      L.circle([c.area_lat, c.area_lng], {radius: c.radius_km * 1000, color: '#3d6fa6', weight: 1.5, fillOpacity: 0.06})
-        .bindTooltip(`${c.name} · ${tradeText(c.trade)} · ${c.radius_km} km`).addTo(map);
+      const l = lookOf(c), tip = `${c.name} · ${tradeText(c.trade)} · ${c.radius_km} km`;
+      L.circle([c.area_lat, c.area_lng], {radius: c.radius_km * 1000, color: COLOURS[l.i], weight: 1.5, fillOpacity: 0.07, interactive: false}).addTo(map);
+      L.marker([c.area_lat, c.area_lng], {icon: L.divIcon({className: `map-trade-pin mt-${l.i}`, html: `<span>${l.sym}</span>`, iconSize: [30, 30], iconAnchor: [15, 15]}), zIndexOffset: -500})
+        .bindTooltip(tip).bindPopup(() => contractorPopup(c), {minWidth: 200}).addTo(map);
     }
     for (const h of data.homes.filter(x => x.lat != null)) {
       pts.push([h.lat, h.lng]);
@@ -96,9 +106,13 @@
     const s = p && p.id ? kreinHomes.facts(p).status : (h.occupied ? 'rented' : 'vacant');
     return {rented: s === 'rented' || s === 'nocontract', text: ((window.kreinHomes && kreinHomes.STATUS) || {})[s]?.[0] || (h.occupied ? 'Rented' : 'Vacant')};
   }
+  function contractorPopup(c) {
+    return `<div class="map-pop"><strong>${e(c.name)}</strong><small>${e(tradeText(c.trade))}</small>
+      <p class="map-none">${e(tr('Work area'))}: ${e(c.area_place || '')} + ${c.radius_km} km${c.phone ? `<br>${e(c.phone)}` : ''}</p></div>`;
+  }
   function popup(h) {
     const near = (data.contractors || []).filter(c => c.active !== 0 && covers(c, h) && (ui.trade === 'all' || tradesOf(c.trade).includes(ui.trade)));
-    const who = near.length ? `<ul class="map-near">${near.map(c => `<li><strong>${e(c.name)}</strong><small>${e(tradeText(c.trade))}${c.phone ? ' · ' + e(c.phone) : ''}</small></li>`).join('')}</ul>`
+    const who = near.length ? `<ul class="map-near">${near.map(c => `<li><strong><span class="map-trade-sym">${lookOf(c).sym}</span> ${e(c.name)}</strong><small>${e(tradeText(c.trade))}${c.phone ? ' · ' + e(c.phone) : ''}</small></li>`).join('')}</ul>`
       : `<p class="map-none">${e(tr(ui.trade === 'all' ? 'No contractor covers this home yet.' : 'No contractor of this trade covers this home.'))}</p>`;
     return `<div class="map-pop"><strong>${e(h.address || h.name)}</strong><small>${e([h.postcode, h.city].filter(Boolean).join(' '))} · ${e(tr(status(h).text))}</small>
       <h4>${e(tr('Contractors for this home'))}</h4>${who}<button type="button" class="button small primary" data-map-home="${h.id}">${e(tr('Open home'))}</button></div>`;
