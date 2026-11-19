@@ -15,7 +15,7 @@
   const CATS = {Maintenance: 'c-maintenance', Financial: 'c-financial', Huurcommissie: 'c-huurcommissie', Contract: 'c-rental', Complaint: 'c-vve', Legal: 'c-legal', General: '', Newsletter: ''};
   const CASE_KINDS = ['Maintenance', 'Huurcommissie', 'Financial', 'Legal', 'Contract', 'Complaint', 'Other'];
   const DOC_KINDS = ['General', 'Contract', 'Lease draft', 'Huurcommissie', 'supplier invoice', 'Settlement letter', 'Valuation', 'Inspection report', 'Maintenance report',
-    'Quote', 'Energy label', 'Sustainability report', 'VvE', 'Permit', 'Legal notice'];
+    'Quote', 'Energy label', 'Sustainability report', 'VvE', 'Permit', 'Legal notice', 'Insurance policy', 'Transfer deed', 'Deed of division'];
   const BOXES = [['action', 'Needs action'], ['unassigned', 'Unassigned'], ['urgent', 'Urgent'], ['done', 'Handled'], ['all', 'All']];
   const MATCHED = {tenant: 'Found by the tenant\'s email address', address: 'Found by the address in the email', ai: 'Found by the AI (address in the email)',
     conversation: 'Same conversation as an earlier email', team: 'Linked by the team'};

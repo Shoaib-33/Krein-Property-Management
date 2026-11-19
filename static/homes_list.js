@@ -178,7 +178,8 @@
       : !list.length ? `<section class="panel hl-empty">${empty('No homes found', filtered ? 'No home matches these filters. Change or clear the filters.' : 'There are no homes in this list.', filtered ? '<button type="button" class="button small" data-hl-clear>Clear filters</button>' : '')}</section>`
       : (f.view === 'tiles' ? tiles : `<section class="panel">${tableHtml}</section>`) + pager;
     const addB = can && KB ? '<button type="button" class="button" data-bld="new">Add complex or shared house</button>' : '';
-    return heading('Homes', 'Overview of all homes in your portfolio.', can ? addB + button('Add home', 'form', 'data-kind="properties"', 'primary') : '', 'HOMES') + cards + filters + body;
+    const check = ['admin', 'manager', 'property', 'finance'].includes(company().role) ? `<button type="button" class="button" data-cp-open>${icon('clipboard')}Completeness check</button>` : '';
+    return heading('Homes', 'Overview of all homes in your portfolio.', check + (can ? addB + button('Add home', 'form', 'data-kind="properties"', 'primary') : ''), 'HOMES') + cards + filters + body;
   }
 
   window.kreinHomes.page = page;   // app.js propertiesPage() shows this list, so #properties never opens the old card view

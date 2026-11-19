@@ -2268,6 +2268,8 @@ from .company_move import router as company_move_router
 app.include_router(company_move_router)
 from .buildings import router as buildings_router
 app.include_router(buildings_router)
+from .completeness import router as completeness_router
+app.include_router(completeness_router)
 
 import mimetypes
 mimetypes.add_type('application/manifest+json', '.webmanifest')

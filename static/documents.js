@@ -14,13 +14,14 @@
     ['maintenance', 'Maintenance & inspections', 'wrench', ['Inspection report', 'Maintenance report', 'Quote', 'Contractor agreement']],
     ['energy', 'Energy & sustainability', 'leaf', ['Energy label', 'Sustainability report']],
     ['vve', 'VvE', 'building', ['VvE']],
+    ['deeds', 'Deeds & insurance', 'shield', ['Transfer deed', 'Deed of division', 'Insurance policy']],
     ['legal', 'Permits & legal', 'shield', ['Legal notice', 'Permit']],
     ['general', 'General', 'folder', ['General', 'Owner upload']],
   ];
   const LABEL = {Contract: 'Rental agreement', 'Lease draft': 'Lease draft (to sign)', 'supplier invoice': 'Invoice', 'payment proof': 'Payment proof', 'deposit evidence': 'Deposit evidence',
     'Settlement letter': 'Year-end settlement', Valuation: 'Valuation / WOZ / points', 'Owner statement': 'Owner statement', 'Inspection report': 'Inspection report',
     'Maintenance report': 'Maintenance report', Quote: 'Quote', 'Contractor agreement': 'Contractor agreement', 'Energy label': 'Energy label', 'Sustainability report': 'Sustainability report',
-    VvE: 'VvE document', 'Legal notice': 'Legal letter', Permit: 'Permit', General: 'General document', 'Owner upload': 'From the owner', Huurcommissie: 'Huurcommissie letter'};
+    VvE: 'VvE document', 'Transfer deed': 'Transfer deed', 'Deed of division': 'Deed of division', 'Insurance policy': 'Insurance policy', 'Legal notice': 'Legal letter', Permit: 'Permit', General: 'General document', 'Owner upload': 'From the owner', Huurcommissie: 'Huurcommissie letter'};
   const MONEY = ['supplier invoice', 'payment proof', 'deposit evidence'];   // only the finance team and managers open these
   const byKind = new Map(CATS.flatMap(([k, , , kinds]) => kinds.map(x => [x.toLowerCase(), k])));
   const catOf = kind => byKind.get(String(kind || '').toLowerCase()) || 'general';
@@ -31,7 +32,10 @@
     [/huurcommissie|verweerschrift|uitspraak|zitting/, 'Huurcommissie'],
     [/energie.?label|energy.?label|\bepa\b|energieprestatie/, 'Energy label'],
     [/duurzaam|sustainab|isolatie|insulation|zonnepane|solar|warmtepomp|heat.?pump/, 'Sustainability report'],
-    [/\bvve\b|splitsingsakte|\balv\b|notulen|huishoudelijk.?reglement|mjop|meerjarenonderhoud/, 'VvE'],
+    [/leveringsakte|transportakte|akte.?van.?levering|transfer.?deed|eigendomsakte|koopakte/, 'Transfer deed'],
+    [/splitsingsakte|akte.?van.?splitsing|deed.?of.?division/, 'Deed of division'],
+    [/polis|verzekering|insurance|opstal/, 'Insurance policy'],
+    [/\bvve\b|\balv\b|notulen|huishoudelijk.?reglement|mjop|meerjarenonderhoud/, 'VvE'],
     [/vergunning|permit/, 'Permit'],
     [/ingebrekestelling|sommatie|dagvaarding|deurwaarder|vonnis|advocaat|juridisch|legal|notice/, 'Legal notice'],
     [/concept.?huur|lease.?draft|draft/, 'Lease draft'],
@@ -49,14 +53,14 @@
   const canMoney = () => ['admin', 'manager', 'finance', 'landlord'].includes(company().role);
 
   // the type <select> of an upload form: grouped by category, and filled in from the file name
-  function enhanceForm(allowed) {
+  function enhanceForm(allowed, pick) {
     let n = 0;
     const t = setInterval(() => {
       const form = document.querySelector('#modal[open] form'), sel = form && form.querySelector('select[name="kind"]'), file = form && form.querySelector('input[type="file"][name="file"]');
       if (!sel || !file) { if (++n > 20) clearInterval(t); return; }
       clearInterval(t);
       const ok = k => (!allowed || allowed.includes(k)) && (canMoney() || !MONEY.includes(k));
-      sel.innerHTML = CATS.map(([, name, , kinds]) => { const list = kinds.filter(ok); return list.length ? `<optgroup label="${e(name)}">${list.map(k => `<option value="${e(k)}"${k === 'General' ? ' selected' : ''}>${e(label(k))}</option>`).join('')}</optgroup>` : ''; }).join('');
+      sel.innerHTML = CATS.map(([, name, , kinds]) => { const list = kinds.filter(ok); return list.length ? `<optgroup label="${e(name)}">${list.map(k => `<option value="${e(k)}"${k === (pick || 'General') ? ' selected' : ''}>${e(label(k))}</option>`).join('')}</optgroup>` : ''; }).join('');
       let touched = false;
       sel.addEventListener('change', ev => { if (ev.isTrusted) touched = true; });
       const hint = document.createElement('small'); hint.className = 'doc-suggest'; hint.hidden = true;

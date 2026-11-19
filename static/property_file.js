@@ -272,7 +272,8 @@ window.kreinCases = (() => {
       documents: docs,
     }[tab] || overview;
     const mail = staff && window.kreinMail ? window.kreinMail.panel(p.id) : '';   // the emails about this home (static/mailbox.js)
-    return head + cases + note + mail + tabs + body;
+    const complete = staff && window.kreinComplete ? window.kreinComplete.panel(p.id) : '';   // what this home still lacks (static/completeness.js)
+    return head + cases + note + complete + mail + tabs + body;
   }
 
   const baseRender = renderPage;
@@ -432,10 +433,10 @@ window.kreinCases = (() => {
       const done = () => { ui.file = null; load(); };
       if (act === 'ctype') window.kreinIndex.chooseType(c, done); else window.kreinIndex.propose(c, done);
     } else if (act === 'upload') {
-      formModal('Upload a document for this home', [['file', 'File (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}], selectField('kind', 'Type', ui.file.doc_kinds || ['General'])],
+      formModal('Upload a document for this home', [['file', 'File (PDF, JPEG, PNG or WebP, max 10 MB)', 'file', {wide: true}], selectField('kind', 'Type', ui.file.doc_kinds || ['General'], {value: el.dataset.docKind || 'General'})],
         async (data, fd) => { await api(`/api/properties/${p.id}/documents`, {method: 'POST', body: fd}); ui.file = null; load(); },
         {intro: 'The type is suggested from the file name. The document stays with this home, also when the tenant changes. Do not upload identity documents or citizen service numbers.', submit: 'Upload', success: 'Document uploaded.'});
-      if (window.kreinDocs) window.kreinDocs.enhanceForm(ui.file.doc_kinds);
+      if (window.kreinDocs) window.kreinDocs.enhanceForm(ui.file.doc_kinds, el.dataset.docKind);
     }
   });
   // another page in the menu closes the open property

@@ -661,6 +661,15 @@ CREATE INDEX properties_building ON properties(building_id)
 
 # V65: who performs the work (app/trades.py): the trade a work order or recurring maintenance needs (electrician,
 # plumber, ...), so the supplier list can be narrowed to the companies of that trade
+# V66: completeness of the records (app/completeness.py): a check marked "not needed" for a home, with the reason
+V66 = '''
+CREATE TABLE completeness_skips (
+ company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER NOT NULL REFERENCES properties(id), check_key TEXT NOT NULL,
+ reason TEXT NOT NULL, created_by INTEGER REFERENCES users(id), created_at TEXT NOT NULL, PRIMARY KEY(property_id,check_key)
+);
+CREATE INDEX completeness_skips_company ON completeness_skips(company_id)
+'''
+
 V65 = '''
 ALTER TABLE maintenance_jobs ADD COLUMN trade TEXT NOT NULL DEFAULT '';
 ALTER TABLE maintenance_plans ADD COLUMN trade TEXT NOT NULL DEFAULT '';
@@ -1011,6 +1020,13 @@ CREATE INDEX properties_building ON properties(building_id);
 ALTER TABLE maintenance_jobs ADD COLUMN trade TEXT NOT NULL DEFAULT '';
 ALTER TABLE maintenance_plans ADD COLUMN trade TEXT NOT NULL DEFAULT '';
 ALTER TABLE work_orders ADD COLUMN trade TEXT NOT NULL DEFAULT '';
+''',
+    66: '''
+CREATE TABLE completeness_skips (
+ company_id BIGINT NOT NULL REFERENCES companies(id), property_id BIGINT NOT NULL REFERENCES properties(id), check_key TEXT NOT NULL,
+ reason TEXT NOT NULL, created_by BIGINT REFERENCES users(id), created_at TEXT NOT NULL, PRIMARY KEY(property_id,check_key)
+);
+CREATE INDEX completeness_skips_company ON completeness_skips(company_id);
 ''',
     63: '''
 CREATE TABLE mail_messages (
@@ -1632,6 +1648,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (65, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=66').fetchone():
+            for statement in V66.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (66, now()))
         conn.commit()
     except Exception:
         conn.rollback()
