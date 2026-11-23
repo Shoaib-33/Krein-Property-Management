@@ -76,6 +76,20 @@ class CompletenessTests(unittest.TestCase):
         self.assertIn('area', h['missing'])
         self.assertIn('energy_label', h['missing'])
 
+    def test_a_tenant_living_in_the_home_without_a_contract_makes_it_rented(self):
+        pid = self.manager.post('/api/records/properties', json={'company_id': 1, 'name': 'Dijk 5', 'address': 'Dijk 5', 'city': 'Delft', 'kind': 'House',
+                                                                 'area': 80, 'rooms': 4, 'energy_label': 'B'}).json()['id']
+        with db.transaction() as conn:
+            conn.execute("INSERT INTO tenants(company_id,name,email,phone,home_property_id,created_at) VALUES(1,'Sam de Vries','sam@example.com','0612345678',?,?)", (pid, db.now()))
+        h = self.home(pid)
+        self.assertFalse(h['vacant'])
+        self.assertEqual(h['items']['tenant_contact'], 'ok')
+        self.assertEqual(h['items']['tenant_iban'], 'missing')
+        self.assertEqual(h['items']['contract_doc'], 'missing')
+        r = self.manager.post(f'/api/properties/{pid}/documents', data={'kind': 'Contract'}, files={'file': ('huurovereenkomst.pdf', PDF, 'application/pdf')})
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(self.home(pid)['items']['contract_doc'], 'ok')
+
     def test_only_the_management_team(self):
         for email in ('tenant@krein.local', 'owner@krein.local'):
             c = self.login(email)

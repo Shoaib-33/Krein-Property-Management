@@ -60,6 +60,12 @@ def _homes(conn, company_id, property_id=None):
                              (SELECT COUNT(*) FROM tenant_bank_accounts b WHERE b.tenant_id=t.id) ibans
                              FROM contract_people cp JOIN tenants t ON t.id=cp.tenant_id WHERE t.company_id=? AND t.archived_at IS NULL''', (company_id,)):
         people.setdefault(r['contract_id'], []).append(dict(r))
+    # tenants who live in a home without a registered contract: the home is rented all the same (the rule of the Homes page)
+    residents = {}
+    for r in conn.execute('''SELECT t.home_property_id pid,t.id,t.name,t.email,t.phone,
+                             (SELECT COUNT(*) FROM tenant_bank_accounts b WHERE b.tenant_id=t.id) ibans
+                             FROM tenants t WHERE t.company_id=? AND t.home_property_id IS NOT NULL AND t.archived_at IS NULL AND t.erased_at IS NULL''', (company_id,)):
+        residents.setdefault(r['pid'], []).append(dict(r))
     with_keys = {r[0] for r in conn.execute('SELECT DISTINCT property_id FROM property_keys WHERE company_id=?', (company_id,))}
     skips = {(r['property_id'], r['check_key']): dict(r) for r in conn.execute(
         'SELECT s.property_id,s.check_key,s.reason,s.created_at,u.name by_name FROM completeness_skips s LEFT JOIN users u ON u.id=s.created_by WHERE s.company_id=?', (company_id,))}
@@ -67,7 +73,8 @@ def _homes(conn, company_id, property_id=None):
     for p in homes:
         have = kinds.get(p['id'], set())
         contracts = live.get(p['id'], [])
-        tenants = [t for cid in contracts for t in people.get(cid, [])]
+        tenants = list({t['id']: t for t in [t for cid in contracts for t in people.get(cid, [])] + residents.get(p['id'], [])}.values())
+        rented = bool(contracts or tenants)
         state = {
             'address': bool(p['address'].strip() and p['postcode'].strip() and p['city'].strip()),
             'area': (p['area'] or 0) > 0,
@@ -81,9 +88,9 @@ def _homes(conn, company_id, property_id=None):
         if p['kind'] in NO_VVE:
             for key in ('vve', 'division_deed'):
                 state[key] = state[key] or None
-        if contracts:   # a vacant home has no tenancy to check
+        if rented:   # a vacant home has no tenancy to check
             state['contract_doc'] = any('Contract' in kinds.get(('contract', cid), set()) for cid in contracts) or 'Contract' in have
-            state['tenant_contact'] = bool(tenants) and all(t['email'].strip() and t['phone'].strip() for t in tenants)
+            state['tenant_contact'] = bool(tenants) and all((t['email'] or '').strip() and (t['phone'] or '').strip() for t in tenants)
             state['tenant_iban'] = bool(tenants) and all(t['ibans'] for t in tenants)
         else:
             state.update({'contract_doc': None, 'tenant_contact': None, 'tenant_iban': None})
@@ -102,10 +109,10 @@ def _homes(conn, company_id, property_id=None):
         counted = [k for k in KEYS if items[k] != 'na']
         done = sum(items[k] in ('ok', 'skip') for k in counted)
         out.append({'id': p['id'], 'name': p['name'], 'address': p['address'], 'city': p['city'], 'kind': p['kind'], 'building_id': p['building_id'],
-                    'vacant': not contracts, 'items': items, 'skipped': skipped, 'done': done, 'total': len(counted),
+                    'vacant': not rented, 'items': items, 'skipped': skipped, 'done': done, 'total': len(counted),
                     'missing': [k for k in counted if items[k] == 'missing'],
-                    'tenants_missing': [{'id': t['id'], 'name': t['name'], 'email': bool(t['email'].strip()), 'phone': bool(t['phone'].strip()), 'iban': bool(t['ibans'])}
-                                        for t in tenants if not (t['email'].strip() and t['phone'].strip() and t['ibans'])]})
+                    'tenants_missing': [{'id': t['id'], 'name': t['name'], 'email': bool((t['email'] or '').strip()), 'phone': bool((t['phone'] or '').strip()), 'iban': bool(t['ibans'])}
+                                        for t in tenants if not ((t['email'] or '').strip() and (t['phone'] or '').strip() and t['ibans'])]})
     return out
 
 
