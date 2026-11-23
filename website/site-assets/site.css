@@ -397,3 +397,5 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--b
   .tab { flex: 1; padding: 10px 12px; }
   .timeline li { padding-left: 60px; }
 }
+/* phones: footer and breadcrumb links are easy to tap */
+@media (max-width:700px){.foot-grid li a,.foot-links a{display:inline-block;padding:10px 0}.crumbs a{display:inline-block;padding:11px 0}.checkbox input[type=checkbox],input[type=checkbox]{width:24px;height:24px}}

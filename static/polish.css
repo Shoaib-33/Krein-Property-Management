@@ -741,3 +741,12 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .portal-shell .ph-list{margin:0;padding-left:18px;font-size:13px;line-height:1.65}.portal-shell .ph-list li{margin-bottom:5px}
 @media(max-width:900px){.portal-shell .ph-grid,.portal-shell .ph-who{grid-template-columns:1fr}}
 @media(max-width:650px){.portal-shell .ph-sos .panel-header{flex-direction:column;align-items:flex-start}}
+/* phones: everything a thumb taps is at least about 44px (top bar, close buttons, phone numbers, links in lists) */
+@media(max-width:650px){
+.topbar .icon-button{width:44px;height:44px;min-width:44px}
+.modal-header .icon-button{width:44px;height:44px;min-width:44px;font-size:22px}
+.forgot-link{min-height:44px;padding:10px 6px}
+.rp-link{display:inline-block;min-height:40px;padding:10px 0;text-align:left}
+.portal-shell a[href^="tel:"]{display:inline-block;padding:10px 3px;margin:-10px -1px}
+.sidebar-footer .button{min-height:44px;font-size:13px}
+}
