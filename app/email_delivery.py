@@ -104,14 +104,42 @@ def queue_invoice(conn, invoice, recipient):
     return _queue(conn, invoice, 'invoice_issued', recipient)   # co-tenants each get their own email (app/co_tenants.py)
 
 
+_NL_MONTHS = ('januari', 'februari', 'maart', 'april', 'mei', 'juni', 'juli', 'augustus', 'september', 'oktober', 'november', 'december')
+_EN_MONTHS = ('January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December')
+
+
+def _eur(cents, language):
+    """EUR 1,225.00 in English, € 1.225,00 in Dutch."""
+    text = f'{(cents or 0) / 100:,.2f}'
+    return '€ ' + text.replace(',', '_').replace('.', ',').replace('_', '.') if language == 'nl' else 'EUR ' + text
+
+
+def _day(iso, language):
+    """2026-11-01 as 1 november 2026 (Dutch) or 1 November 2026."""
+    try:
+        y, m, d = (int(x) for x in str(iso)[:10].split('-'))
+        return f'{d} {(_NL_MONTHS if language == "nl" else _EN_MONTHS)[m - 1]} {y}'
+    except (ValueError, IndexError):
+        return str(iso or '')
+
+
+def _month(period, language):
+    """2026-11 as november 2026 (Dutch) or November 2026."""
+    try:
+        y, m = (int(x) for x in str(period)[:7].split('-'))
+        return f'{(_NL_MONTHS if language == "nl" else _EN_MONTHS)[m - 1]} {y}'
+    except (ValueError, IndexError):
+        return str(period or '')
+
+
 def _reminder_body(kind, invoice, tenant_name, language, balance_cents, public_url):
     portal_url = public_url + '/tenant'
     if kind == 'overdue_followup':
         if language == 'nl':
             subject = f'Tweede vriendelijke betalingsherinnering: {invoice["number"]}'
             body = (
-                f'Beste {tenant_name},\n\nVolgens onze administratie staat voor huurperiode {invoice["period"]} '
-                f'nog EUR {balance_cents / 100:,.2f} open. De vervaldatum was {invoice["due_date"]}. '
+                f'Beste {tenant_name},\n\nVolgens onze administratie staat voor huurperiode {_month(invoice["period"], "nl")} '
+                f'nog {_eur(balance_cents, "nl")} open. De vervaldatum was {_day(invoice["due_date"], "nl")}. '
                 'Betaal via de met uw verhuurder afgesproken betaalmethode. Heeft u al betaald of een betalingsbewijs '
                 'ingediend, dan kunt u dit bericht negeren terwijl de betaling wordt gecontroleerd.\n\n'
                 f'Bekijk uw factuur in het huurdersportaal: {portal_url}\n\n'
@@ -120,8 +148,8 @@ def _reminder_body(kind, invoice, tenant_name, language, balance_cents, public_u
         else:
             subject = f'Second friendly payment reminder: {invoice["number"]}'
             body = (
-                f'Dear {tenant_name},\n\nOur records show EUR {balance_cents / 100:,.2f} remains due for rent period '
-                f'{invoice["period"]}. The due date was {invoice["due_date"]}. Please pay using the method agreed '
+                f'Dear {tenant_name},\n\nOur records show {_eur(balance_cents, "en")} remains due for rent period '
+                f'{_month(invoice["period"], "en")}. The due date was {_day(invoice["due_date"], "en")}. Please pay using the method agreed '
                 'with your landlord. If you have already paid or submitted proof, you may ignore this message while it is reviewed.\n\n'
                 f'View your invoice in the tenant portal: {portal_url}\n\n'
                 'This is a friendly reminder, not a formal legal notice. Contact your property manager if you have questions.'
@@ -129,9 +157,9 @@ def _reminder_body(kind, invoice, tenant_name, language, balance_cents, public_u
     elif language == 'nl':
         subject = f'Vriendelijke betalingsherinnering: {invoice["number"]}'
         body = (
-            f'Beste {tenant_name},\n\nVolgens onze administratie staat voor huurperiode {invoice["period"]} '
-            f'bij factuur {invoice["number"]} nog EUR {balance_cents / 100:,.2f} open. De vervaldatum was '
-            f'{invoice["due_date"]}. Betaal via de met uw verhuurder afgesproken betaalmethode. '
+            f'Beste {tenant_name},\n\nVolgens onze administratie staat voor huurperiode {_month(invoice["period"], "nl")} '
+            f'bij factuur {invoice["number"]} nog {_eur(balance_cents, "nl")} open. De vervaldatum was '
+            f'{_day(invoice["due_date"], "nl")}. Betaal via de met uw verhuurder afgesproken betaalmethode. '
             'Heeft u al betaald of een betalingsbewijs ingediend, dan kunt u dit bericht negeren terwijl de betaling wordt gecontroleerd.\n\n'
             f'Bekijk uw factuur in het huurdersportaal: {portal_url}\n\n'
             'Dit is een vriendelijke herinnering, geen wettelijke aanmaning. Neem bij vragen contact op met uw verhuurder.'
@@ -139,8 +167,8 @@ def _reminder_body(kind, invoice, tenant_name, language, balance_cents, public_u
     else:
         subject = f'Friendly payment reminder: {invoice["number"]}'
         body = (
-            f'Dear {tenant_name},\n\nOur records show EUR {balance_cents / 100:,.2f} remains due for rent invoice '
-            f'{invoice["number"]}, covering {invoice["period"]}. The due date was {invoice["due_date"]}. '
+            f'Dear {tenant_name},\n\nOur records show {_eur(balance_cents, "en")} remains due for rent invoice '
+            f'{invoice["number"]}, covering {_month(invoice["period"], "en")}. The due date was {_day(invoice["due_date"], "en")}. '
             'Please pay using the method agreed with your landlord. If you have already paid or submitted proof, '
             'you may ignore this message while it is reviewed.\n\n'
             f'View your invoice in the tenant portal: {portal_url}\n\n'
@@ -152,18 +180,18 @@ def _reminder_body(kind, invoice, tenant_name, language, balance_cents, public_u
 def _invoice_body(invoice, tenant_name, language, public_url, payment_instructions=''):
     if language == 'nl':
         return (
-            f'Uw huurfactuur {invoice["number"]} voor {invoice["period"]}',
-            f'Beste {tenant_name},\n\nBijgevoegd vindt u de huurfactuur {invoice["number"]} voor {invoice["period"]}. '
-            f'Het totaal is EUR {invoice["total_cents"] / 100:,.2f} en de vervaldatum is {invoice["due_date"]}.\n\n'
+            f'Uw huurfactuur {invoice["number"]} voor {_month(invoice["period"], "nl")}',
+            f'Beste {tenant_name},\n\nBijgevoegd vindt u de huurfactuur {invoice["number"]} voor {_month(invoice["period"], "nl")}. '
+            f'Het totaal is {_eur(invoice["total_cents"], "nl")} en de vervaldatum is {_day(invoice["due_date"], "nl")}.\n\n'
             f'{payment_instructions or "Betaal volgens de met uw verhuurder afgesproken betaalmethode."}\n'
             f'Vermeld factuurnummer {invoice["number"]} in de omschrijving van uw overboeking, dan wordt uw betaling automatisch herkend.\n\n'
             f'U kunt uw facturen en betalingsbewijs ook bekijken in het huurdersportaal: {public_url}/tenant\n\n'
             'Met vriendelijke groet,\nUw vastgoedbeheerder'
         )
     return (
-        f'Your rent invoice {invoice["number"]} for {invoice["period"]}',
-        f'Dear {tenant_name},\n\nAttached is rent invoice {invoice["number"]} for {invoice["period"]}. '
-        f'The total is EUR {invoice["total_cents"] / 100:,.2f}, due on {invoice["due_date"]}.\n\n'
+        f'Your rent invoice {invoice["number"]} for {_month(invoice["period"], "en")}',
+        f'Dear {tenant_name},\n\nAttached is rent invoice {invoice["number"]} for {_month(invoice["period"], "en")}. '
+        f'The total is {_eur(invoice["total_cents"], "en")}, due on {_day(invoice["due_date"], "en")}.\n\n'
         f'{payment_instructions or "Please pay using the method agreed with your landlord."}\n'
         f'Put invoice number {invoice["number"]} in the description of your bank transfer, so your payment is recognised automatically.\n\n'
         f'You can also view invoices and submit payment proof in the tenant portal: {public_url}/tenant\n\n'

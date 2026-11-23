@@ -750,3 +750,4 @@ body.scrolled .topbar{box-shadow:0 6px 20px rgba(18,52,40,.08)}
 .portal-shell a[href^="tel:"]{display:inline-block;padding:10px 3px;margin:-10px -1px}
 .sidebar-footer .button{min-height:44px;font-size:13px}
 }
+.portal-shell .conversation-card .eyebrow{text-transform:uppercase}

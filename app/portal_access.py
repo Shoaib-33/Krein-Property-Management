@@ -26,8 +26,11 @@ def contractor_job(conn, user, job_id):
 
 
 def notify(conn, company_id, user_ids, title, body, target):
+    stamp = now()
     for uid in set(user_ids):
-        conn.execute('INSERT INTO notifications(company_id,user_id,title,body,target,created_at) VALUES(?,?,?,?,?,?)', (company_id, uid, title, body, target, now()))
+        conn.execute('INSERT INTO notifications(company_id,user_id,title,body,target,created_at) VALUES(?,?,?,?,?,?)', (company_id, uid, title, body, target, stamp))
+    from .tenant_email import queue   # a short email for tenants about a contract, a reply, a repair or a new document
+    queue(conn, list(user_ids), title, stamp)
 
 
 def notify_tenant(conn, contract_id, title, body, target='home'):
