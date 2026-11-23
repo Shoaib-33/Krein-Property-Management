@@ -8,7 +8,7 @@
 
   // [key, label, icon, types]; the first type of a category is the one suggested for it
   const CATS = [
-    ['rental', 'Rental agreements', 'file', ['Contract', 'Lease draft']],
+    ['rental', 'Rental agreements', 'file', ['Contract', 'Lease draft', 'Rent increase']],
     ['huurcommissie', 'Huurcommissie', 'clipboard', ['Huurcommissie']],
     ['financial', 'Financial & invoices', 'wallet', ['supplier invoice', 'payment proof', 'deposit evidence', 'Settlement letter', 'Valuation', 'Owner statement']],
     ['maintenance', 'Maintenance & inspections', 'wrench', ['Inspection report', 'Maintenance report', 'Quote', 'Contractor agreement']],
@@ -18,7 +18,7 @@
     ['legal', 'Permits & legal', 'shield', ['Legal notice', 'Permit']],
     ['general', 'General', 'folder', ['General', 'Owner upload']],
   ];
-  const LABEL = {Contract: 'Rental agreement', 'Lease draft': 'Lease draft (to sign)', 'supplier invoice': 'Invoice', 'payment proof': 'Payment proof', 'deposit evidence': 'Deposit evidence',
+  const LABEL = {Contract: 'Rental agreement', 'Lease draft': 'Lease draft (to sign)', 'Rent increase': 'Rent increase letter', 'supplier invoice': 'Invoice', 'payment proof': 'Payment proof', 'deposit evidence': 'Deposit evidence',
     'Settlement letter': 'Year-end settlement', Valuation: 'Valuation / WOZ / points', 'Owner statement': 'Owner statement', 'Inspection report': 'Inspection report',
     'Maintenance report': 'Maintenance report', Quote: 'Quote', 'Contractor agreement': 'Contractor agreement', 'Energy label': 'Energy label', 'Sustainability report': 'Sustainability report',
     VvE: 'VvE document', 'Transfer deed': 'Transfer deed', 'Deed of division': 'Deed of division', 'Insurance policy': 'Insurance policy', 'Legal notice': 'Legal letter', Permit: 'Permit', General: 'General document', 'Owner upload': 'From the owner', Huurcommissie: 'Huurcommissie letter'};
@@ -38,6 +38,7 @@
     [/\bvve\b|\balv\b|notulen|huishoudelijk.?reglement|mjop|meerjarenonderhoud/, 'VvE'],
     [/vergunning|permit/, 'Permit'],
     [/ingebrekestelling|sommatie|dagvaarding|deurwaarder|vonnis|advocaat|juridisch|legal|notice/, 'Legal notice'],
+    [/huurverhoging|huurprijsverhoging|huuraanpassing|rent.?increase|indexatie/, 'Rent increase'],
     [/concept.?huur|lease.?draft|draft/, 'Lease draft'],
     [/huurovereenkomst|huurcontract|rental.?agreement|tenancy.?agreement|lease|contract/, 'Contract'],
     [/afrekening|servicekosten|settlement|jaarafrekening/, 'Settlement letter'],

@@ -15,7 +15,7 @@ STAFF = ('property', 'finance', 'manager')   # and admin
 KINDS = ('Apartment', 'House', 'Room', 'Parking', 'Storage')
 LABELS = ('Unknown', 'A++++', 'A+++', 'A++', 'A+', 'A', 'B', 'C', 'D', 'E', 'F', 'G')
 UTILITIES = ('gas', 'electricity', 'water')
-DOC_KINDS = ('General', 'Contract', 'Lease draft', 'Huurcommissie', 'supplier invoice', 'Settlement letter', 'Valuation', 'Inspection report', 'Maintenance report',
+DOC_KINDS = ('General', 'Contract', 'Lease draft', 'Rent increase', 'Huurcommissie', 'supplier invoice', 'Settlement letter', 'Valuation', 'Inspection report', 'Maintenance report',
              'Quote', 'Energy label', 'Sustainability report', 'VvE', 'Permit', 'Legal notice',
              'Insurance policy', 'Transfer deed', 'Deed of division')   # grouped in categories by static/documents.js
 

@@ -132,7 +132,8 @@
     ].filter(h => h.d).sort((a, b) => b.d.localeCompare(a.d)).slice(0, 40);
     const history = panel('Maintenance history', 'Everything that was done on this home: work orders, tenant repair reports and inspections.',
       hist.length ? `<ol class="mw-timeline">${hist.map(h => `<li><span class="mw-dot">${icon(h.ic)}</span><div><time>${e(day(h.d))}</time><strong>${e(h.title)}</strong><small><span class="mw-tag">${e(h.tag)}</span>${h.sub ? ' ' + e(h.sub) : ''}</small></div></li>`).join('')}</ol>`
-        : empty('No history yet', 'Finished work orders, repair reports and inspections of this home show here.'));
+        : empty('No history yet', 'Finished work orders, repair reports and inspections of this home show here.'),
+      edit ? `<button type="button" class="button small primary" data-mw="job-past" data-pid="${pid}">${icon('plus')}Add work done</button>` : '');
     return {jobs: jobPanel, plans: planPanel, history, openCount: jobs.filter(openJob).length};
   }
 
@@ -187,6 +188,27 @@
     async (v, fd) => { await api(`/api/maintenance-jobs/${j.id}/complete`, {method: 'POST', body: fd}); },
     {intro: j.plan_id ? 'The next date of this recurring maintenance moves on automatically. A cost waits for a manager to approve who pays it.' : 'A cost waits for a manager to approve who pays it.',
       submit: 'Save', success: 'Work order finished.'});
+  }
+  // work that was already done (also before the home was in the system): a work order that is created and finished at once
+  function pastJob(pid) {
+    let made = null;   // the work order made by an earlier try that failed at the second step: finish that one, do not make another
+    formModal('Add work done', [
+      ['title', 'What was done?', 'text', {wide: true, placeholder: 'For example: boiler replaced, roof gutter cleaned'}],
+      selectField('category', 'Category', data.categories.length ? data.categories : ['General'], {value: 'General'}),
+      selectField('trade', 'Who did the work?', tradeOptions(), {value: '', required: false}),
+      selectField('contractor_id', 'Supplier', contractorOptions(), {value: '', required: false}),
+      ['completed_on', 'Date the work was done', 'date', {value: todayS()}],
+      ['amount', 'Cost, including VAT (€; empty if there was no cost)', 'number', {required: false}],
+      selectField('vat_rate', 'VAT rate', [['21', '21%'], ['9', '9%'], ['0', '0% / no VAT']], {value: '21'}),
+      selectField('bill_to', 'Who pays?', billOptions(), {value: defaultPayer(pid), wide: true}),
+      ['file', 'Supplier invoice or photo (optional)', 'file', {required: false, wide: true}],
+      ['note', 'Details (optional)', 'textarea', {required: false, wide: true}]],
+    async (v, fd) => {
+      if (v.completed_on > todayS()) throw new Error('The work cannot be done in the future.');
+      if (!made) made = (await api(`/api/properties/${pid}/maintenance-jobs`, {method: 'POST', body: {title: v.title, category: v.category, trade: v.trade, contractor_id: v.contractor_id}})).id;
+      await api(`/api/maintenance-jobs/${made}/complete`, {method: 'POST', body: fd});
+    },
+    {home: pid, intro: 'For work that was already done on this home. It shows in the maintenance history; a cost waits for a manager to approve who pays it.', submit: 'Save', success: 'Work added to the history.'});
   }
   // the standard list of recurring maintenance (label, title, category, months); the interval can be changed per home
   const PRESETS = [['Boiler service – every year', 'Boiler service', 'Boiler / heating', 12], ['Smoke detector check – every year', 'Smoke detector check', 'Smoke detectors', 12],
@@ -269,6 +291,7 @@
     try {
       if (act === 'home') showProperty(Number(id));
       else if (act === 'job-new') newJob(el.dataset.pid ? Number(el.dataset.pid) : null);
+      else if (act === 'job-past') pastJob(Number(el.dataset.pid));
       else if (act === 'job') { const j = find('jobs', id); if (j) jobDetail(j); }
       else if (act === 'job-edit') { const j = find('jobs', id); formModal('Edit work order', [...jobFields(j, j.property_id), selectField('status', 'Status', [['open', 'To do'], ['planned', 'Planned']], {value: j.status})],
         async v => { await api(`/api/maintenance-jobs/${j.id}`, {method: 'POST', body: v}); }, {home: j.property_id, submit: 'Save', success: 'Work order saved.'}); }

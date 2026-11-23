@@ -243,8 +243,10 @@ window.kreinCases = (() => {
     const canOps = ['admin', 'manager', 'property'].includes(role);
     const maint = panel('Repair reports from tenants', 'Repair reports of this home, open and done.', table(['Repair', 'Reported', 'Urgency', 'Status', 'Deadline', ''], repairs.slice(0, 30).map(r => [
       `<strong>${e(r.title)}</strong><small>${e(r.category)}</small>`, e(day(r.reported_on)), e(r.urgency), badge(r.status, RS[r.status]), e(day(r.due_date)),
-      `<button type="button" class="button small" data-action="repair-detail" data-id="${r.id}">Open</button>`]), 'No repair reports yet.')
-      + (canOps && live ? `<div class="panel-body tf-more">${mb('New maintenance report', `data-action="form" data-kind="repairs" data-preset-contract="${live.id}"`, true)}</div>` : ''));
+      `<button type="button" class="button small" data-action="repair-detail" data-id="${r.id}">Open</button>`]), 'No repair reports yet.'),
+      // a repair report belongs to a tenancy; without a registered contract the repair is recorded as a work order on the home
+      !canOps ? '' : live ? `<button type="button" class="button small primary" data-action="form" data-kind="repairs" data-preset-contract="${live.id}">${icon('plus')}Add repair report</button>`
+        : window.kreinWork ? `<button type="button" class="button small primary" data-mw="job-new" data-pid="${p.id}" title="No contract is registered for this home: the repair is saved as a work order">${icon('plus')}Add repair</button>` : '');
     const insp = rows('inspections').filter(x => cids.has(x.contract_id)).sort((a, b) => String(b.inspected_on).localeCompare(String(a.inspected_on)));
     const inspections = panel('Inspections', 'Move-in, move-out and periodic inspections, with meter readings and keys.', table(['Inspection', 'Date', 'Status', ''], insp.slice(0, 20).map(x => [
       `<strong>${e(x.kind)}</strong>`, e(day(x.inspected_on)), badge(x.status), `<button type="button" class="button small" data-action="inspection-detail" data-id="${x.id}">Open</button>`]), 'No inspections yet.')
