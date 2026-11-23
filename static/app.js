@@ -514,8 +514,10 @@ function viewInvitation(kind,id){
  if(!inv)return createInvitation(kind,id);
  invitationModal(kind,id,{path:'/activate/'+inv.token,email:inv.email,expires_at:inv.expires_at,email_status:inv.email_status||'not_sent',email_error:inv.email_error,emailed_at:inv.emailed_at,saved:true});
 }
+// a link for a tenant: on the public tenant address when one is set (KREIN_TENANT_URL, app/tenant_host.py)
+const tenantLink=path=>((state.me&&state.me.tenant_url)||location.origin)+path;
 function invitationModal(kind,id,r){
- const url=location.origin+r.path;
+ const url=kind==='tenant'?tenantLink(r.path):location.origin+r.path;
  const sent=r.email_status==='sent';
  const status=sent?`<div class="notice">${icon('check')}<span><strong>Invitation email sent</strong> to ${e(r.email)}${r.emailed_at?` on ${e(r.emailed_at.slice(0,10))}`:''}. It has the link and short steps to activate the account.</span></div>`
   :r.email_status==='failed'?`<div class="notice warning">${icon('info')}<span><strong>The invitation email could not be sent.</strong> ${e(r.email_error||'')} Share the link below yourself.</span></div>`
@@ -613,7 +615,7 @@ async function handleAction(el){
  else if(action==='repair-update')showRepairUpdate(id);
  else if(action==='inspection-detail')showInspection(id);
  else if(action==='invoice-run')formModal('Run monthly invoices',[['period','Invoice month','month',{value:(state.data.today||today()).slice(0,7)}]],async data=>{const result=await api('/api/invoices/run',{method:'POST',body:{...data,company_id:state.company}});if(result.created&&window.pagerFilter)pagerFilter('invoices',{email:'Drafts',period:data.period});toast(result.created?`${result.created} draft invoice(s) created for ${data.period}. Check them (View PDF, Manage to edit), then send them: one by one, or Send all.`:`No invoices generated. ${result.why||''}`);},{intro:'One draft invoice per tenancy for the chosen month. Nothing is sent yet: you check and edit them, then send them to the tenants. Part months are charged per day. Running the same month again never creates duplicates.',submit:'Create draft invoices'});
- else if(action==='create-link'){const r=await api(`/api/invoices/${id}/link`,{method:'POST'});const url=location.origin+r.path;modal('Tenant payment-proof link',`<p class="modal-note">This link expires in 30 days and replaces the previous link. Share it directly with the tenant; anyone with it can view this invoice and submit a receipt.</p><div class="link-output">${e(url)}</div><div class="modal-footer"><a class="button" href="${e(r.path)}" target="_blank" rel="noopener">Open tenant page</a>${button('Copy link','copy-link',`data-url="${e(url)}"`,'primary')}</div>`);}
+ else if(action==='create-link'){const r=await api(`/api/invoices/${id}/link`,{method:'POST'});const url=tenantLink(r.path);modal('Tenant payment-proof link',`<p class="modal-note">This link expires in 30 days and replaces the previous link. Share it directly with the tenant; anyone with it can view this invoice and submit a receipt.</p><div class="link-output">${e(url)}</div><div class="modal-footer"><a class="button" href="${e(r.path)}" target="_blank" rel="noopener">Open tenant page</a>${button('Copy link','copy-link',`data-url="${e(url)}"`,'primary')}</div>`);}
  else if(action==='copy-link'){await navigator.clipboard.writeText(el.dataset.url);toast('Link copied.');}
  else if(action==='revoke-link'){await api(`/api/invoices/${id}/revoke-link`,{method:'POST'});closeModal();toast('Tenant upload links revoked.');}
  else if(action==='reverse-proof')formModal('Reverse verified payment',[['note','Reason for reversal','textarea',{wide:true}]],data=>api(`/api/proofs/${id}/reverse`,{method:'POST',body:data}),{intro:'This creates a reversing ledger entry and reopens the invoice balance. The original payment remains in history.',submit:'Record reversal'});

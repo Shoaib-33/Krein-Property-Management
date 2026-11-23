@@ -132,7 +132,8 @@ async def security_headers(request, call_next):
         blocked = check_portal(request.url.path)
         if blocked:
             return JSONResponse({'detail': blocked}, status_code=403)
-    response = await call_next(request)
+    from .tenant_host import guard   # the public tenant address (KREIN_TENANT_URL) reaches the tenant portal only
+    response = guard(request) or await call_next(request)
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['Referrer-Policy'] = 'same-origin'   # never sent to other sites; the landlord address uses it to pick its own session for file downloads
@@ -567,9 +568,10 @@ def me(user=Depends(current_user)):
         contractor_access = bool(conn.execute('SELECT 1 FROM contractor_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
         owner_access = bool(conn.execute('SELECT 1 FROM owner_accounts WHERE user_id=? AND enabled=1', (user['id'],)).fetchone())
         from .access import off_map
+        from .tenant_host import tenant_url   # the public tenant address, for links that go to tenants
         access_off = {} if user['global_admin'] else off_map(conn)   # what the Developer switched off per role (app/access.py)
     return {'id': user['id'], 'name': user['name'], 'email': user['email'], 'csrf': user['csrf'], 'global_admin': bool(user['global_admin']), 'developer': bool(user['global_admin']),
-            'companies': companies, 'tenant_access': tenant_access, 'contractor_access': contractor_access, 'owner_access': owner_access, 'access_off': access_off}
+            'companies': companies, 'tenant_access': tenant_access, 'contractor_access': contractor_access, 'owner_access': owner_access, 'access_off': access_off, 'tenant_url': tenant_url()}
 
 
 @app.get('/api/data')

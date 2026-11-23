@@ -89,8 +89,9 @@
     const [kind, id] = el.dataset.resetLink.split(':');
     try {
       const r = await api('/api/password/reset-link', {method: 'POST', body: {kind, target_id: Number(id), company_id: state.company}});
+      const link = kind === 'tenant' && typeof tenantLink === 'function' ? tenantLink(r.path) : location.origin + r.path;
       modal(T('Password reset link', 'Link om het wachtwoord te herstellen'), `<p class="modal-note">${T(`Send this link to <strong>${esc(r.email)}</strong> yourself (for example by WhatsApp or text). It works once and is valid for ${r.valid_minutes} minutes. Opening it lets the person choose a new password.`, `Stuur deze link zelf naar <strong>${esc(r.email)}</strong> (bijvoorbeeld via WhatsApp of sms). Hij werkt één keer en is ${r.valid_minutes} minuten geldig. Wie hem opent, kiest een nieuw wachtwoord.`)}</p>
-        <div class="link-output">${esc(location.origin + r.path)}</div><div class="modal-footer"><button type="button" class="button" data-copy-reset="${esc(location.origin + r.path)}">${T('Copy link', 'Link kopiëren')}</button><button type="button" class="button primary" data-action="close-modal">${T('Done', 'Klaar')}</button></div>`);
+        <div class="link-output">${esc(link)}</div><div class="modal-footer"><button type="button" class="button" data-copy-reset="${esc(link)}">${T('Copy link', 'Link kopiëren')}</button><button type="button" class="button primary" data-action="close-modal">${T('Done', 'Klaar')}</button></div>`);
     } catch (err) { toast(err.message); }
   });
   document.addEventListener('click', ev => {

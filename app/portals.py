@@ -79,14 +79,14 @@ def _send_invitation(iid, user):
     with connect() as conn:
         i = conn.execute('SELECT i.*,c.name company FROM account_invitations i JOIN companies c ON c.id=i.company_id WHERE i.id=?', (iid,)).fetchone()
         existing = bool(conn.execute('SELECT 1 FROM users WHERE email=? AND active=1', (i['email'],)).fetchone())
-    status, error = _email_invitation(i['email'], i['name'], i['company'], '/activate/'+i['token'], existing)
+    status, error = _email_invitation(i['email'], i['name'], i['company'], '/activate/'+i['token'], existing, i['kind'])
     with transaction() as conn:
         conn.execute('UPDATE account_invitations SET email_status=?,email_error=?,emailed_at=? WHERE id=?', (status, error or None, now() if status == 'sent' else None, iid))
         audit(conn,user['id'],i['company_id'],'invitation_email_'+status,i['kind'],i['target_id'],{'invitation_id':iid,'email':i['email']})
     return {'email_status':status,'email_error':error}
 
 
-def _email_invitation(email, name, company, path, existing):
+def _email_invitation(email, name, company, path, existing, kind=''):
     """Emails the invitation when email (SMTP) is set up. Returns (status, error): 'sent', 'failed' or 'not_configured'."""
     from .email_delivery import send_plain, smtp_settings, valid_recipient
     settings = smtp_settings()
@@ -94,7 +94,8 @@ def _email_invitation(email, name, company, path, existing):
         return 'not_configured', ''
     if not valid_recipient(email):
         return 'failed', 'The email address is not valid.'
-    url = settings['public_url'] + path
+    from .tenant_host import tenant_base
+    url = (tenant_base(settings['public_url']) if kind == 'tenant' else settings['public_url']) + path
     step = 'Log in met uw huidige Krein-wachtwoord' if existing else 'Kies een wachtwoord (minimaal 12 tekens)'
     try:   # in Dutch only
         send_plain(email, f'Uw uitnodiging van {company}',

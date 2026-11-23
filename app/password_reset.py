@@ -78,8 +78,18 @@ def forgot(data: dict, request: Request):
             return answer
         path = new_link(conn, user['id'], None, ip)
         audit(conn, user['id'], None, 'reset_requested', 'user', user['id'], {})
-    _send(user['email'], user['name'], settings['public_url'] + path)
+    _send(user['email'], user['name'], _base_for(user['id'], settings['public_url']) + path)
     return answer
+
+
+def _base_for(user_id, public_url):
+    """A tenant who is nothing else gets the link on the public tenant address (KREIN_TENANT_URL); everyone else the normal one."""
+    from .tenant_host import tenant_base
+    with connect() as conn:
+        tenant = conn.execute('SELECT 1 FROM portal_accounts WHERE user_id=? AND enabled=1', (user_id,)).fetchone()
+        other = conn.execute('SELECT 1 FROM memberships WHERE user_id=? UNION SELECT 1 FROM owner_accounts WHERE user_id=? AND enabled=1 UNION SELECT 1 FROM contractor_accounts WHERE user_id=? AND enabled=1 UNION SELECT 1 FROM users WHERE id=? AND global_admin=1',
+                             (user_id, user_id, user_id, user_id)).fetchone()
+    return tenant_base(public_url) if tenant and not other else public_url
 
 
 def _valid(conn, token):

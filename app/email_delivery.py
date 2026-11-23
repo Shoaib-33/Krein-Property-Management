@@ -195,6 +195,7 @@ def send_plain(recipient, subject, body):
 
 
 def _deliver_one(job, settings):
+    from .tenant_host import tenant_base   # tenants get the public tenant address (KREIN_TENANT_URL) when it is set
     with db.connect() as conn:
         row = conn.execute(
             'SELECT j.*,i.number,i.period,i.due_date,i.basic_cents,i.service_cents,i.total_cents,i.snapshot,i.contract_id,COALESCE(j.tenant_id,c.tenant_id) person_id,'
@@ -221,9 +222,9 @@ def _deliver_one(job, settings):
         return 'cancelled'
 
     if row['kind'] == 'invoice_issued':
-        subject, body = _invoice_body(row, row['tenant_name'], row['language'], settings['public_url'], snapshot.get('payment_instructions', ''))
+        subject, body = _invoice_body(row, row['tenant_name'], row['language'], tenant_base(settings['public_url']), snapshot.get('payment_instructions', ''))
     else:
-        subject, body = _reminder_body(row['kind'], row, row['tenant_name'], row['language'], balance, settings['public_url'])
+        subject, body = _reminder_body(row['kind'], row, row['tenant_name'], row['language'], balance, tenant_base(settings['public_url']))
     if own:   # a split rent: this person's own part, and who they share it with
         others = ', '.join(s['name'] for s in shares if s['tenant_id'] != row['person_id'])
         due = max(0, own['share_cents'] - own['paid_cents'])
