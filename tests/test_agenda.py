@@ -95,17 +95,17 @@ class AgendaTests(unittest.TestCase):
         _, kid = self.add_case(h, assignee_id=admin, next_deadline=self.day(2))
         with db.transaction() as conn:
             digest = agenda.reminders_for_company(conn, 1)
-        self.assertTrue(any('Huurcommissie hearing' in line for line in digest.get(admin, [])))
+        self.assertTrue(any('Huurcommissie hearing' in line for _, line in digest.get(admin, [])))
         with db.transaction() as conn:
             again = agenda.reminders_for_company(conn, 1)
-        self.assertFalse(any('Huurcommissie hearing' in line for line in again.get(admin, [])))   # sent once
+        self.assertFalse(any('Huurcommissie hearing' in line for _, line in again.get(admin, [])))   # sent once
         with db.connect() as conn:
             rows = conn.execute("SELECT title FROM notifications WHERE user_id=? AND target='calendar' AND body LIKE 'Huurcommissie hearing%'", (admin,)).fetchall()
         self.assertEqual([r[0] for r in rows], ['Case deadline in 2 days'])
         # tomorrow it is 1 day away: the last reminder
         with db.transaction() as conn:
             later = agenda.reminders_for_company(conn, 1, self.today + timedelta(days=1))
-        self.assertTrue(any('Case deadline tomorrow' in line for line in later.get(admin, [])))
+        self.assertTrue(any('Case deadline tomorrow' in line for _, line in later.get(admin, [])))
         self.assertEqual(agenda.send_deadline_reminders() >= 0, True)   # runs for every company without email set up
 
     def test_overview_to_the_company_mailbox(self):
@@ -122,7 +122,11 @@ class AgendaTests(unittest.TestCase):
             agenda.send_deadline_reminders()
         overview = [x for x in sent if x[0] == 'beheer@pandtbeheer.nl']
         self.assertEqual(len(overview), 1)
-        self.assertEqual(overview[0][1], 'Deadlines coming up – all companies')
+        self.assertEqual(overview[0][1], 'Deadlines binnenkort / Deadlines coming up – alle bedrijven / all companies')
+        body = overview[0][2]
+        self.assertLess(body.index('Deze datums komen eraan'), body.index('These dates are coming up'))   # Dutch first, English below
+        self.assertIn('Deadline zaak over 2 dagen', body)
+        self.assertIn('Case deadline in 2 days', body)
         self.assertIn('Huurcommissie hearing', overview[0][2])
         self.assertIn('Krein Residential BV', overview[0][2])
         self.assertTrue(any(x[0] != 'beheer@pandtbeheer.nl' for x in sent))      # the personal reminders still go out

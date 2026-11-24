@@ -34,6 +34,10 @@ LABEL = {'case': 'Case deadline', 'invoice': 'Rent due', 'repair': 'Repair deadl
          'maintenance': 'Planned maintenance', 'inspection': 'Inspection', 'contract': 'Contract ends',
          'indexation_letter': 'Rent increase letter due', 'indexation': 'Rent increase starts', 'task': 'Task',
          'energy_label': 'Energy label expires'}
+LABEL_NL = {'case': 'Deadline zaak', 'invoice': 'Huur te betalen', 'repair': 'Deadline reparatie', 'appointment': 'Afspraak',
+            'maintenance': 'Gepland onderhoud', 'inspection': 'Inspectie', 'contract': 'Contract eindigt',
+            'indexation_letter': 'Huurverhogingsbrief versturen', 'indexation': 'Huurverhoging gaat in', 'task': 'Taak',
+            'energy_label': 'Energielabel verloopt'}
 
 
 def _shift(d: date, months=0, years=0):
@@ -90,12 +94,12 @@ def events(conn, company_id, start: date, end: date, role='admin'):
         add(f"plan-{m['id']}-{m['next_due']}", m['next_due'], 'maintenance', m['title'], m)
     for i in q(f'''SELECT i.id,i.kind,i.inspected_on,i.status,c.property_id,{prop} FROM inspections i JOIN contracts c ON c.id=i.contract_id JOIN properties p ON p.id=c.property_id
                    WHERE i.company_id=? AND i.inspected_on BETWEEN ? AND ?''', (company_id, a, b)):
-        add(f"inspection-{i['id']}", i['inspected_on'], 'inspection', f"{i['kind']} inspection", i, done=i['status'] != 'draft' or i['inspected_on'] < today)
+        add(f"inspection-{i['id']}", i['inspected_on'], 'inspection', f"{i['kind']} inspection", i, title_nl=f"Inspectie {i['kind']}", done=i['status'] != 'draft' or i['inspected_on'] < today)
     contracts = q(f'''SELECT c.id,c.start_date,c.end_date,c.status,c.property_id,{prop} FROM contracts c JOIN properties p ON p.id=c.property_id
                       WHERE c.company_id=? AND c.status IN ('active','notice given')''', (company_id,))
     for c in contracts:
         if c['end_date'] and a <= c['end_date'] <= b:
-            add(f"contract-{c['id']}", c['end_date'], 'contract', 'Contract ends', c, contract_id=c['id'])
+            add(f"contract-{c['id']}", c['end_date'], 'contract', 'Contract ends', c, contract_id=c['id'], title_nl='Contract eindigt')
     if role in STAFF:   # rent indexation: each anniversary of the start date, the letter at least two months before
         proposed = {(r['contract_id'], r['effective_from']) for r in q("SELECT contract_id,effective_from FROM rent_proposals WHERE status<>'rejected'")}
         for c in contracts:
@@ -111,15 +115,17 @@ def events(conn, company_id, start: date, end: date, role='admin'):
                 letter = _shift(d, months=-2)
                 if start <= letter <= end:
                     add(f"index-letter-{c['id']}-{d.year}", letter.isoformat(), 'indexation_letter', 'Send the rent increase letter', c, contract_id=c['id'], done=done,
-                        note=f'New rent from {d.isoformat()}')
+                        title_nl='Verstuur de huurverhogingsbrief', note=f'New rent from {d.isoformat()}')
                 if start <= d <= end:
-                    add(f"index-{c['id']}-{d.year}", d.isoformat(), 'indexation', 'Yearly rent increase', c, contract_id=c['id'], done=done)
+                    add(f"index-{c['id']}-{d.year}", d.isoformat(), 'indexation', 'Yearly rent increase', c, contract_id=c['id'], done=done,
+                        title_nl='Jaarlijkse huurverhoging')
     for t in q(f'''SELECT t.id,t.title,t.due_date,t.status,t.category,c.property_id,{prop} FROM tasks t LEFT JOIN contracts c ON c.id=t.contract_id
                    LEFT JOIN properties p ON p.id=c.property_id WHERE t.company_id=? AND t.due_date BETWEEN ? AND ?''', (company_id, a, b)):
         add(f"task-{t['id']}", t['due_date'], 'task', t['title'], t, page=None if t['property_id'] else 'tasks', done=t['status'] == 'done', note=t['category'])
     for p in q('''SELECT p.id property_id,p.address,p.name property_name,p.city,p.energy_label,p.energy_label_expires FROM properties p
                   WHERE p.company_id=? AND p.energy_label_expires BETWEEN ? AND ?''', (company_id, a, b)):
-        add(f"label-{p['property_id']}-{p['energy_label_expires']}", p['energy_label_expires'], 'energy_label', f"Energy label {p['energy_label']} expires", p)
+        add(f"label-{p['property_id']}-{p['energy_label_expires']}", p['energy_label_expires'], 'energy_label', f"Energy label {p['energy_label']} expires", p,
+            title_nl=f"Energielabel {p['energy_label']} verloopt")
     out.sort(key=lambda x: (x['date'], x['time'] or '99', x['type']))
     return out
 
@@ -258,8 +264,9 @@ def _recipients(conn, company_id, item):
 
 
 def reminders_for_company(conn, company_id, today=None, collect=None):
-    """Notices for the important dates in the next 7 days; returns {user_id: [lines]} for the email digest.
-    collect (a list) also receives every line once, for the copy to the company's own email address."""
+    """Notices for the important dates in the next 7 days; returns {user_id: [(Dutch line, English line)]} for the email
+    digest. collect (a list) also receives every line pair once, for the copy to the company's own email address.
+    Titles typed by people (cases, appointments, tasks) stay as they were typed."""
     from .portal_access import notify
     today = today or local_today()
     digest = {}
@@ -282,10 +289,14 @@ def reminders_for_company(conn, company_id, today=None, collect=None):
         body = f"{x['title']}{' – ' + x['place'] if x['place'] else ''} ({x['date']}{' ' + x['time'] if x['time'] else ''})."
         users = _recipients(conn, company_id, x)
         notify(conn, company_id, users, title, body, 'calendar')
+        d = date.fromisoformat(x['date']).strftime('%d-%m-%Y')
+        title_nl = f"{LABEL_NL[x['type']]} {'morgen' if left == 1 else f'over {left} dagen'}"
+        body_nl = f"{x.get('title_nl') or x['title']}{' – ' + x['place'] if x['place'] else ''} ({d}{' ' + x['time'] if x['time'] else ''})."
+        line = (f'- {title_nl}: {body_nl}', f'- {title}: {body}')
         if collect is not None:
-            collect.append(f'- {title}: {body}')
+            collect.append(line)
         for u in users:
-            digest.setdefault(u, []).append(f'- {title}: {body}')
+            digest.setdefault(u, []).append(line)
     return digest
 
 
@@ -302,6 +313,9 @@ def company_inbox():
         value = s['sender'] if s else ''
     address = parseaddr(value)[1]
     return address if '@' in address else ''
+
+
+ENGLISH = '-' * 40 + '\nEnglish\n' + '-' * 40 + '\n\n'
 
 
 def send_deadline_reminders():
@@ -326,15 +340,19 @@ def send_deadline_reminders():
     inbox = company_inbox()
     if inbox and overview:   # one overview of every company's dates for the shared company mailbox (for example beheer@pandtbeheer.nl)
         try:
-            send_plain(inbox, 'Deadlines coming up – all companies',
-                       'Hello,\n\nThese dates are coming up:\n\n' + '\n\n'.join(f'{name}\n' + '\n'.join(lines) for name, lines in overview)
+            send_plain(inbox, 'Deadlines binnenkort / Deadlines coming up – alle bedrijven / all companies',
+                       'Hallo,\n\nDeze datums komen eraan:\n\n' + '\n\n'.join(f'{name}\n' + '\n'.join(nl for nl, _ in lines) for name, lines in overview)
+                       + '\n\nOpen de Agenda in Krein voor de details.\n\n' + ENGLISH
+                       + 'Hello,\n\nThese dates are coming up:\n\n' + '\n\n'.join(f'{name}\n' + '\n'.join(en for _, en in lines) for name, lines in overview)
                        + '\n\nOpen the Calendar in Krein for the details.\n')
         except Exception:
             logging.exception('Deadline overview email failed.')
     for email, company, name, lines in mails:
         try:
-            send_plain(email, f'Deadlines coming up – {company}',
-                       f"Hello {name},\n\nThese dates are coming up:\n\n" + '\n'.join(lines)
+            send_plain(email, f'Deadlines binnenkort / Deadlines coming up – {company}',
+                       f"Hallo {name},\n\nDeze datums komen eraan:\n\n" + '\n'.join(nl for nl, _ in lines)
+                       + '\n\nOpen de Agenda in Krein voor de details. Je kunt deze e-mails uitzetten op de Agenda-pagina.\n\n' + ENGLISH
+                       + f"Hello {name},\n\nThese dates are coming up:\n\n" + '\n'.join(en for _, en in lines)
                        + '\n\nOpen the Calendar in Krein for the details. You can switch these emails off on the Calendar page.\n')
         except Exception:
             logging.exception('Deadline reminder email failed.')
