@@ -137,5 +137,33 @@ class MaintenanceTests(unittest.TestCase):
             return bool(conn.execute('SELECT 1 FROM users WHERE email=?', (email,)).fetchone())
 
 
+    def test_more_files_on_one_work_order(self):
+        _, home = self.homes()
+        job = self.manager.post(f'/api/properties/{home}/maintenance-jobs', json={'title': 'Replace dimmers'}).json()['id']
+        r = self.manager.post(f'/api/maintenance-jobs/{job}/complete', data={'completed_on': self.today, 'amount': ''},
+                              files=[('file', ('factuur.pdf', PDF, 'application/pdf')), ('files', ('before.pdf', PDF + b'%1', 'application/pdf')), ('files', ('after.pdf', PDF + b'%2', 'application/pdf'))])
+        self.assertEqual(r.status_code, 200, r.text)
+        r = self.manager.post(f'/api/maintenance-jobs/{job}/files', data={'kind': 'Quote'},
+                              files=[('files', ('offerte.pdf', PDF + b' ', 'application/pdf')), ('files', ('rapport.pdf', PDF + b'  ', 'application/pdf'))])
+        self.assertEqual(r.status_code, 200, r.text)
+        files = next(j for j in self.overview()['jobs'] if j['id'] == job)['files']
+        self.assertEqual([f['name'] for f in files], ['factuur.pdf', 'before.pdf', 'after.pdf', 'offerte.pdf', 'rapport.pdf'])
+        # the property manager does not see the supplier invoice in the list (only finance and managers open invoices)
+        prop = self.login('property@krein.local') if self.has_user('property@krein.local') else None
+        if prop:
+            self.assertNotIn('factuur.pdf', [f['name'] for f in next(j for j in self.overview(prop)['jobs'] if j['id'] == job)['files']])
+        # remove one: it leaves the work order, the file stays with the home
+        doc = files[1]['id']
+        self.assertEqual(self.manager.post(f'/api/maintenance-jobs/{job}/files/{doc}/remove', json={}).status_code, 200)
+        self.assertEqual(len(next(j for j in self.overview()['jobs'] if j['id'] == job)['files']), 4)
+        with db.connect() as conn:
+            self.assertEqual(conn.execute('SELECT property_id FROM documents WHERE id=?', (doc,)).fetchone()[0], home)
+        self.assertEqual(self.manager.post(f'/api/maintenance-jobs/{job}/files', data={'kind': 'Quote'}).status_code, 422)
+
+    def has_user(self, email):
+        with db.connect() as conn:
+            return bool(conn.execute('SELECT 1 FROM users WHERE email=?', (email,)).fetchone())
+
+
 if __name__ == '__main__':
     unittest.main()

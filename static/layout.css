@@ -157,6 +157,7 @@ button.pf-card:hover{box-shadow:0 6px 18px #0d352a17}
 .mw-timeline small{display:block;font-size:13px;color:var(--ink-2);margin-top:2px}
 .mw-detail .pf-kv{margin:10px 0}
 .mw-detail .modal-footer{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+.mw-files{margin:12px 0;padding:12px;border:1px solid var(--line,#e2e8e4);border-radius:10px}.mw-files ul{list-style:none;margin:8px 0;padding:0}.mw-files li{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line,#e2e8e4)}.mw-files li:first-child{border-top:0}.mw-files li a{display:inline-flex;align-items:center;gap:6px;font-weight:600;min-height:32px;word-break:break-word}.mw-files li small{color:var(--muted,#66756d)}.mw-files li .button{margin-left:auto}
 .panel .hl-filters{border:0;border-radius:0;border-bottom:1px solid var(--line);margin:0;padding:14px 22px}
 .panel .hl-filters select{min-height:42px;border:1px solid #c5d5cc;border-radius:10px;padding:0 10px;background:#fff;font:inherit;font-size:14px}
 

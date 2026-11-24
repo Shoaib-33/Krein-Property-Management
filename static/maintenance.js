@@ -37,6 +37,8 @@
   const billOptions = () => [['owner', 'Owner (on the owner statement)'], ['tenant', 'Tenant (on the next rent invoice)'], ['vve', 'VvE'], ['company', 'Our company']];
   const JOB = {open: ['To do', 'amber'], planned: ['Planned', 'blue'], done: ['Done', 'green'], cancelled: ['Cancelled', 'gray']};
   const COST = {pending: ['To approve', 'amber'], approved: ['Approved', 'green'], rejected: ['Rejected', 'gray']};
+  const FILE_KINDS = ['Maintenance report', 'Quote', 'supplier invoice', 'General'];
+  const FILE_LABEL = {'Maintenance report': 'Photo or report', Quote: 'Quote', 'supplier invoice': 'Invoice', General: 'Other'};
   const jobBadge = s => badge((JOB[s] || [s])[0], (JOB[s] || [])[1] || 'gray');
   const costBadge = s => badge((COST[s] || [s])[0], (COST[s] || [])[1] || 'gray');
   const openJob = j => ['open', 'planned'].includes(j.status);
@@ -113,7 +115,7 @@
     const plans = data.plans.filter(p => p.property_id === pid);
     const edit = OPS.includes(role);
     const jobPanel = panel('Work orders', 'Work on this home, also when nobody rents it. Finish a work order with the final cost and the invoice.',
-      table(['Work', 'Supplier', 'Planned', 'Status', 'Cost', ''], jobs.slice(0, 30).map(j => [`<strong>${e(j.title)}</strong><small>${e(j.category)}${j.plan_id ? ' · recurring' : ''}</small>`,
+      table(['Work', 'Supplier', 'Planned', 'Status', 'Cost', ''], jobs.slice(0, 30).map(j => [`<strong>${e(j.title)}</strong><small>${e(j.category)}${j.plan_id ? ' · recurring' : ''}${(j.files || []).length ? ` · ${j.files.length} ${j.files.length === 1 ? 'file' : 'files'}` : ''}</small>`,
         e(j.contractor_name || '—'), e(day(j.scheduled_for || j.completed_on)), jobBadge(j.status), j.final_cents ? `<span class="amount">${eur(j.final_cents)}</span>` : j.quote_cents ? `<small>Quote ${eur(j.quote_cents)}</small>` : '—',
         mb('Open', `data-mw="job" data-id="${j.id}"`)]), 'No work orders for this home yet.'),
       edit ? `<button type="button" class="button small primary" data-mw="job-new" data-pid="${pid}">${icon('plus')}New work order</button>` : '');
@@ -175,7 +177,9 @@
       ['Planned', day(j.scheduled_for)], ['Quote', j.quote_cents != null ? eur(j.quote_cents) : '—'], ...(done ? [['Done on', day(j.completed_on)], ['Final cost', j.final_cents != null ? eur(j.final_cents) : '—'], ['Note', j.completion_note || '—']] : [])];
     const edit = canEdit() && openJob(j);
     modal(j.title, `<div class="mw-detail">${jobBadge(j.status)}${j.plan_id ? ' <span class="mw-tag">Recurring</span>' : ''}<table class="pf-kv"><tbody>${kv.map(([k, v]) => `<tr><td>${e(k)}</td><td>${e(v)}</td></tr>`).join('')}</tbody></table>
-      ${j.description ? `<p class="pre-wrap">${e(j.description)}</p>` : ''}${j.invoice_document_id ? `<p><a href="/api/documents/${j.invoice_document_id}/file" target="_blank" rel="noopener">${icon('down')} Supplier invoice</a></p>` : ''}
+      ${j.description ? `<p class="pre-wrap">${e(j.description)}</p>` : ''}
+      <div class="mw-files"><strong>Files</strong>${(j.files || []).length ? `<ul>${j.files.map(d => `<li><a href="/api/documents/${d.id}/file" target="_blank" rel="noopener" data-pv-title="${e(d.name)}">${icon('file')} ${e(d.name)}</a><small>${e(FILE_LABEL[d.kind] || d.kind)} · ${e(day(d.created_at))}</small>${canEdit() && j.status !== 'cancelled' ? mb('Remove', `data-mw="job-file-remove" data-id="${j.id}" data-doc="${d.id}"`, 'link') : ''}</li>`).join('')}</ul>` : '<p class="muted">No files yet.</p>'}
+        ${canEdit() && j.status !== 'cancelled' ? mb('Add files', `data-mw="job-files" data-id="${j.id}"`) : ''}</div>
       ${edit ? `<div class="modal-footer">${mb('Cancel work order', `data-mw="job-cancel" data-id="${j.id}"`, 'danger')}${mb('Edit', `data-mw="job-edit" data-id="${j.id}"`)}${mb('Work is done', `data-mw="job-done" data-id="${j.id}"`, 'primary')}</div>` : ''}</div>`);
   }
   function finishJob(j) {
@@ -184,6 +188,7 @@
       selectField('vat_rate', 'VAT rate', [['21', '21%'], ['9', '9%'], ['0', '0% / no VAT']], {value: '21'}),
       selectField('bill_to', 'Who pays?', billOptions(), {value: defaultPayer(j.property_id), wide: true}),
       ['file', 'Supplier invoice (PDF or photo, optional)', 'file', {required: false, wide: true}],
+      ['files', 'Photos or reports of the work (optional, more files allowed)', 'file', {required: false, wide: true, multiple: true}],
       ['note', 'What was done (optional)', 'textarea', {required: false, wide: true}]],
     async (v, fd) => { await api(`/api/maintenance-jobs/${j.id}/complete`, {method: 'POST', body: fd}); },
     {intro: j.plan_id ? 'The next date of this recurring maintenance moves on automatically. A cost waits for a manager to approve who pays it.' : 'A cost waits for a manager to approve who pays it.',
@@ -201,7 +206,8 @@
       ['amount', 'Cost, including VAT (€; empty if there was no cost)', 'number', {required: false}],
       selectField('vat_rate', 'VAT rate', [['21', '21%'], ['9', '9%'], ['0', '0% / no VAT']], {value: '21'}),
       selectField('bill_to', 'Who pays?', billOptions(), {value: defaultPayer(pid), wide: true}),
-      ['file', 'Supplier invoice or photo (optional)', 'file', {required: false, wide: true}],
+      ['file', 'Supplier invoice (optional)', 'file', {required: false, wide: true}],
+      ['files', 'Photos or reports of the work (optional, more files allowed)', 'file', {required: false, wide: true, multiple: true}],
       ['note', 'Details (optional)', 'textarea', {required: false, wide: true}]],
     async (v, fd) => {
       if (v.completed_on > todayS()) throw new Error('The work cannot be done in the future.');
@@ -296,6 +302,13 @@
       else if (act === 'job-edit') { const j = find('jobs', id); formModal('Edit work order', [...jobFields(j, j.property_id), selectField('status', 'Status', [['open', 'To do'], ['planned', 'Planned']], {value: j.status})],
         async v => { await api(`/api/maintenance-jobs/${j.id}`, {method: 'POST', body: v}); }, {home: j.property_id, submit: 'Save', success: 'Work order saved.'}); }
       else if (act === 'job-done') finishJob(find('jobs', id));
+      else if (act === 'job-files') { const j = find('jobs', id);
+        formModal(`Add files: ${j.title}`, [['files', 'Files (PDF, JPEG, PNG or WebP, max 10 MB each)', 'file', {wide: true, multiple: true}],
+          selectField('kind', 'What are they?', FILE_KINDS.map(k => [k, FILE_LABEL[k]]), {value: 'Maintenance report', wide: true})],
+        async (v, fd) => { await api(`/api/maintenance-jobs/${j.id}/files`, {method: 'POST', body: fd}); },
+        {intro: 'You can choose several files at once. They are also kept under the home’s Documents.', submit: 'Add files', success: 'Files added.'}); }
+      else if (act === 'job-file-remove') { if (!confirm('Take this file off the work order? It stays under the home’s Documents.')) return;
+        await api(`/api/maintenance-jobs/${id}/files/${el.dataset.doc}/remove`, {method: 'POST', body: {}}); closeModal(); toast('File removed from the work order.'); await refresh(); const j = find('jobs', id); if (j) jobDetail(j); }
       else if (act === 'job-cancel') { if (!confirm('Cancel this work order?')) return; await api(`/api/maintenance-jobs/${id}`, {method: 'POST', body: {status: 'cancelled'}}); closeModal(); toast('Work order cancelled.'); await refresh(); }
       else if (act === 'plan-new') {
         formModal('Add recurring maintenance', [selectField('preset', 'Choose from the standard list', PRESETS.map((x, i) => [String(i), x[0]]), {value: '0', wide: true, required: false}), ...planFields(null)],

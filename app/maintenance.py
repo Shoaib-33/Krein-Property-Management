@@ -31,6 +31,9 @@ CATEGORIES = ('Boiler / heating', 'Smoke detectors', 'Fire extinguishers', 'Vent
 COST_CATEGORIES = ('Maintenance', 'VvE contribution', 'Insurance', 'Taxes & levies', 'Utilities', 'Management fee', 'Other')
 BILL_TO = ('owner', 'tenant', 'vve', 'company')
 VAT_RATES = (21, 9, 0)
+FILE_KINDS = ('Maintenance report', 'Quote', 'supplier invoice', 'General')   # photo or report, quote, invoice, other
+MONEY_FILES = ('admin', 'manager', 'finance')   # who may open supplier invoices (the same rule as on the Documents page)
+MAX_FILES = 20
 OWNER_CATEGORY = {'Maintenance': 'Repairs & maintenance', 'VvE contribution': 'Owners association (VvE)', 'Insurance': 'Insurance',
                   'Taxes & levies': 'Taxes & levies', 'Utilities': 'Cleaning & utilities'}
 
@@ -108,6 +111,13 @@ def overview(company_id: int, user=Depends(current_user)):
                               WHERE m.company_id=? ORDER BY m.active DESC,m.next_due,m.id''', (company_id,))
         costs = rows(conn, '''SELECT k.*,p.name property_name,p.address,u.name approved_by_name FROM property_costs k JOIN properties p ON p.id=k.property_id
                               LEFT JOIN users u ON u.id=k.approved_by WHERE k.company_id=? ORDER BY k.incurred_on DESC,k.id DESC''', (company_id,))
+        files = {}
+        for d in conn.execute("SELECT id,job_id,name,kind,mime,created_at FROM documents WHERE company_id=? AND job_id IS NOT NULL AND file_key<>'' ORDER BY id", (company_id,)):
+            if d['kind'] == 'supplier invoice' and role not in MONEY_FILES:
+                continue
+            files.setdefault(d['job_id'], []).append(dict(d))
+        for j in jobs:
+            j['files'] = files.get(j['id'], [])
     return {'jobs': jobs, 'plans': plans, 'costs': costs, 'can_approve': role in APPROVE + ('admin',), 'can_edit': role in OPS + ('admin',),
             'categories': CATEGORIES, 'cost_categories': COST_CATEGORIES, 'trades': TRADES}
 
@@ -216,23 +226,37 @@ async def _upload(file):
     return await read_upload(file)
 
 
-def _file(conn, company_id, property_id, user_id, upload, kind='supplier invoice'):
+def _file(conn, company_id, property_id, user_id, upload, kind='supplier invoice', job_id=None):
     if not upload:
         return None
     from .main import save_document
     doc_id = save_document(conn, company_id, None, user_id, kind, upload)
-    conn.execute('UPDATE documents SET property_id=? WHERE id=?', (property_id, doc_id))
+    conn.execute('UPDATE documents SET property_id=?,job_id=? WHERE id=?', (property_id, job_id, doc_id))
     return doc_id
+
+
+async def _uploads(files):
+    """Several files from one form field (an empty file field sends one part without a name)."""
+    out = []
+    for f in files or []:
+        up = await _upload(f)
+        if up:
+            out.append(up)
+    if len(out) > MAX_FILES:
+        raise HTTPException(422, f'Add at most {MAX_FILES} files at a time.')
+    return out
 
 
 @router.post('/api/maintenance-jobs/{job_id}/complete')
 async def complete_job(job_id: int, completed_on: str = Form(''), note: str = Form(''), amount: str = Form(''), vat_rate: str = Form('21'),
-                       bill_to: str = Form(''), file: UploadFile | None = File(None), user=Depends(current_user)):
+                       bill_to: str = Form(''), file: UploadFile | None = File(None), files: list[UploadFile] = File(default=[]),
+                       user=Depends(current_user)):
     """The work is done: the date, a note, and the final cost (including VAT) with the supplier's invoice. A recurring
     plan moves on to its next date. The cost waits for a manager to approve who pays it."""
     with connect() as conn:
         job = record(conn, 'maintenance_jobs', job_id, user, OPS)
     upload = await _upload(file)
+    extra = await _uploads(files)   # photos and reports of the work
     with transaction() as conn:
         job = record(conn, 'maintenance_jobs', job_id, user, OPS)
         if job['status'] in ('done', 'cancelled'):
@@ -241,7 +265,9 @@ async def complete_job(job_id: int, completed_on: str = Form(''), note: str = Fo
         if done_on > local_today().isoformat():
             raise HTTPException(422, 'The work cannot be done in the future.')
         cents = _cents(amount, 'final cost')
-        doc_id = _file(conn, job['company_id'], job['property_id'], user['id'], upload)
+        doc_id = _file(conn, job['company_id'], job['property_id'], user['id'], upload, job_id=job_id)
+        for up in extra:
+            _file(conn, job['company_id'], job['property_id'], user['id'], up, 'Maintenance report', job_id)
         cost_id = None
         if cents:
             vat, payer = _cost_values({'vat_rate': vat_rate, 'bill_to': bill_to})
@@ -256,6 +282,38 @@ async def complete_job(job_id: int, completed_on: str = Form(''), note: str = Fo
                 conn.execute('UPDATE maintenance_plans SET last_done=?,next_due=? WHERE id=?', (done_on, add_months(done_on, plan['interval_months']), plan['id']))
         audit(conn, user['id'], job['company_id'], 'completed', 'maintenance_job', job_id, {'completed_on': done_on, 'final_cents': cents, 'cost_id': cost_id})
     return {'ok': True, 'cost_id': cost_id}
+
+
+@router.post('/api/maintenance-jobs/{job_id}/files')
+async def add_job_files(job_id: int, kind: str = Form('Maintenance report'), files: list[UploadFile] = File(default=[]), user=Depends(current_user)):
+    """More files on a work order at any time: photos before and after, reports, quotes, invoices. They are also kept
+    under the home's Documents."""
+    with connect() as conn:
+        record(conn, 'maintenance_jobs', job_id, user, OPS)
+    ups = await _uploads(files)
+    if not ups:
+        raise HTTPException(422, 'Choose one or more files.')
+    with transaction() as conn:
+        job = record(conn, 'maintenance_jobs', job_id, user, OPS)
+        kind = kind if kind in FILE_KINDS else 'General'
+        ids = [_file(conn, job['company_id'], job['property_id'], user['id'], up, kind, job_id) for up in ups]
+        conn.execute('UPDATE maintenance_jobs SET updated_at=? WHERE id=?', (now(), job_id))
+        audit(conn, user['id'], job['company_id'], 'files_added', 'maintenance_job', job_id, {'documents': ids, 'kind': kind})
+    return {'ok': True, 'documents': ids}
+
+
+@router.post('/api/maintenance-jobs/{job_id}/files/{document_id}/remove')
+def remove_job_file(job_id: int, document_id: int, user=Depends(current_user)):
+    """Take a file off the work order. The file stays under the home's Documents."""
+    with transaction() as conn:
+        job = record(conn, 'maintenance_jobs', job_id, user, OPS)
+        if not conn.execute('SELECT 1 FROM documents WHERE id=? AND job_id=?', (document_id, job_id)).fetchone():
+            raise HTTPException(404, 'This file is not on this work order.')
+        conn.execute('UPDATE documents SET job_id=NULL WHERE id=?', (document_id,))
+        if job['invoice_document_id'] == document_id:
+            conn.execute('UPDATE maintenance_jobs SET invoice_document_id=NULL WHERE id=?', (job_id,))
+        audit(conn, user['id'], job['company_id'], 'file_removed', 'maintenance_job', job_id, {'document_id': document_id})
+    return {'ok': True}
 
 
 # ---- costs -----------------------------------------------------------------------------------------------------------

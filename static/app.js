@@ -304,7 +304,7 @@ function field(def){
  let control;
  if(type==='select')control=`<select name="${name}" id="f-${name}" ${required}>${opts.optional?'<option value="">Not linked</option>':''}${(opts.options||[]).map(o=>{const [v,l]=Array.isArray(o)?o:[o,o];return `<option value="${e(v)}" ${String(value)===String(v)?'selected':''}>${e(l)}</option>`;}).join('')}</select>`;
  else if(type==='textarea')control=`<textarea name="${name}" id="f-${name}" ${required} maxlength="5000">${e(value)}</textarea>`;
- else control=`<input type="${type}" name="${name}" id="f-${name}" value="${e(value)}" ${required} ${type==='number'?`step="${opts.step||'0.01'}" min="${opts.min??0}"`:''} ${type==='file'?'accept="application/pdf,image/png,image/jpeg,image/webp"':''} ${opts.max?`max="${e(opts.max)}"`:''} ${opts.placeholder?`placeholder="${e(opts.placeholder)}"`:''} ${type==='password'?'minlength="12" autocomplete="new-password"':''}>`;
+ else control=`<input type="${type}" name="${name}" id="f-${name}" value="${e(value)}" ${required} ${type==='number'?`step="${opts.step||'0.01'}" min="${opts.min??0}"`:''} ${type==='file'?`accept="application/pdf,image/png,image/jpeg,image/webp"${opts.multiple?' multiple':''}`:''} ${opts.max?`max="${e(opts.max)}"`:''} ${opts.placeholder?`placeholder="${e(opts.placeholder)}"`:''} ${type==='password'?'minlength="12" autocomplete="new-password"':''}>`;
  return `<div class="field ${wide}"><label for="f-${name}">${e(label)}</label>${control}${opts.hint?`<small>${e(opts.hint)}</small>`:''}</div>`;
 }
 function homeCompanyField(){const mine=(state.me?.companies||[]).filter(c=>['admin','manager','property'].includes(c.role));return mine.length>1?[selectField('company_id','Company',mine.map(c=>[String(c.id),c.name]),{value:String(state.company),wide:true,hint:'The company this home belongs to. Its tenants, contracts and invoices will be in that company.'})]:[];}
@@ -419,18 +419,23 @@ function showContract(id){
  const agreement=rows('documents').find(d=>d.kind.toLowerCase()==='contract'&&(d.contract_id===c.id||String(d.shared_contracts||'').split(',').includes(String(c.id))));
  detail(tenantFor(id).name,[['Property',propertyFor(id).name],['Signed on',dateLabel(c.signed_on)],['Start date',dateLabel(c.start_date)],['End date',dateLabel(c.end_date)],['Basic monthly rent',money(r.basic_cents)],['Service advance',money(r.service_cents)],['Due payment',(()=>{const d=scheduleFor(id).due;return d?`${money(d.amount_cents)} by ${dateLabel(d.date)} (${dueWhen(d.days)})`:'Nothing due';})()],['Next scheduled payment',(()=>{const n=scheduleFor(id).next;return n?`${money(n.amount_cents)} on ${dateLabel(n.date)} (${dueWhen(n.days)})`:'None scheduled';})()]] ,`<h3>Signed agreement</h3>${agreement?`<p><a href="/api/documents/${agreement.id}/file" data-pv-title="Signed rental agreement">View signed rental agreement ${icon('file')}</a></p>`:'<p class="modal-note">No agreement PDF is linked to this tenancy yet.</p>'}<h3>Rent history</h3>${table(['Effective from','Basic rent','Advance'],history.map(v=>[dateLabel(v.effective_from),money(v.basic_cents),money(v.service_cents)]))}<div class="modal-footer">${['admin','manager','property'].includes(company().role)?`${['admin','manager'].includes(company().role)?`<a class="button" href="/api/contracts/${c.id}/bundle">${icon('down')}Export summary</a>`:''}`:''}${actionBtn('Record termination','contract-end',c.id)}${button('Log contact','form','data-kind="communications"','primary')}</div>`);
 }
+// sort people by surname the Dutch way: initials and prefixes do not count ("K.P. van Dijk" files under D)
+const surnameKey=name=>String(name||'').trim().replace(/^([A-Za-z]{1,3}\.\s*)+/,'').replace(/^(van der|van den|van de|van 't|van|von|de|den|der|het|in 't|op de|op den|ter|ten|te|la|le|du)\s+/i,'').toLocaleLowerCase('nl');
+const byPerson=(a,b)=>surnameKey(a.name).localeCompare(surnameKey(b.name),'nl')||String(a.name).localeCompare(String(b.name),'nl');
 function manualContractForm(forTenant=null){   // forTenant: opened from a tenant's file, that tenant is chosen
  const contractDocs=rows('documents').filter(d=>d.mime==='application/pdf'&&d.kind.toLowerCase()==='contract');
  if(!rows('properties').length||!rows('tenants').length){toast('Add the property and tenant first.');return;}
- const propertyChoices=rows('properties').map(p=>[p.id,p.name]);
+ const propertyChoices=rows('properties').map(p=>[p.id,p.name]).sort((a,b)=>String(a[1]).localeCompare(String(b[1]),'nl',{numeric:true}));
  const initialProperty=propertyChoices[0]?.[0];
- const tenantsForProperty=(propertyId,startDate)=>rows('tenants').filter(t=>!t.archived_at).filter(t=>{
+ const tenantsAvailable=(propertyId,startDate)=>rows('tenants').filter(t=>!t.archived_at).filter(t=>{
   const history=window.contractsOfTenant?contractsOfTenant(t.id):rows('contracts').filter(c=>c.tenant_id===t.id);
   const overlapping=history.filter(c=>['active','notice given','pending signature'].includes(c.status)&&c.start_date<=startDate&&(!c.end_date||c.end_date>=startDate));
   if(overlapping.length)return overlapping.every(c=>c.property_id===Number(propertyId)&&c.tenant_id===t.id);
   const prior=history.filter(c=>c.start_date<=startDate).sort((a,b)=>b.start_date.localeCompare(a.start_date))[0];
   return !prior||prior.property_id===Number(propertyId);
  });
+ // the tenants who live in this home first (chosen for you), then everyone else by surname
+ const tenantsForProperty=(propertyId,startDate)=>tenantsAvailable(propertyId,startDate).sort((a,b)=>(b.home_property_id===Number(propertyId))-(a.home_property_id===Number(propertyId))||byPerson(a,b));
  const initialStart=today();
  let manualUpload=null;   // a PDF uploaded on an earlier try of this form is reused, not uploaded twice
  const initialTenants=tenantsForProperty(initialProperty,initialStart);

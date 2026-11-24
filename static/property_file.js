@@ -98,7 +98,7 @@ window.kreinCases = (() => {
       `<strong>${e(c.tenant_name)}</strong><small>${e(c.tenant_email)}</small>`, `${e(day(c.start_date))} – ${c.end_date ? e(day(c.end_date)) : 'open-ended'}`,
       c.basic_cents != null ? `<span class="amount">${eur((c.basic_cents || 0) + (c.service_cents || 0))}</span><small>basic ${eur(c.basic_cents)} + service ${eur(c.service_cents)}</small>` : '—',
       eur(c.deposit_cents), badge(c.end_date && c.end_date < today() ? 'ended' : c.status),
-      `<button type="button" class="button small" data-action="contract-detail" data-id="${c.id}">Open file</button>`]), 'No contracts yet.').replace(/<div class="empty">[\s\S]*$/, () =>
+      `<div class="actions"><button type="button" class="button small" data-action="contract-detail" data-id="${c.id}">Open file</button>${canContract ? mb('Edit', `data-pf="c-edit" data-id="${c.id}"`) : ''}${['admin', 'manager'].includes(role) ? mb('Delete', `data-pf="c-delete" data-id="${c.id}"`) : ''}</div>`]), 'No contracts yet.').replace(/<div class="empty">[\s\S]*$/, () =>
       empty('No contract yet', 'Record the contract of the tenant who lives here, or send one to sign online. This home is chosen for you.', `<div class="actions tf-empty-acts">${addC}${signC}</div>`))
       + (f.contracts.length && (addC || signC) ? `<div class="panel-body tf-more">${addC}${signC}</div>` : ''));
 
@@ -338,6 +338,24 @@ window.kreinCases = (() => {
         {submit: 'Save', success: 'Property details saved.'});
     } else if (act === 'contract') {
       manualContractForm(); preset(p.id);
+    } else if (act === 'c-edit') {
+      const c = ui.file.contracts.find(x => x.id === Number(el.dataset.id));
+      if (!c) return;
+      const amt = v => v != null ? (v / 100).toFixed(2) : '';
+      formModal(`Edit contract: ${c.tenant_name}`, [
+        ['end_date', 'End date (empty: open-ended)', 'date', {value: c.end_date || '', required: false}],
+        ['deposit', 'Agreed deposit (€)', 'number', {value: amt(c.deposit_cents) || '0', step: '0.01'}],
+        ['basic_rent', 'Basic monthly rent (€)', 'number', {value: amt(c.basic_cents), step: '0.01'}], ['service_charge', 'Monthly service charge (€)', 'number', {value: amt(c.service_cents) || '0', step: '0.01'}],
+        ['rent_from', 'A changed rent applies from', 'date', {value: today().slice(0, 8) + '01', required: false, hint: 'Only used when you change the rent. The rent history is kept.'}]],
+        async data => { const r = await api(`/api/contracts/${c.id}/edit`, {method: 'POST', body: data}); ui.file = null; load(); refresh();
+          if (r.invoices) setTimeout(() => toast('Contract saved. Invoices already made keep their amount; a new rent applies to the next invoices.'), 50); },
+        {intro: `Signed ${e(day(c.signed_on))}, starts ${e(day(c.start_date))}. The signing and start date are locked: if one of them is wrong, delete the contract and record it again (possible until invoices were sent or payments came in).`,
+          submit: 'Save', success: 'Contract saved.'});
+    } else if (act === 'c-delete') {
+      const c = ui.file.contracts.find(x => x.id === Number(el.dataset.id));
+      if (!c || !confirm(`Delete the contract of ${c.tenant_name} (${day(c.start_date)})? This is only for a contract entered by mistake. Its documents stay with the home.`)) return;
+      try { await api(`/api/contracts/${c.id}/delete`, {method: 'POST', body: {}}); toast('Contract deleted.'); ui.file = null; load(); refresh(); }
+      catch (err) { toast(err.message); }
     } else if (act === 'sign') {
       const b = document.createElement('button'); b.dataset.lease = 'send'; b.hidden = true; document.body.append(b); b.click(); b.remove(); preset(p.id);
     } else if (act === 'label') {

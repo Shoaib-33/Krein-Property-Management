@@ -665,6 +665,13 @@ CREATE INDEX properties_building ON properties(building_id)
 # V67: who is responsible for what in a home (app/responsibilities.py), the spare keys of each home, the office hours and
 # emergency number of a company (app/policies.py), and the map (app/geo.py): the position of each home and the work area of
 # each contractor (a place and a radius in km)
+# V68: more files per work order (photos, reports, quotes, invoices): documents.job_id links each file to its work order
+V68 = '''
+ALTER TABLE documents ADD COLUMN job_id INTEGER REFERENCES maintenance_jobs(id);
+CREATE INDEX documents_job ON documents(job_id);
+UPDATE documents SET job_id=(SELECT MIN(j.id) FROM maintenance_jobs j WHERE j.invoice_document_id=documents.id) WHERE id IN (SELECT invoice_document_id FROM maintenance_jobs WHERE invoice_document_id IS NOT NULL)
+'''
+
 V67 = '''
 CREATE TABLE property_responsibilities (
  id INTEGER PRIMARY KEY, company_id INTEGER NOT NULL REFERENCES companies(id), property_id INTEGER REFERENCES properties(id), building_id INTEGER REFERENCES buildings(id),
@@ -1217,6 +1224,11 @@ CREATE TABLE payment_history (
 );
 CREATE INDEX payment_history_tenant ON payment_history(tenant_id, period);
 ''',
+    68: '''
+ALTER TABLE documents ADD COLUMN job_id BIGINT REFERENCES maintenance_jobs(id);
+CREATE INDEX documents_job ON documents(job_id);
+UPDATE documents SET job_id=(SELECT MIN(j.id) FROM maintenance_jobs j WHERE j.invoice_document_id=documents.id) WHERE id IN (SELECT invoice_document_id FROM maintenance_jobs WHERE invoice_document_id IS NOT NULL);
+''',
 }
 
 
@@ -1710,6 +1722,11 @@ def migrate(conn):
                 if statement.strip():
                     conn.execute(statement)
             conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (67, now()))
+        if not conn.execute('SELECT 1 FROM schema_migrations WHERE version=68').fetchone():
+            for statement in V68.strip().split(';'):
+                if statement.strip():
+                    conn.execute(statement)
+            conn.execute('INSERT INTO schema_migrations VALUES(?,?)', (68, now()))
         conn.commit()
     except Exception:
         conn.rollback()

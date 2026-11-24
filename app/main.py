@@ -2253,6 +2253,8 @@ from .indexation import router as indexation_router
 app.include_router(indexation_router)
 from .opening_arrears import router as opening_arrears_router
 app.include_router(opening_arrears_router)
+from .contract_edit import router as contract_edit_router
+app.include_router(contract_edit_router)
 app.include_router(finance_ops_router)
 from .payment_history import router as payment_history_router
 app.include_router(payment_history_router)
